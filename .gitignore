@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+data/
+!data/.gitkeep
+.env
+# Browser profiles hold live session cookies. They belong outside the repo, and
+# these patterns are a second line of defence in case one lands inside it.
+*-profile/
+*chrome-profile*/
+botsensai-x-profile/
+*.db
+*.db-wal
+*.db-shm
+.venv/

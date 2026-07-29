@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "botsensai"
+version = "0.1.0"
+description = "Agentic memecoin recon, scoring, backtesting, paper-trading and content engine for Solana launchpads"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Botsensai" }]
+
+dependencies = [
+    "httpx>=0.27",
+    "anyio>=4.4",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dotenv>=1.0",
+    "orjson>=3.10",
+    "structlog>=24.1",
+    "typer>=0.12",
+    "rich>=13.7",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "pyarrow>=16.0",
+    "scipy>=1.13",
+    "networkx>=3.3",
+    "tenacity>=8.3",
+    "cachetools>=5.3",
+    "python-dateutil>=2.9",
+    "PyYAML>=6.0",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+browser = ["playwright>=1.44"]
+ml = ["scikit-learn>=1.5", "lightgbm>=4.3"]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "respx>=0.21",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "hypothesis>=6.100",
+]
+
+[project.scripts]
+botsensai = "botsensai.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/botsensai"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+# UP042 wants StrEnum. These enums are deliberately `str, Enum`: the pattern
+# serializes to JSON without a custom encoder and keeps `.value` comparisons
+# working identically across the codebase.
+# SIM102/SIM103/SIM108 collapse nested conditionals that are clearer expanded,
+# particularly in the veto engine where each branch documents a distinct rule.
+ignore = ["E501", "B008", "UP042", "SIM102", "SIM103", "SIM108"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false

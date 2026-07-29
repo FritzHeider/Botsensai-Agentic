@@ -1,0 +1,600 @@
+"""The live loop: discover, screen, enrich, score, decide, remember.
+
+The ordering here is the whole design. Every surface has a rate limit, several
+are severely constrained, and the candidate population is thousands of tokens an
+hour. Spending the expensive budgets uniformly across that population exhausts
+them in seconds and starves the handful of tokens that actually deserved
+attention.
+
+So the loop is a funnel:
+
+1. **Discover** — cheap, broad. Everything that launched recently, from every
+   venue that will tell us, plus whatever is being actively promoted.
+2. **Screen** — free. Pure local filtering on facts we already have: age,
+   liquidity floor, description substance, ticker collisions. This removes the
+   overwhelming majority of the feed at zero API cost.
+3. **Enrich** — expensive, narrow. Trades, holders, security and social, spent
+   only on survivors of the screen, in rank order, until the budget runs out.
+4. **Score** — free. All 32 metrics, the veto gates, the composite.
+5. **Decide** — size and route through the risk manager and the broker.
+6. **Remember** — write what happened back into agentic memory, so the next
+   sweep starts from a system that has learned something.
+
+Step 6 is what makes this an agent rather than a script. The bot records the
+regimes it observes, the heuristics it forms, and the post-mortems of its own
+trades, then reads them back as inputs on the next pass.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Any
+
+from botsensai.collectors.base import CollectionResult, Collector, CollectorRegistry
+from botsensai.collectors.dexscreener import DexscreenerCollector
+from botsensai.collectors.geckoterminal import GeckoTerminalCollector
+from botsensai.collectors.pumpfun import PumpFunCollector
+from botsensai.collectors.social import (
+    FourChanBizCollector,
+    RedditCollector,
+    TelegramChannelCollector,
+    XCollector,
+)
+from botsensai.collectors.x_session import AuthenticatedXCollector
+from botsensai.config import Settings, get_settings
+from botsensai.execution.broker import PaperBroker
+from botsensai.memory.store import MemoryStore
+from botsensai.metrics import MetricRegistry, build_registry
+from botsensai.metrics.base import MetricContext
+from botsensai.models import (
+    Launch,
+    MemoryKind,
+    Score,
+    utcnow,
+)
+from botsensai.scoring.composite import CompositeScorer, score_to_size
+from botsensai.store.db import Database
+from botsensai.util.logging import get_logger
+from botsensai.util.text import tokens as text_tokens
+
+log = get_logger(__name__)
+
+
+@dataclass
+class SweepReport:
+    """What one pass of the loop did."""
+
+    started_at: datetime
+    finished_at: datetime | None = None
+    discovered: int = 0
+    screened_in: int = 0
+    enriched: int = 0
+    scored: int = 0
+    entered: int = 0
+    exited: int = 0
+    degraded_surfaces: list[str] = field(default_factory=list)
+    top_candidates: list[dict[str, Any]] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    regime: str = "unknown"
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "duration_seconds": round(
+                ((self.finished_at or utcnow()) - self.started_at).total_seconds(), 2
+            ),
+            "discovered": self.discovered,
+            "screened_in": self.screened_in,
+            "enriched": self.enriched,
+            "scored": self.scored,
+            "entered": self.entered,
+            "exited": self.exited,
+            "regime": self.regime,
+            "degraded_surfaces": self.degraded_surfaces,
+            "errors": self.errors[:5],
+            "top_candidates": self.top_candidates[:10],
+        }
+
+
+class Pipeline:
+    """Orchestrates one sweep, or many."""
+
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        db: Database | None = None,
+        memory: MemoryStore | None = None,
+        registry: MetricRegistry | None = None,
+        broker: PaperBroker | None = None,
+        collectors: Sequence[Collector] | None = None,
+    ) -> None:
+        self.settings = settings or get_settings()
+        self.db = db or Database(self.settings.path(self.settings.db_path))
+        self.memory = (
+            memory
+            if memory is not None
+            else MemoryStore(
+                self.settings.path(self.settings.memory.path),
+                decay_half_life_hours=self.settings.memory.decay_half_life_hours,
+                min_confidence=self.settings.memory.min_confidence_to_apply,
+            )
+        )
+        self.metrics = registry or build_registry()
+        self.scorer = CompositeScorer(self.metrics, None, self.settings)
+        self.broker = broker or PaperBroker(self.settings, starting_native=10.0)
+
+        self.collectors = CollectorRegistry(self.settings)
+        for collector in collectors or self._default_collectors():
+            self.collectors.register(collector)
+
+        self._active_themes: list[tuple[str, float]] = []
+        self._market_regime: dict[str, Any] = {}
+        self._recent_narratives: list[str] = []
+        self._ticker_index: dict[str, list[dict[str, Any]]] = {}
+        # Per-token evidence that arrives as a raw collector payload rather than
+        # as a stored record, e.g. X's fast-follower classification.
+        self._fast_follower_share: dict[str, float] = {}
+
+    def _default_collectors(self) -> list[Collector]:
+        """Market surfaces first, then social.
+
+        Order matters for the social ones only in that they are cheap to skip:
+        each is independently degradable, and the metric layer lowers confidence
+        rather than treating a dark surface as a bearish reading.
+        """
+        return [
+            PumpFunCollector(self.settings),
+            DexscreenerCollector(self.settings),
+            GeckoTerminalCollector(self.settings),
+            # Both register under the surface name "x", so exactly one is active.
+            # The authenticated one degrades to the public path internally when
+            # its session turns out not to be valid, so choosing it here is safe
+            # even if the profile has since been logged out.
+            (
+                AuthenticatedXCollector(self.settings)
+                if self.settings.x_session_enabled
+                else XCollector(self.settings)
+            ),
+            RedditCollector(self.settings),
+            FourChanBizCollector(self.settings),
+            TelegramChannelCollector(self.settings),
+        ]
+
+    async def aclose(self) -> None:
+        await self.collectors.aclose()
+
+    # -- step 1: discover --------------------------------------------------- #
+
+    async def discover(self, limit: int = 60) -> CollectionResult:
+        results = await self.collectors.sweep_discover(limit)
+        combined = CollectorRegistry.combine(results, surface="discover")
+
+        for launch in combined.launches:
+            self.db.upsert_launch(launch)
+        self.db.insert_snapshots(combined.snapshots)
+
+        # Harvest the cross-cutting context the metrics need from raw payloads.
+        metas = combined.raw.get("metas")
+        if metas:
+            self._active_themes = DexscreenerCollector.active_themes(metas)
+
+        self._rebuild_narrative_context()
+        return combined
+
+    def _rebuild_narrative_context(self, hours: float = 6.0) -> None:
+        """Refresh the recent-launch corpus and ticker collision index.
+
+        Both are cross-sectional: a token's novelty and its ticker contention are
+        properties of the population it launched into, so they have to be
+        recomputed from the population rather than looked up per token.
+        """
+        now = utcnow()
+        recent = self.db.launches_between(now - timedelta(hours=hours), now)
+        narratives: list[str] = []
+        index: dict[str, list[dict[str, Any]]] = {}
+        for launch in recent:
+            parts = [
+                launch.token.name or "",
+                launch.token.symbol or "",
+                launch.description or "",
+            ]
+            joined = " ".join(p for p in parts if p).strip()
+            if joined:
+                narratives.append(joined)
+            symbol = (launch.token.symbol or "").upper().strip()
+            if symbol:
+                snapshots = self.db.snapshots_as_of(launch.token.key, now)
+                liquidity = snapshots[-1].liquidity_usd if snapshots else None
+                index.setdefault(symbol, []).append(
+                    {"token_key": launch.token.key, "liquidity_usd": liquidity}
+                )
+        self._recent_narratives = narratives
+        self._ticker_index = index
+
+    # -- step 2: screen ----------------------------------------------------- #
+
+    def screen(self, launches: Sequence[Launch], max_candidates: int = 40) -> list[Launch]:
+        """Free local filtering. The step that makes the rate limits survivable.
+
+        Ranking uses only facts already in hand: age inside the tradeable window,
+        whether there is any liquidity at all, whether the launch shows human
+        effort, and whether its ticker is contested. Nothing here costs an API
+        call, and it typically removes well over ninety percent of the feed.
+        """
+        now = utcnow()
+        risk = self.settings.risk
+        scored: list[tuple[float, Launch]] = []
+
+        for launch in launches:
+            age = (now - launch.created_at).total_seconds()
+            if age < risk.min_token_age_seconds or age > risk.max_token_age_seconds:
+                continue
+
+            snapshots = self.db.snapshots_as_of(launch.token.key, now)
+            latest = snapshots[-1] if snapshots else None
+            if latest is not None and latest.liquidity_usd is not None:
+                if latest.liquidity_usd < risk.min_liquidity_usd * 0.5:
+                    continue
+
+            rank = 0.0
+            # Human effort at launch time: description length, socials, image.
+            description_words = len(text_tokens(launch.description or ""))
+            rank += min(1.0, description_words / 20.0) * 0.3
+            rank += 0.2 * sum(
+                1 for s in (launch.twitter, launch.telegram, launch.website) if s
+            ) / 3.0
+            rank += 0.1 if launch.image_uri else 0.0
+
+            # Ticker contention is a penalty, and it is free to compute.
+            symbol = (launch.token.symbol or "").upper().strip()
+            collisions = len(self._ticker_index.get(symbol, [])) - 1
+            rank -= min(0.3, max(0, collisions) * 0.05)
+
+            # Freshness: earlier in the window is worth more, all else equal.
+            rank += 0.3 * max(0.0, 1.0 - age / max(1.0, risk.max_token_age_seconds))
+
+            if latest is not None and latest.volume_5m_usd:
+                rank += min(0.2, latest.volume_5m_usd / 50_000.0)
+
+            scored.append((rank, launch))
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [launch for _, launch in scored[:max_candidates]]
+
+    # -- step 3: enrich ----------------------------------------------------- #
+
+    async def enrich(self, launches: Sequence[Launch]) -> CollectionResult:
+        # The social collectors need to know which account and channel belong to
+        # which token, and only the launch metadata knows that. Wiring it here
+        # keeps the collectors free of any dependency on the store.
+        self._wire_social_handles(launches)
+
+        tokens = [launch.token for launch in launches]
+        results = await self.collectors.sweep_enrich(tokens)
+        combined = CollectorRegistry.combine(results, surface="enrich")
+
+        self.db.insert_snapshots(combined.snapshots)
+        self.db.insert_trades(combined.trades)
+        self.db.insert_holders(combined.holders)
+        for report in combined.security:
+            self.db.insert_security(report)
+        for post in combined.posts:
+            self.db.insert_posts([post])
+
+        fast = combined.raw.get("fast_follower_share")
+        if isinstance(fast, dict):
+            self._fast_follower_share.update(fast)
+        return combined
+
+    def _wire_social_handles(self, launches: Sequence[Launch]) -> None:
+        """Map token -> X handle and Telegram channel from launch metadata."""
+        handles: dict[str, str] = {}
+        channels: dict[str, str] = {}
+        for launch in launches:
+            if launch.twitter:
+                handle = launch.twitter.rstrip("/").split("/")[-1].lstrip("@")
+                if handle and "?" not in handle:
+                    handles[launch.token.key] = handle
+            if launch.telegram:
+                channel = launch.telegram.rstrip("/").split("/")[-1]
+                if channel and "+" not in channel and "joinchat" not in channel:
+                    channels[launch.token.key] = channel
+
+        x_collector = self.collectors.get("x")
+        if x_collector is not None:
+            x_collector.config.extra["handles"] = handles
+        telegram = self.collectors.get("telegram")
+        if telegram is not None:
+            telegram.config.extra.setdefault("call_channels", [])
+            telegram.config.extra["channels"] = channels
+
+    # -- step 4: score ------------------------------------------------------ #
+
+    def build_context(self, launch: Launch, as_of: datetime | None = None) -> MetricContext:
+        """Assemble a point-in-time context from the store.
+
+        Uses the same `*_as_of` reads the backtester uses, so a context built
+        live and a context built in replay are constructed identically. That
+        symmetry is the only reason a backtest result says anything about live
+        behaviour.
+        """
+        when = as_of or utcnow()
+        key = launch.token.key
+        symbol = (launch.token.symbol or "").upper().strip()
+        collisions = [
+            entry
+            for entry in self._ticker_index.get(symbol, [])
+            if entry["token_key"] != key
+        ]
+
+        return MetricContext(
+            token=launch.token,
+            as_of=when,
+            launch=launch,
+            snapshots=self.db.snapshots_as_of(key, when),
+            trades=self.db.trades_as_of(key, when),
+            holders=self.db.holders_as_of(key, when),
+            security=self.db.security_as_of(key, when),
+            posts=self.db.posts_as_of(key, when),
+            deployer_history=(
+                self.db.deployer_history(launch.deployer, before=launch.created_at)
+                if launch.deployer
+                else {}
+            ),
+            wallet_priors={},
+            recent_narratives=self._recent_narratives,
+            degraded_surfaces=set(),
+            extra={
+                "market_regime": self._market_regime,
+                "active_themes": self._active_themes,
+                "ticker_collisions": collisions,
+                "fast_follower_share": self._fast_follower_share,
+                "target_position_usd": self.settings.risk.max_position_native * 150.0,
+                "max_impact_pct": self.settings.risk.max_slippage_bps / 10_000.0,
+            },
+        )
+
+    def score(self, launch: Launch, as_of: datetime | None = None) -> Score:
+        ctx = self.build_context(launch, as_of)
+        result = self.scorer.score(ctx)
+        self.db.insert_metric_values(result.metric_values)
+        self.db.insert_score(result)
+        return result
+
+    def compute_regime(self, hours: float = 24.0) -> dict[str, Any]:
+        """Market-wide state, recomputed from the store each sweep."""
+        now = utcnow()
+        recent = self.db.launches_between(now - timedelta(hours=hours), now)
+        if not recent:
+            return {}
+        graduated = 0
+        inflow = 0.0
+        for launch in recent:
+            snapshots = self.db.snapshots_as_of(launch.token.key, now)
+            if not snapshots:
+                continue
+            latest = snapshots[-1]
+            if (latest.bonding_curve_progress or 0.0) >= 0.95 or latest.stage.value == "graduated":
+                graduated += 1
+            inflow += latest.liquidity_usd or 0.0
+        regime = {
+            "graduation_rate_24h": graduated / len(recent),
+            "launches_per_hour": len(recent) / max(1.0, hours),
+            "new_token_inflow_usd_1h": inflow / max(1.0, hours),
+            "sample_size": len(recent),
+        }
+        self._market_regime = regime
+        return regime
+
+    # -- step 5 and 6: decide and remember ---------------------------------- #
+
+    def decide(self, launch: Launch, result: Score) -> str:
+        """Route a score through risk and the broker. Returns what happened."""
+        ok, reason = self.scorer.should_enter(result)
+        if not ok:
+            return f"skip: {reason}"
+
+        snapshots = self.db.snapshots_as_of(launch.token.key, result.as_of)
+        if not snapshots:
+            return "skip: no market snapshot"
+        latest = snapshots[-1]
+
+        size = score_to_size(
+            result,
+            self.settings.risk.max_position_native,
+            stop_loss_fraction=self.settings.risk.stop_loss_pct,
+        )
+        if size <= 1e-6:
+            return "skip: sizing produced zero"
+
+        age = (result.as_of - launch.created_at).total_seconds()
+        fill = self.broker.open_position(
+            launch.token,
+            size,
+            latest,
+            result.as_of,
+            age_seconds=age,
+            reason=result.explanation or "",
+            score=result.composite,
+        )
+        if fill is None:
+            return "skip: rejected by risk manager"
+        if fill.rejected:
+            return f"failed: {fill.reject_reason}"
+
+        self.memory.remember(
+            MemoryKind.OBSERVATION,
+            subject=launch.token.key,
+            title=f"Entered {launch.token.symbol or launch.token.mint[:8]} at {result.composite:.3f}",
+            body=result.explanation or "",
+            tags=["entry", result.regime],
+            confidence=result.composite,
+            evidence=[f"{k}={v:.3f}" for k, v in list(result.contributions.items())[:6]],
+        )
+        return f"entered {size:.4f} native at {fill.price_native:.3e}"
+
+    def write_regime_memory(self, regime: dict[str, Any]) -> None:
+        """Record the market regime so later sessions can condition on it."""
+        if not regime or regime.get("sample_size", 0) < 20:
+            return
+        label = CompositeScorer.classify_regime(regime, self.settings.scoring)
+        recent = self.memory.recall(
+            subject="global", kinds=[MemoryKind.REGIME], limit=1, apply_decay=False
+        )
+        body = (
+            f"Graduation rate {regime['graduation_rate_24h']:.3%} over "
+            f"{regime['sample_size']} launches, {regime['launches_per_hour']:.0f} launches/hour. "
+            f"Classified {label}."
+        )
+        if recent and recent[0].body == body:
+            return
+        self.memory.remember(
+            MemoryKind.REGIME,
+            subject="global",
+            title=f"Market regime: {label}",
+            body=body,
+            tags=["regime", label],
+            confidence=0.8,
+            supersedes=recent[0].id if recent else None,
+        )
+
+    def review_closed_positions(self) -> int:
+        """Write a post-mortem for every position closed since the last review.
+
+        This is the feedback loop that makes the memory worth keeping: the bot
+        records what it believed at entry alongside what actually happened, and
+        those pairs are what later heuristics are formed from.
+        """
+        if not self.settings.memory.autowrite_postmortems:
+            return 0
+        written = 0
+        for position in self.broker.account.closed:
+            existing = self.memory.recall(
+                subject=position.token.key,
+                kinds=[MemoryKind.POSTMORTEM],
+                limit=1,
+                apply_decay=False,
+            )
+            if existing:
+                continue
+            pnl = position.realized_pnl_native
+            verdict = "profit" if pnl > 0 else "loss"
+            held = (
+                (position.closed_at - position.opened_at).total_seconds()
+                if position.closed_at
+                else 0.0
+            )
+            self.memory.remember(
+                MemoryKind.POSTMORTEM,
+                subject=position.token.key,
+                title=f"{verdict} {pnl:+.4f} native on {position.token.symbol or 'token'}",
+                body=(
+                    f"Held {held / 60:.0f} minutes, exited via {position.exit_reason or 'unknown'}. "
+                    f"Realized {pnl:+.4f} native on a {position.cost_basis_native:.4f} basis."
+                ),
+                tags=["postmortem", verdict, position.exit_reason or "unknown"],
+                confidence=0.6,
+            )
+            written += 1
+        return written
+
+    # -- the sweep ---------------------------------------------------------- #
+
+    async def sweep(self, discover_limit: int = 60, max_candidates: int = 25) -> SweepReport:
+        report = SweepReport(started_at=utcnow())
+
+        try:
+            discovered = await self.discover(discover_limit)
+            report.discovered = len(discovered.launches)
+            if discovered.degraded:
+                report.degraded_surfaces.append("discover")
+            if discovered.error:
+                report.errors.append(discovered.error)
+        except Exception as exc:
+            report.errors.append(f"discover failed: {exc}")
+            report.finished_at = utcnow()
+            return report
+
+        regime = self.compute_regime()
+        report.regime = CompositeScorer.classify_regime(regime, self.settings.scoring)
+        self.write_regime_memory(regime)
+
+        candidates = self.screen(discovered.launches, max_candidates)
+        report.screened_in = len(candidates)
+        if not candidates:
+            report.finished_at = utcnow()
+            return report
+
+        try:
+            enriched = await self.enrich(candidates)
+            report.enriched = len(candidates)
+            if enriched.degraded:
+                report.degraded_surfaces.append("enrich")
+        except Exception as exc:
+            report.errors.append(f"enrich failed: {exc}")
+
+        ranked: list[tuple[float, Launch, Score]] = []
+        for launch in candidates:
+            try:
+                result = self.score(launch)
+            except Exception as exc:
+                report.errors.append(f"score failed for {launch.token.key}: {exc}")
+                continue
+            report.scored += 1
+            ranked.append((result.composite, launch, result))
+
+        ranked.sort(key=lambda triple: triple[0], reverse=True)
+        report.top_candidates = [
+            {
+                "symbol": launch.token.symbol,
+                "mint": launch.token.mint,
+                "score": round(result.composite, 4),
+                "coverage": round(result.coverage, 3),
+                "vetoes": [v.value for v in result.vetoes],
+                "why": (result.explanation or "")[:160],
+            }
+            for _, launch, result in ranked[:10]
+        ]
+
+        for _, launch, result in ranked:
+            outcome = self.decide(launch, result)
+            if outcome.startswith("entered"):
+                report.entered += 1
+
+        # Manage anything already open against fresh snapshots.
+        for key in list(self.broker.account.positions.keys()):
+            snapshots = self.db.snapshots_as_of(key, utcnow())
+            if not snapshots:
+                continue
+            latest = snapshots[-1]
+            position = self.broker.account.positions[key]
+            self.broker.mark(position.token, latest.price_native or 0.0)
+            fills = self.broker.apply_exits(position.token, latest, utcnow())
+            report.exited += sum(1 for f in fills if not f.rejected)
+
+        self.review_closed_positions()
+        report.finished_at = utcnow()
+        log.info("pipeline.sweep", **report.summary())
+        return report
+
+    async def run_forever(self, interval_seconds: float = 60.0, max_sweeps: int | None = None) -> None:
+        """Sweep on a fixed cadence until stopped.
+
+        Errors inside a sweep are contained and logged rather than terminating
+        the loop; a collector outage should cost one sweep, not the session.
+        """
+        sweeps = 0
+        while max_sweeps is None or sweeps < max_sweeps:
+            started = utcnow()
+            try:
+                await self.sweep()
+            except Exception as exc:
+                log.warning("pipeline.sweep_failed", error=str(exc))
+            sweeps += 1
+            elapsed = (utcnow() - started).total_seconds()
+            await asyncio.sleep(max(1.0, interval_seconds - elapsed))
+
+
+__all__ = ["Pipeline", "SweepReport"]
