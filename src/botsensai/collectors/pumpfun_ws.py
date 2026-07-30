@@ -330,6 +330,53 @@ class PumpPortalStream:
 
     # -- the loop ------------------------------------------------------------ #
 
+    async def _read_frames(
+        self,
+        socket: Any,
+        budget: Callable[[], str | None],
+        deadline: float | None,
+        idle_timeout: float,
+        on_event: Callable[[dict[str, Any]], None] | None,
+    ) -> tuple[int, str | None]:
+        """Read frames off one open socket until a budget stops it.
+
+        Returns how many frames this episode read and the stop reason, if any.
+        Every network exception is left to propagate: the caller owns the
+        distinction between a clean goodbye, an idle zombie and a hard failure,
+        and duplicating that judgement here is how the three get confused.
+        """
+        episode_messages = 0
+        while True:
+            stop = budget()
+            if stop is not None:
+                return episode_messages, stop
+
+            wait = idle_timeout
+            if deadline is not None:
+                wait = min(wait, max(0.01, deadline - utcnow().timestamp()))
+            raw = await asyncio.wait_for(socket.recv(), timeout=wait)
+
+            received_at = utcnow()
+            self.stats.messages += 1
+            episode_messages += 1
+
+            try:
+                payload = json.loads(raw)
+            except (TypeError, ValueError):
+                self.stats.unparsed += 1
+                continue
+            if not isinstance(payload, dict):
+                self.stats.unparsed += 1
+                continue
+            try:
+                self.handle(payload, received_at)
+            except Exception as exc:  # a bad frame is not fatal
+                self.stats.unparsed += 1
+                self.stats.errors.append(f"{type(exc).__name__}: {exc}")
+                log.warning("pumpfun_ws.handle_failed", error=str(exc))
+            if on_event is not None:
+                on_event(payload)
+
     async def run(
         self,
         max_seconds: float | None = None,
@@ -392,8 +439,13 @@ class PumpPortalStream:
                 stats.attempts += 1
                 episode_started = utcnow()
                 run_id = uuid.uuid4().hex
-                episode_messages = 0
                 episode_error: str | None = None
+                # Counted as a delta rather than returned, because the episode
+                # almost always ends by *raising* out of the read loop — a
+                # returned count would be lost on exactly the paths that need
+                # it, and a socket that delivered ten frames and then dropped
+                # would be recorded as a mute one.
+                messages_before = stats.messages
 
                 try:
                     remaining = (
@@ -410,46 +462,16 @@ class PumpPortalStream:
                         for method in SUBSCRIPTIONS:
                             await socket.send(json.dumps({"method": method}))
 
-                        while True:
-                            stop = data_budget()
-                            if stop is not None:
-                                break
-                            wait = idle_timeout
-                            if deadline is not None:
-                                wait = min(wait, max(0.01, deadline - utcnow().timestamp()))
-                            raw = await asyncio.wait_for(socket.recv(), timeout=wait)
-                            received_at = utcnow()
-                            stats.messages += 1
-                            episode_messages += 1
-                            # A successful frame, not a successful handshake, is
-                            # what proves the endpoint is working. Resetting on
-                            # connect alone would retry a mute socket at full
-                            # speed forever.
-                            attempt = 0
-
-                            try:
-                                payload = json.loads(raw)
-                            except (TypeError, ValueError):
-                                stats.unparsed += 1
-                                continue
-                            if not isinstance(payload, dict):
-                                stats.unparsed += 1
-                                continue
-                            try:
-                                self.handle(payload, received_at)
-                            except Exception as exc:  # a bad frame is not fatal
-                                stats.unparsed += 1
-                                stats.errors.append(f"{type(exc).__name__}: {exc}")
-                                log.warning("pumpfun_ws.handle_failed", error=str(exc))
-                            if on_event is not None:
-                                on_event(payload)
+                        _, stop = await self._read_frames(
+                            socket, data_budget, deadline, idle_timeout, on_event
+                        )
                 except ConnectionClosedOK:
                     # The peer said goodbye properly (close code 1000). That is a
                     # disconnection, not a fault, and recording it as an error
                     # would mark every clean server restart as a failed surface
                     # on the integrity panel. The reconnect is still visible: it
                     # opens a new episode row.
-                    log.debug("pumpfun_ws.closed_cleanly", messages=episode_messages)
+                    log.debug("pumpfun_ws.closed_cleanly", messages=stats.messages - messages_before)
                 except TimeoutError:
                     # Either the idle watchdog or the deadline. Only the former
                     # is a fault; the latter is the run ending normally.
@@ -462,23 +484,32 @@ class PumpPortalStream:
                 except (WebSocketException, OSError) as exc:
                     episode_error = f"{type(exc).__name__}: {exc}"
                     stats.errors.append(episode_error)
-                    if episode_messages == 0:
+                    if stats.messages == messages_before:
                         stats.failed_connections += 1
                     log.warning("pumpfun_ws.connection_failed", error=str(exc))
                 except (KeyboardInterrupt, asyncio.CancelledError):
                     # `asyncio.run` cancels the task rather than raising
                     # KeyboardInterrupt inside it, so both spellings are caught
                     # here for the same reason they are in `Pipeline.collect`.
-                    self._record_episode(run_id, episode_started, episode_messages, "interrupted")
+                    self._record_episode(
+                        run_id, episode_started, stats.messages - messages_before, "interrupted"
+                    )
                     stop = "interrupted"
                     break
 
-                self._record_episode(run_id, episode_started, episode_messages, episode_error)
+                self._record_episode(
+                    run_id, episode_started, stats.messages - messages_before, episode_error
+                )
 
                 stop = stop or dial_budget()
                 if stop is not None:
                     break
 
+                # A delivered frame, not a completed handshake, is what proves
+                # the endpoint works. Resetting on connect alone would redial a
+                # mute socket at full speed forever.
+                if stats.messages > messages_before:
+                    attempt = 0
                 delay = backoff_delay(attempt)
                 attempt += 1
                 if deadline is not None:
