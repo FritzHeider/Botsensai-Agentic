@@ -461,23 +461,29 @@ class AuthenticatedXCollector(XCollector):
         return list(accounts.values())
 
     def _parse_graphql_user(self, node: dict[str, Any]) -> SocialAccount | None:
+        # Same reshape as the tweet author path: X split the user `legacy` blob
+        # into core / relationship_counts / tweet_counts / verification, so
+        # reading `legacy` alone yields no handle and drops the account silently.
+        # `_user_fields` reads both shapes; see its docstring for why the old
+        # behaviour was worse than a plain miss.
         legacy = node.get("legacy") if isinstance(node.get("legacy"), dict) else node
-        handle = legacy.get("screen_name")
+        fields = self._user_fields(node)
+        handle = fields["screen_name"]
         if not handle:
             return None
         return SocialAccount(
             platform=Platform.X,
             handle=str(handle),
             account_id=str(node.get("rest_id") or legacy.get("id_str") or "") or None,
-            created_at=_iso(legacy.get("created_at")),
-            followers=_int(legacy.get("followers_count")),
-            following=_int(legacy.get("friends_count")),
-            post_count=_int(legacy.get("statuses_count")),
-            verified=bool(legacy.get("verified") or node.get("is_blue_verified")),
+            created_at=_iso(fields["created_at"]),
+            followers=_int(fields["followers"]),
+            following=_int(fields["following"]),
+            post_count=_int(fields["post_count"]),
+            verified=bool(fields["verified"] or node.get("is_blue_verified")),
             verified_type=node.get("verified_type") or legacy.get("verified_type"),
-            bio=legacy.get("description"),
-            fast_followers=_int(legacy.get("fast_followers_count")),
-            normal_followers=_int(legacy.get("normal_followers_count")),
+            bio=fields["description"],
+            fast_followers=_int(fields["fast_followers"]),
+            normal_followers=_int(fields["normal_followers"]),
         )
 
     # -- enrichment --------------------------------------------------------- #
@@ -572,7 +578,16 @@ def _walk_for_users(payload: Any, depth: int = 0) -> list[dict[str, Any]]:
             return
         if isinstance(node, dict):
             legacy = node.get("legacy")
-            if isinstance(legacy, dict) and "screen_name" in legacy or "screen_name" in node and "created_at" in node:
+            core = node.get("core")
+            looks_like_user = (
+                # Current shape: handle and creation date live under `core`.
+                (isinstance(core, dict) and "screen_name" in core)
+                # Older shape, still served by some endpoints.
+                or (isinstance(legacy, dict) and "screen_name" in legacy)
+                # Flattened payloads.
+                or ("screen_name" in node and "created_at" in node)
+            )
+            if looks_like_user:
                 found.append(node)
             for value in node.values():
                 walk(value, level + 1)

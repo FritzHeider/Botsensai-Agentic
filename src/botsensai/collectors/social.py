@@ -518,6 +518,53 @@ class XCollector(Collector):
         walk(payload)
         return found
 
+    @staticmethod
+    def _user_fields(user_result: dict[str, Any]) -> dict[str, Any]:
+        """Author attributes, read across both X user-object shapes.
+
+        X removed `legacy` from the user object and split its contents into
+        `core` (screen_name, name, created_at), `relationship_counts` (followers,
+        following), `tweet_counts` (tweets) and `verification` (verified).
+
+        Reading only the old path did not degrade to MISSING — it degraded to a
+        confident falsehood. `rest_id` still resolved, so posts were created with
+        author "unknown", and `mention_author_diversity` then saw one distinct
+        author across 390 posts and reported maximum concentration — a shill
+        fingerprint — at high confidence. Fabricated evidence of manipulation is
+        strictly worse than absence, which is why both shapes are read here and
+        why the caller falls back to the account id rather than to a constant.
+
+        `fast_followers_count` has no home in the new shape at all, so
+        `purchased_follower_signal` stays MISSING on this path. That is the
+        correct outcome, not a gap to paper over.
+        """
+        def sub(key: str) -> dict[str, Any]:
+            value = user_result.get(key)
+            return value if isinstance(value, dict) else {}
+
+        legacy = sub("legacy")
+        core = sub("core")
+        counts = sub("relationship_counts")
+        tweets = sub("tweet_counts")
+        verification = sub("verification")
+        bio = sub("profile_bio")
+
+        def pick(new: Any, old: Any) -> Any:
+            return new if new is not None else old
+
+        return {
+            "screen_name": pick(core.get("screen_name"), legacy.get("screen_name")),
+            "created_at": pick(core.get("created_at"), legacy.get("created_at")),
+            "followers": pick(counts.get("followers"), legacy.get("followers_count")),
+            "following": pick(counts.get("following"), legacy.get("friends_count")),
+            "post_count": pick(tweets.get("tweets"), legacy.get("statuses_count")),
+            "verified": pick(verification.get("verified"), legacy.get("verified")),
+            "description": pick(bio.get("description"), legacy.get("description")),
+            # Present only on the old shape; absent upstream means absent here.
+            "fast_followers": legacy.get("fast_followers_count"),
+            "normal_followers": legacy.get("normal_followers_count"),
+        }
+
     def _parse_graphql_tweet(self, node: dict[str, Any]) -> SocialPost | None:
         legacy = node.get("legacy") if isinstance(node.get("legacy"), dict) else node
         post_id = str(legacy.get("id_str") or node.get("rest_id") or "").strip()
@@ -530,8 +577,12 @@ class XCollector(Collector):
             if isinstance(node.get("core"), dict)
             else {}
         )
-        user_legacy = user_result.get("legacy") or {}
-        handle = user_legacy.get("screen_name") or "unknown"
+        author = self._user_fields(user_result if isinstance(user_result, dict) else {})
+        author_id = str(user_result.get("rest_id") or "") or None
+        # Falling back to the account id keeps distinct authors distinct. A shared
+        # placeholder collapses them into one, which reads downstream as a single
+        # account posting everything — a manufactured shill signal.
+        handle = author["screen_name"] or (f"id:{author_id}" if author_id else "unknown")
         text = str(legacy.get("full_text") or legacy.get("text") or "")
         views = node.get("views") or {}
 
@@ -539,7 +590,7 @@ class XCollector(Collector):
             platform=Platform.X,
             post_id=post_id,
             author=str(handle),
-            author_id=str(user_result.get("rest_id") or "") or None,
+            author_id=author_id,
             as_of=created,
             observed_at=utcnow(),
             text=text,
@@ -553,8 +604,8 @@ class XCollector(Collector):
             reposts=_int(legacy.get("retweet_count")),
             bookmarks=_int(legacy.get("bookmark_count")),
             views=_int(views.get("count")) if isinstance(views, dict) else None,
-            author_followers=_int(user_legacy.get("followers_count")),
-            author_created_at=_iso(user_legacy.get("created_at")),
+            author_followers=_int(author["followers"]),
+            author_created_at=_iso(author["created_at"]),
             mentioned_tokens=extract_cashtags(text),
             source=f"{self.name}:graphql",
         )

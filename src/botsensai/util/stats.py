@@ -128,8 +128,24 @@ def shannon_entropy(counts: Iterable[float], normalize: bool = True) -> float:
     p = arr / arr.sum()
     h = float(-(p * np.log(p)).sum())
     if normalize:
-        h /= math.log(arr.size)
-    return clamp(h)
+        # h/ln(n) is in 0..1 by construction; clamp only absorbs float error.
+        return clamp(h / math.log(arr.size))
+    # Unnormalized entropy is unbounded above — n equal categories give ln(n)
+    # nats — so it must NOT be clamped to 1.0. Clamping it silently destroyed
+    # both callers that ask for nats:
+    #
+    #   mention_author_diversity computes exp(h) as "effective voices", so every
+    #   diverse author set collapsed to exp(1.0) = 2.718. Tokens with 7, 32 and
+    #   135 distinct authors all reported "2.7 effective voices" and normalized
+    #   to ~0.175, i.e. the metric could not tell an organic crowd from a
+    #   handful of accounts.
+    #
+    #   engager_age_dispersion divides by ln(REFERENCE_BUCKETS) to keep the
+    #   number of occupied age cohorts in the signal, which the comment there
+    #   calls "the thing that actually distinguishes them". Pinned at 1.0 the
+    #   term became the constant 1/ln(16), so 5 cohorts and 11 cohorts scored
+    #   identically and only modal_share still moved.
+    return max(0.0, h)
 
 
 def effective_number(shares: Iterable[float]) -> float:

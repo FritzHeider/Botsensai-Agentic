@@ -250,3 +250,64 @@ def test_context_windows_never_look_forward():
     assert ctx.trades_within(300.0) == [
         t for t in ctx.trades if (ctx.as_of - t.as_of).total_seconds() <= 300.0
     ]
+
+
+# --------------------------------------------------------------------------- #
+# statistics primitives
+# --------------------------------------------------------------------------- #
+
+
+def test_unnormalized_entropy_is_not_clamped_to_one():
+    """Regression: clamping nats flattened two metrics into near-constants.
+
+    `shannon_entropy(..., normalize=False)` returns nats, which are unbounded
+    above — n equal categories give ln(n). The clamp pinned every diverse
+    distribution to exactly 1.0, so `mention_author_diversity`'s
+    exp(h) "effective voices" was always e = 2.718: tokens with 7, 32 and 135
+    distinct authors all reported 2.7 and normalized to ~0.175.
+    `engager_age_dispersion` lost its cohort-count term the same way.
+    """
+    import math
+
+    from botsensai.util.stats import shannon_entropy
+
+    # 100 equally-active authors carry ln(100) nats, not 1.0.
+    h = shannon_entropy([1.0] * 100, normalize=False)
+    assert h > 4.0, f"nats were clamped: got {h}"
+    assert abs(h - math.log(100)) < 1e-6
+
+    # And the measure must still discriminate between crowd sizes.
+    small = shannon_entropy([1.0] * 5, normalize=False)
+    large = shannon_entropy([1.0] * 135, normalize=False)
+    assert large > small + 2.0, "entropy must separate 5 authors from 135"
+    assert math.exp(small) < math.exp(large)
+
+    # Normalized mode is unchanged and stays inside 0..1.
+    assert 0.0 <= shannon_entropy([1.0] * 100, normalize=True) <= 1.0
+    assert shannon_entropy([1.0] * 100, normalize=True) == pytest.approx(1.0)
+    # A concentrated distribution still scores low.
+    assert shannon_entropy([100.0, 1.0, 1.0], normalize=True) < 0.5
+
+
+def test_author_diversity_separates_a_crowd_from_a_handful():
+    """The metric must rank 40 distinct authors above 3, which the clamp prevented."""
+    from botsensai.metrics import build_registry
+
+    metric = build_registry().get("mention_author_diversity")
+    assert metric is not None
+
+    def ctx_with(author_count: int):
+        ctx = context_for("organic", age_seconds=3600.0)
+        template = ctx.posts[0]
+        ctx.posts = [
+            template.model_copy(
+                update={"post_id": f"p{i}", "author": f"author{i % author_count}"}
+            )
+            for i in range(40)
+        ]
+        return ctx
+
+    few = metric.compute(ctx_with(3))[0]
+    many = metric.compute(ctx_with(40))[0]
+    assert few is not None and many is not None
+    assert many > few, f"40 authors ({many}) must outrank 3 authors ({few})"

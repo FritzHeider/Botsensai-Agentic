@@ -404,6 +404,112 @@ def _search_timeline_envelope(text: str = "gm $CHEEMS", post_id: str = "12345678
     }
 
 
+def test_author_fields_parse_from_the_current_user_shape():
+    """Regression: X moved the user fields and we invented a shill signal.
+
+    X removed `legacy` from the user object, splitting it into core /
+    relationship_counts / tweet_counts / verification. `rest_id` still resolved,
+    so posts were built with author "unknown" rather than being dropped, and
+    `mention_author_diversity` then saw ONE distinct author across 390 posts and
+    returned raw=1.0 — maximum concentration, a shill fingerprint — at high
+    confidence. A parsing miss became fabricated evidence of manipulation, which
+    is worse than the MISSING it should have produced.
+    """
+    from botsensai.collectors.social import XCollector
+
+    node = {
+        "rest_id": "555",
+        "legacy": {
+            "id_str": "555",
+            "full_text": "$CHEEMS to the moon",
+            "created_at": "Wed Jul 29 18:00:00 +0000 2026",
+            "favorite_count": 5,
+        },
+        "core": {
+            "user_results": {
+                "result": {
+                    "rest_id": "777",
+                    # No `legacy` key at all — this is the current shape.
+                    "core": {
+                        "screen_name": "MEMEINSIGHTS1",
+                        "name": "1000X MEME INSIGHTS",
+                        "created_at": "Fri May 21 07:55:09 +0000 2010",
+                    },
+                    "relationship_counts": {"followers": 1172, "following": 1},
+                    "tweet_counts": {"tweets": 145271},
+                    "verification": {"verified": False},
+                }
+            }
+        },
+    }
+
+    post = XCollector()._parse_graphql_tweet(node)
+    assert post is not None
+    assert post.author == "MEMEINSIGHTS1", "handle must come from core.screen_name"
+    assert post.author != "unknown"
+    assert post.author_followers == 1172, "followers must come from relationship_counts"
+    assert post.author_created_at is not None, "engager_age_dispersion needs this"
+    assert post.author_created_at.year == 2010
+
+
+def test_author_fields_still_parse_from_the_legacy_user_shape():
+    """Other endpoints still serve the old shape; both must work."""
+    from botsensai.collectors.social import XCollector
+
+    node = {
+        "rest_id": "556",
+        "legacy": {
+            "id_str": "556",
+            "full_text": "$LOST",
+            "created_at": "Wed Jul 29 18:00:00 +0000 2026",
+        },
+        "core": {
+            "user_results": {
+                "result": {
+                    "rest_id": "778",
+                    "legacy": {
+                        "screen_name": "oldshape",
+                        "created_at": "Mon Jan 05 10:00:00 +0000 2015",
+                        "followers_count": 42,
+                    },
+                }
+            }
+        },
+    }
+    post = XCollector()._parse_graphql_tweet(node)
+    assert post is not None
+    assert post.author == "oldshape"
+    assert post.author_followers == 42
+    assert post.author_created_at is not None
+    assert post.author_created_at.year == 2015
+
+
+def test_unresolvable_author_stays_distinct_per_account():
+    """Two authorless posts must not collapse into one apparent author.
+
+    A shared placeholder is what turned a parse miss into a manufactured
+    single-account signal, so the fallback is the account id.
+    """
+    from botsensai.collectors.social import XCollector
+
+    def node(post_id: str, user_id: str) -> dict:
+        return {
+            "rest_id": post_id,
+            "legacy": {
+                "id_str": post_id,
+                "full_text": "hi",
+                "created_at": "Wed Jul 29 18:00:00 +0000 2026",
+            },
+            "core": {"user_results": {"result": {"rest_id": user_id}}},
+        }
+
+    collector = XCollector()
+    a = collector._parse_graphql_tweet(node("1", "aaa"))
+    b = collector._parse_graphql_tweet(node("2", "bbb"))
+    assert a is not None and b is not None
+    assert a.author != b.author, "distinct accounts must stay distinct"
+
+
 def test_collected_posts_reach_the_metric_that_needs_them(tmp_path):
     """Regression: posts were stored with token_key NULL and were unreadable.
 
