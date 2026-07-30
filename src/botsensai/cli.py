@@ -223,6 +223,111 @@ def sweep(
     asyncio.run(run())
 
 
+@app.command()
+def collect(
+    hours: float = typer.Option(1.0, "--hours", help="How long to keep collecting, in hours."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    interval: float = typer.Option(60.0, help="Seconds between sweeps."),
+    limit: int = typer.Option(60, help="How many launches to pull per discovery pass."),
+    candidates: int = typer.Option(20, help="How many survivors to enrich and score."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Collect continuously for a fixed window, writing a heartbeat every sweep.
+
+    This is the command that builds the corpus. Nothing downstream — coverage,
+    fitting, a walk-forward backtest — means anything until this has been left
+    running for a long time.
+
+    It is built to be boring: a collector that fails costs one surface, a sweep
+    that fails costs one sweep, a sweep that hangs is cut off at its budget, and
+    Ctrl-C stops the loop with everything collected so far already committed.
+    Every sweep writes a row to `collector_runs` whether it worked or not, so
+    the time the daemon was *not* running is recoverable afterwards instead of
+    being silently indistinguishable from a quiet market.
+    """
+    settings = _settings(config, log_level)
+    if settings.trading_mode is TradingMode.LIVE:
+        console.print("[red]refusing to collect in live mode; this build cannot trade[/red]")
+        raise typer.Exit(2)
+    _banner(settings)
+
+    db = Database(settings.path(settings.db_path))
+    before = db.counts()
+    console.print(
+        f"collecting for {hours:g}h, one sweep every {interval:g}s. "
+        f"store holds {before['launches']} launches. Ctrl-C to stop early.\n"
+    )
+
+    def show(report: Any) -> None:
+        summary = report.summary()
+        stamp = report.started_at.strftime("%H:%M:%S")
+        note = ""
+        if summary["degraded_surfaces"]:
+            note = f"  [yellow]degraded: {', '.join(summary['degraded_surfaces'])}[/yellow]"
+        console.print(
+            f"[dim]{stamp}[/dim] {summary['duration_seconds']:>5.1f}s  "
+            f"discovered {summary['discovered']:>3} → screened {summary['screened_in']:>3} → "
+            f"scored {summary['scored']:>3} → entered {summary['entered']}{note}"
+        )
+        for error in summary["errors"]:
+            console.print(f"  [red]{error}[/red]")
+
+    pipeline = Pipeline(settings)
+
+    async def run() -> Any:
+        try:
+            return await pipeline.collect(
+                hours=hours,
+                interval_seconds=interval,
+                discover_limit=limit,
+                max_candidates=candidates,
+                on_report=show,
+            )
+        finally:
+            await pipeline.aclose()
+
+    try:
+        session = asyncio.run(run())
+    except KeyboardInterrupt:
+        # The loop handles Ctrl-C itself; this only catches one that landed
+        # between sweeps. Everything collected is already committed, so the run
+        # still reports rather than dying with a traceback.
+        session = pipeline.last_session
+        if session is None:
+            console.print("[yellow]interrupted before the first sweep[/yellow]")
+            raise typer.Exit(130) from None
+        session.stopped_because = "interrupted"
+        session.finished_at = utcnow()
+    after = db.counts()
+    summary = session.summary()
+
+    table = Table(title="collection session")
+    table.add_column("field")
+    table.add_column("value", justify="right")
+    table.add_row("stopped because", summary["stopped_because"])
+    table.add_row("duration", f"{summary['duration_seconds']:.0f}s")
+    table.add_row("sweeps", f"{summary['sweeps']} ({summary['failed_sweeps']} with errors)")
+    table.add_row("discovered", str(summary["discovered"]))
+    table.add_row("scored", str(summary["scored"]))
+    table.add_row("entered", str(summary["entered"]))
+    for name in ("launches", "market_snapshots", "trades", "holders", "social_posts", "scores"):
+        table.add_row(f"new {name}", f"+{after[name] - before[name]}")
+    console.print(table)
+
+    if summary["degraded_surfaces"]:
+        console.print(f"[yellow]degraded surfaces: {summary['degraded_surfaces']}[/yellow]")
+
+    gaps = db.collection_gaps(tolerance_seconds=max(interval * 3, 120.0))
+    if gaps:
+        console.print(f"\n[yellow]{len(gaps)} collection gap(s) in the heartbeat history:[/yellow]")
+        for gap in gaps[-5:]:
+            console.print(
+                f"  {gap['seconds']:.0f}s with nothing collecting, "
+                f"{gap['after']:%Y-%m-%d %H:%M} → {gap['before']:%H:%M}"
+            )
+    db.close()
+
+
 def _print_sweep(report: Any) -> None:
     summary = report.summary()
     console.print(

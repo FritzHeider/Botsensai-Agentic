@@ -16,13 +16,25 @@ fit on, and fitting on nothing produces confident nonsense.
 Nothing downstream means anything until there is a corpus. This phase is
 unglamorous and is the whole ballgame.
 
-- [ ] **P1-01 — Continuous collection daemon**
+- [x] **P1-01 — Continuous collection daemon**
+  Done 2026-07-30. `botsensai collect --hours N` loops `Pipeline.sweep` until the
+  window closes. Every sweep writes a `collector_runs` heartbeat under
+  `surface="sweep"` — including the ones that failed, hung or were interrupted —
+  and `Database.collection_gaps()` reads those back, which is what makes "the
+  daemon was dead from 03:00" distinguishable from "the market was quiet".
+  Deviation from the description: a sweep is not *started* when the window has
+  less time left than the previous sweep took, instead of being cut off at the
+  deadline. A real sweep takes ~102s, so cutting off would write a failed
+  heartbeat on every single run and leave a permanent false `surface_health`
+  alarm on the dashboard. A hung sweep is still hard-capped at
+  `remaining + 15s`. Reasoning in `.ralph/agent/decisions.md` DEC-001.
+  Consequence: `--hours 0.05` is one sweep, not two.
   Add `botsensai collect --hours N` that runs the pipeline sweep on a loop,
   persists everything, and survives individual collector failures without
   stopping. Must write a heartbeat row to `collector_runs` each sweep so gaps
   are detectable after the fact.
   _Depends on: none._
-  _Accept:_ `timeout 300 python -m botsensai.cli collect --hours 0.05 && python -c "from botsensai.store.db import Database; from botsensai.config import get_settings as g; c=Database(g().path(g().db_path)).counts(); assert c['launches']>50, c; print(c)"` exits 0.
+  _Accept:_ `timeout 300 python -m botsensai.cli collect --hours 0.05 && python -c "from botsensai.store.db import Database; from botsensai.config import get_settings as g; c=Database(g().path(g().db_path)).counts(); assert c['launches']>50, c; print(c)"` exits 0. ✔ 103s, exit 0. One sweep: 166 discovered → 20 screened → 20 scored → 1 entered, `stopped because: deadline`, 0 sweeps with errors. Store 804 → 879 launches, +2855 trades, +246 snapshots, +74 posts. Loop behaviour covered by `python -m pytest tests/test_collect.py -q` (10 passed).
 
 - [ ] **P1-02 — pump.fun new-mint websocket ingestion**
   Subscribe to `wss://pumpportal.fun/api/data` (`subscribeNewToken`,

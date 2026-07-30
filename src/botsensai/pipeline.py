@@ -63,6 +63,22 @@ from botsensai.util.text import tokens as text_tokens
 
 log = get_logger(__name__)
 
+#: Surface name used for the per-sweep heartbeat row in `collector_runs`.
+#: It is not a data surface. It is written once per sweep, whatever happened, so
+#: that a stretch of time with no row in it is provably a stretch of time when
+#: nothing was collecting — which is the only way to tell a quiet market from a
+#: daemon that died at 3am.
+HEARTBEAT_SURFACE = "sweep"
+
+#: A sweep is allowed to overrun the collection deadline by this much before it
+#: is cut off. Without a cap, `collect --hours N` returns whenever the last
+#: sweep happens to finish, which makes it unusable under an external timeout.
+DEADLINE_GRACE_SECONDS = 15.0
+
+#: How many sweep reports a session keeps. A day of one-minute sweeps is 1440
+#: reports; a week is ten thousand. The counters below are exact regardless.
+MAX_RETAINED_REPORTS = 200
+
 
 @dataclass
 class SweepReport:
@@ -96,6 +112,60 @@ class SweepReport:
             "degraded_surfaces": self.degraded_surfaces,
             "errors": self.errors[:5],
             "top_candidates": self.top_candidates[:10],
+        }
+
+
+@dataclass
+class CollectionSession:
+    """What a whole `collect` run did.
+
+    The counters are exact totals over every sweep; `recent` holds only the last
+    `MAX_RETAINED_REPORTS` reports, because a daemon that runs for a week must
+    not accumulate a week of reports in memory to be able to print a summary.
+    """
+
+    started_at: datetime
+    finished_at: datetime | None = None
+    stopped_because: str = "deadline"
+    sweeps: int = 0
+    failed_sweeps: int = 0
+    discovered: int = 0
+    scored: int = 0
+    entered: int = 0
+    exited: int = 0
+    degraded_surfaces: dict[str, int] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    recent: list[SweepReport] = field(default_factory=list)
+
+    def record(self, report: SweepReport) -> None:
+        self.sweeps += 1
+        self.discovered += report.discovered
+        self.scored += report.scored
+        self.entered += report.entered
+        self.exited += report.exited
+        if report.errors:
+            self.failed_sweeps += 1
+        for surface in report.degraded_surfaces:
+            self.degraded_surfaces[surface] = self.degraded_surfaces.get(surface, 0) + 1
+        for error in report.errors:
+            self.errors.append(error)
+        del self.errors[:-MAX_RETAINED_REPORTS]
+        self.recent.append(report)
+        del self.recent[:-MAX_RETAINED_REPORTS]
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "duration_seconds": round(
+                ((self.finished_at or utcnow()) - self.started_at).total_seconds(), 1
+            ),
+            "stopped_because": self.stopped_because,
+            "sweeps": self.sweeps,
+            "failed_sweeps": self.failed_sweeps,
+            "discovered": self.discovered,
+            "scored": self.scored,
+            "entered": self.entered,
+            "exited": self.exited,
+            "degraded_surfaces": dict(self.degraded_surfaces),
         }
 
 
@@ -137,6 +207,9 @@ class Pipeline:
         # Per-token evidence that arrives as a raw collector payload rather than
         # as a stored record, e.g. X's fast-follower classification.
         self._fast_follower_share: dict[str, float] = {}
+        #: The most recent (or in-flight) collection session, for callers that
+        #: need to report on a run that was interrupted rather than returned.
+        self.last_session: CollectionSession | None = None
 
     def _default_collectors(self) -> list[Collector]:
         """Market surfaces first, then social.
@@ -601,22 +674,146 @@ class Pipeline:
         log.info("pipeline.sweep", **report.summary())
         return report
 
+    # -- the collection loop ------------------------------------------------ #
+
+    def record_heartbeat(self, report: SweepReport, run_id: str | None = None) -> None:
+        """Write one `collector_runs` row describing a whole sweep.
+
+        The per-surface rows written by `enrich` say which surface failed. They
+        cannot say that no sweep ran at all — a dead daemon writes nothing, and
+        nothing is indistinguishable from a market where every surface happened
+        to return quietly. This row is written for every sweep including the ones
+        that failed outright, so the sequence of `started_at` values is a record
+        of when the system was actually awake.
+        """
+        self.db.record_run(
+            run_id=run_id or uuid.uuid4().hex,
+            surface=HEARTBEAT_SURFACE,
+            started_at=report.started_at,
+            finished_at=report.finished_at or utcnow(),
+            ok=not report.errors,
+            records=report.discovered,
+            error="; ".join(report.errors)[:500] or None,
+        )
+
+    @staticmethod
+    def _last_sweep_seconds(session: CollectionSession) -> float:
+        """How long the previous sweep took, as the estimate for the next one."""
+        if not session.recent:
+            return 0.0
+        last = session.recent[-1]
+        return ((last.finished_at or utcnow()) - last.started_at).total_seconds()
+
+    async def collect(
+        self,
+        hours: float | None = None,
+        interval_seconds: float = 60.0,
+        discover_limit: int = 60,
+        max_candidates: int = 25,
+        max_sweeps: int | None = None,
+        sweep_timeout: float | None = None,
+        on_report: Any = None,
+    ) -> CollectionSession:
+        """Sweep on a cadence until the deadline, surviving anything a sweep does.
+
+        Three failure modes are contained here rather than allowed to end the
+        run: a sweep that raises, a sweep that hangs, and an operator's Ctrl-C.
+        The first two cost one sweep and are written into the heartbeat so the
+        gap is attributable afterwards; the third stops the loop cleanly with
+        everything collected so far already committed.
+
+        `hours=None` runs until `max_sweeps` is reached, or forever.
+        """
+        session = CollectionSession(started_at=utcnow())
+        # Reachable by the caller even if this never returns normally, so an
+        # interrupted run can still report what it collected.
+        self.last_session = session
+        deadline = session.started_at + timedelta(hours=hours) if hours is not None else None
+        budget_default = (
+            sweep_timeout if sweep_timeout is not None else max(180.0, interval_seconds * 3)
+        )
+
+        while True:
+            if max_sweeps is not None and session.sweeps >= max_sweeps:
+                session.stopped_because = "max_sweeps"
+                break
+            now = utcnow()
+            remaining = (deadline - now).total_seconds() if deadline is not None else None
+            if remaining is not None and remaining <= 0:
+                session.stopped_because = "deadline"
+                break
+            # Do not start a sweep the window has no room for. Cutting one off at
+            # the deadline would write a failed heartbeat every single run, which
+            # would train whoever reads the integrity panel to ignore it — and a
+            # truncated sweep spends its rate-limit budget for a partial result.
+            if (
+                remaining is not None
+                and session.sweeps
+                and remaining < self._last_sweep_seconds(session)
+            ):
+                session.stopped_because = "deadline"
+                break
+
+            budget = budget_default
+            if remaining is not None:
+                budget = min(budget, remaining + DEADLINE_GRACE_SECONDS)
+
+            report = SweepReport(started_at=now)
+            try:
+                report = await asyncio.wait_for(
+                    self.sweep(discover_limit, max_candidates), timeout=budget
+                )
+            except TimeoutError:
+                report.errors.append(f"sweep exceeded its {budget:.0f}s budget and was cut off")
+                report.finished_at = utcnow()
+                log.warning("pipeline.sweep_timeout", budget_seconds=round(budget, 1))
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                # `asyncio.run` delivers Ctrl-C by cancelling the running task,
+                # not by raising KeyboardInterrupt inside it, so both spellings
+                # have to be caught. Neither is re-raised: everything this sweep
+                # wrote is already committed, and the point of catching it is to
+                # close the heartbeat, so that whoever reads this gap back next
+                # week can tell an operator stopping the daemon from a crash.
+                report.errors.append("interrupted before the sweep finished")
+                report.finished_at = utcnow()
+                self.record_heartbeat(report)
+                session.record(report)
+                session.stopped_because = "interrupted"
+                break
+            except Exception as exc:
+                report.errors.append(f"sweep failed: {type(exc).__name__}: {exc}")
+                report.finished_at = utcnow()
+                log.warning("pipeline.sweep_failed", error=str(exc))
+
+            self.record_heartbeat(report)
+            session.record(report)
+            if on_report is not None:
+                on_report(report)
+
+            elapsed = (utcnow() - report.started_at).total_seconds()
+            nap = max(0.0, interval_seconds - elapsed)
+            if deadline is not None:
+                nap = min(nap, max(0.0, (deadline - utcnow()).total_seconds()))
+            if nap > 0:
+                try:
+                    await asyncio.sleep(nap)
+                except (KeyboardInterrupt, asyncio.CancelledError):
+                    session.stopped_because = "interrupted"
+                    break
+
+        session.finished_at = utcnow()
+        log.info("pipeline.collect", **session.summary())
+        return session
+
     async def run_forever(self, interval_seconds: float = 60.0, max_sweeps: int | None = None) -> None:
         """Sweep on a fixed cadence until stopped.
 
         Errors inside a sweep are contained and logged rather than terminating
         the loop; a collector outage should cost one sweep, not the session.
         """
-        sweeps = 0
-        while max_sweeps is None or sweeps < max_sweeps:
-            started = utcnow()
-            try:
-                await self.sweep()
-            except Exception as exc:
-                log.warning("pipeline.sweep_failed", error=str(exc))
-            sweeps += 1
-            elapsed = (utcnow() - started).total_seconds()
-            await asyncio.sleep(max(1.0, interval_seconds - elapsed))
+        await self.collect(
+            hours=None, interval_seconds=interval_seconds, max_sweeps=max_sweeps
+        )
 
 
-__all__ = ["Pipeline", "SweepReport"]
+__all__ = ["CollectionSession", "Pipeline", "SweepReport", "HEARTBEAT_SURFACE"]

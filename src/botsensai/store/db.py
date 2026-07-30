@@ -956,6 +956,44 @@ class Database:
             for r in rows
         ]
 
+    def collection_gaps(
+        self,
+        tolerance_seconds: float,
+        surface: str = "sweep",
+        limit: int = 5000,
+    ) -> list[dict[str, Any]]:
+        """Stretches between consecutive heartbeats longer than `tolerance_seconds`.
+
+        This is the read the heartbeat exists for. A gap here is time the
+        collector was not running, which is the difference between "the market
+        produced nothing" and "the process was dead" — two states that produce
+        an identical corpus and opposite conclusions.
+
+        Measured from one run's `finished_at` to the next run's `started_at`, so
+        a slow sweep is not itself reported as a gap.
+        """
+        rows = self.conn.execute(
+            """SELECT started_at, finished_at FROM (
+                   SELECT started_at, finished_at FROM collector_runs
+                   WHERE surface = ? ORDER BY started_at DESC LIMIT ?
+               ) ORDER BY started_at ASC""",
+            (surface, limit),
+        ).fetchall()
+
+        gaps: list[dict[str, Any]] = []
+        for previous, following in zip(rows, rows[1:], strict=False):
+            ended = previous["finished_at"] or previous["started_at"]
+            seconds = float(following["started_at"]) - float(ended)
+            if seconds > tolerance_seconds:
+                gaps.append(
+                    {
+                        "after": _dt(ended),
+                        "before": _dt(following["started_at"]),
+                        "seconds": round(seconds, 1),
+                    }
+                )
+        return gaps
+
 
 def _b(value: bool | None) -> int | None:
     return None if value is None else int(value)
