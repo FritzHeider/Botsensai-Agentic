@@ -148,3 +148,68 @@ async def test_pipeline_records_a_run_per_surface(tmp_path):
         assert surfaces["pumpfun"]["ok"] is True
     finally:
         store.close()
+
+
+def test_integrity_flags_unreachable_posts():
+    from botsensai.dashboard.integrity import check_integrity
+
+    posts = {"x": {"total": 494, "reachable": 0, "distinct_authors": 40,
+                   "unresolved_authors": 0, "with_views": 494,
+                   "with_bookmarks": 494, "with_author_age": 494}}
+    flags = {f.id: f for f in check_integrity(posts, runs=[], spread={})}
+
+    assert flags["posts_reachable"].level == "alarm"
+    assert "0 of 494" in flags["posts_reachable"].detail
+
+
+def test_integrity_flags_collapsed_authors():
+    from botsensai.dashboard.integrity import check_integrity
+
+    posts = {"x": {"total": 390, "reachable": 390, "distinct_authors": 1,
+                   "unresolved_authors": 390, "with_views": 390,
+                   "with_bookmarks": 390, "with_author_age": 0}}
+    flags = {f.id: f for f in check_integrity(posts, runs=[], spread={})}
+
+    assert flags["author_resolution"].level == "alarm"
+    assert flags["author_ages"].level == "alarm"
+
+
+def test_integrity_flags_a_timed_out_surface():
+    from botsensai.dashboard.integrity import check_integrity
+
+    runs = [
+        {"surface": "x", "ok": False, "records": 0, "error": "enrich timed out"},
+        {"surface": "pumpfun", "ok": True, "records": 40, "error": None},
+    ]
+    flags = {f.id: f for f in check_integrity({}, runs=runs, spread={})}
+
+    assert flags["surface_health"].level == "alarm"
+    assert "x" in flags["surface_health"].detail
+
+
+def test_integrity_flags_a_constant_metric():
+    from botsensai.dashboard.integrity import check_integrity
+
+    spread = {
+        "flat_metric": {"count": 12, "distinct": 1, "min": 0.36, "max": 0.36},
+        "real_metric": {"count": 12, "distinct": 9, "min": 0.05, "max": 0.9},
+    }
+    flags = {f.id: f for f in check_integrity({}, runs=[], spread=spread)}
+
+    assert flags["metric_variance"].level == "alarm"
+    assert "flat_metric" in flags["metric_variance"].detail
+    assert "real_metric" not in flags["metric_variance"].detail
+
+
+def test_integrity_is_quiet_when_everything_is_healthy():
+    from botsensai.dashboard.integrity import check_integrity
+
+    posts = {"x": {"total": 260, "reachable": 260, "distinct_authors": 171,
+                   "unresolved_authors": 0, "with_views": 260,
+                   "with_bookmarks": 260, "with_author_age": 260}}
+    runs = [{"surface": "x", "ok": True, "records": 260, "error": None}]
+    spread = {"m": {"count": 12, "distinct": 8, "min": 0.1, "max": 0.9}}
+
+    flags = check_integrity(posts, runs=runs, spread=spread)
+
+    assert all(f.level == "ok" for f in flags), [f.headline for f in flags if f.level != "ok"]

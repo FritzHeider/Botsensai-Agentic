@@ -461,7 +461,7 @@ wrong for one of the five bugs found on 2026-07-29.
   - `check_integrity(posts: dict, runs: list, spread: dict) -> list[IntegrityFlag]`
   - Levels are exactly `"ok"`, `"warn"`, `"alarm"`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_dashboard.py`:
 
@@ -531,12 +531,12 @@ def test_integrity_is_quiet_when_everything_is_healthy():
     assert all(f.level == "ok" for f in flags), [f.headline for f in flags if f.level != "ok"]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "integrity" -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'botsensai.dashboard'`
 
-- [ ] **Step 3: Create the package marker**
+- [x] **Step 3: Create the package marker**
 
 Create `src/botsensai/dashboard/__init__.py`:
 
@@ -554,7 +554,7 @@ from botsensai.dashboard.integrity import IntegrityFlag, check_integrity
 __all__ = ["IntegrityFlag", "check_integrity"]
 ```
 
-- [ ] **Step 4: Implement the checks**
+- [x] **Step 4: Implement the checks**
 
 Create `src/botsensai/dashboard/integrity.py`:
 
@@ -740,17 +740,17 @@ def _check_metric_variance(spread: dict[str, dict[str, Any]]) -> IntegrityFlag:
     )
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "integrity" -v`
 Expected: 5 passed
 
-- [ ] **Step 6: Run the full suite and linter**
+- [x] **Step 6: Run the full suite and linter**
 
 Run: `python3 -m pytest -q && python3 -m ruff check src tests`
 Expected: 135 passed, "All checks passed!"
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/botsensai/dashboard/ tests/test_dashboard.py
