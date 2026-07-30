@@ -14,7 +14,15 @@ from botsensai.store.db import Database
 #: Scores written before this instant were produced by a collection path with
 #: known-wrong author parsing, which penalised every token for fabricated author
 #: concentration. They are displayed, but never as a baseline.
-CONTAMINATED_BEFORE = datetime(2026, 7, 30, 0, 0, tzinfo=UTC)
+#:
+#: Anchored on evidence, not on a round number or a commit timestamp. The sweep
+#: at 2026-07-30T04:15:11Z is the first whose posts carry resolved authors — 171
+#: distinct across 260 posts, zero "unknown". The preceding sweep at 03:24:09Z
+#: still recorded every author as "unknown", which made
+#: mention_author_diversity report one account posting everything. A commit
+#: timestamp would be the wrong anchor: the fix was on disk and in effect for
+#: the 04:15 sweep roughly six minutes before it was committed.
+CONTAMINATED_BEFORE = datetime(2026, 7, 30, 4, 15, tzinfo=UTC)
 
 
 def build_snapshot(settings: Settings, db: Database) -> dict[str, Any]:
