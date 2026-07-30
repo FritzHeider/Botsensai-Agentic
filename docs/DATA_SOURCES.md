@@ -117,8 +117,41 @@ proprietary labels for your core signal means your edge is on loan.
 
 - `wss://pumpportal.fun/api/data` — send `{"method":"subscribeNewToken"}` or
   `{"method":"subscribeMigration"}`. No auth for those two; an API key is
-  required for per-token and per-account trade streams. New-mint events carry
-  `signature`, `mint`, `traderPublicKey`, `txType`, `initialBuy`, `solAmount`.
+  required for per-token and per-account trade streams. Each subscription is
+  acknowledged with a `{"message": "..."}` frame before any data arrives.
+
+  Full create-event shape, captured live 2026-07-30 — the last eight fields are
+  not in pumpportal's own documentation:
+
+  ```json
+  {"signature": "4Lhz…", "mint": "97QU…pump", "traderPublicKey": "HpAR…",
+   "txType": "create", "initialBuy": 27534883.660147, "solAmount": 0.790123455,
+   "bondingCurveKey": "Cm7t…", "vTokensInBondingCurve": 1045465116.339853,
+   "vSolInBondingCurve": 30.790123454, "marketCapSol": 29.451124646,
+   "name": "Smooth Like Butter", "symbol": "SLB", "uri": "https://ipfs.io/…",
+   "is_mayhem_mode": false, "pool": "pump"}
+  ```
+
+  **There is no timestamp in the frame.** No `created_timestamp`, no
+  `blockTime`, nothing. A stream-discovered launch can therefore only record its
+  receipt time as `created_at`, which is an upper bound on the mint time;
+  `frontend-api-v3/coins` remains the only source of the authoritative
+  `created_timestamp`. `Database.upsert_launch` keeps the minimum of the two so
+  the approximation is corrected as soon as a sweep corroborates it, and
+  `Database.observation_latency()` reports corroborated rows separately from the
+  total so an uncorroborated zero is never averaged in as a measurement.
+
+  `solAmount` on a create event is the deployer buying their own token in the
+  mint transaction — this is the cheapest source of `dev_buy_sol` in the system,
+  and the REST listing does not carry it at all. `vTokensInBondingCurve` is a
+  *virtual reserve* and is not a supply figure; do not populate
+  `initial_supply` from it. Every number in the frame is denominated in SOL.
+
+  Measured value, 2026-07-30, over 57 mints taken off the socket and then
+  corroborated by one REST sweep: **median 1.31s from mint to first observation,
+  p90 1.73s**, against **88.6s median** for the same store's 887 poller-first
+  launches. All 57 were novel — the socket beat the poller every time.
+  Rate: roughly 30 create events per minute. Read by `botsensai stream`.
 - `wss://livechat.pump.fun/socket.io/?EIO=4&transport=websocket` — Socket.IO v4.
   **This is the reply/comment system**; the old REST `/replies/{mint}` is gone.
   Aggressive per-IP connection throttling was observed: a second connection

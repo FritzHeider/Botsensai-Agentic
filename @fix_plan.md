@@ -36,13 +36,43 @@ unglamorous and is the whole ballgame.
   _Depends on: none._
   _Accept:_ `timeout 300 python -m botsensai.cli collect --hours 0.05 && python -c "from botsensai.store.db import Database; from botsensai.config import get_settings as g; c=Database(g().path(g().db_path)).counts(); assert c['launches']>50, c; print(c)"` exits 0. ✔ 103s, exit 0. One sweep: 166 discovered → 20 screened → 20 scored → 1 entered, `stopped because: deadline`, 0 sweeps with errors. Store 804 → 879 launches, +2855 trades, +246 snapshots, +74 posts. Loop behaviour covered by `python -m pytest tests/test_collect.py -q` (10 passed).
 
-- [ ] **P1-02 — pump.fun new-mint websocket ingestion**
+- [x] **P1-02 — pump.fun new-mint websocket ingestion**
+  Done 2026-07-30. `botsensai stream --minutes N` subscribes to
+  `subscribeNewToken` and `subscribeMigration` on `wss://pumpportal.fun/api/data`
+  and writes each mint on arrival. **Measured on the real store: median latency
+  to first observation fell from 88.6s to 1.31s** (p90 1.73s, fastest 0.62s),
+  over 57 mints taken off the socket in 120s and then corroborated by one REST
+  sweep. All 57 were novel — the socket beat the poller every time.
+  Three things the task description did not anticipate:
+  1. **The frame carries no timestamp.** No `created_timestamp`, no `blockTime`.
+     A stream-discovered launch can only record its receipt time, which is an
+     *upper bound* on the mint time, so "latency to first observation" is not
+     measurable from the stream alone. It is measurable from the two paths
+     together, which forced (2).
+  2. `upsert_launch` now takes `MIN(...)` of both `created_at` and `observed_at`
+     instead of letting the first writer pin them. Without it the socket's
+     approximate `created_at` would displace the REST path's authoritative
+     `created_timestamp` permanently and skew every age screen and
+     `age_seconds` metric. `observed_at` is unchanged in effect (the first
+     write was always the earliest) but is now explicit about why.
+  3. `Database.observation_latency()` reports `measured` separately from
+     `launches`. A socket-discovered row starts at exactly zero latency because
+     nothing yet knows when it was minted; averaging those in would have
+     manufactured a spectacular fictional figure. They join `measured` when a
+     sweep corroborates them.
+  Run it as a second process alongside `collect` — the store is WAL sqlite and
+  takes concurrent writers, and keeping them apart means a socket outage cannot
+  disturb the sweep loop's deadline handling (DEC-001). Wiring the stream *into*
+  `collect` is deliberately left undone.
+  Also fixed en route: `backoff_delay` raised the factor to the attempt count
+  before clamping, so `2.0 ** 1024` raised `OverflowError` — a crash in exactly
+  the situation reconnecting exists for. Found by a test, not by reading.
   Subscribe to `wss://pumpportal.fun/api/data` (`subscribeNewToken`,
   `subscribeMigration`) and write launches the instant they mint rather than up
   to a poll interval late. Reconnect with exponential backoff. Latency to first
   observation is the point: record it.
   _Depends on: P1-01._
-  _Accept:_ `python -m pytest tests/test_ws_ingest.py -q` exits 0 (test uses a local fake websocket server, not the live endpoint).
+  _Accept:_ `python -m pytest tests/test_ws_ingest.py -q` exits 0 (test uses a local fake websocket server, not the live endpoint). ✔ 13 passed. Live check beyond the plan's requirement: `python -m botsensai.cli stream --minutes 2` exit 0, 1 connection, 60 frames, 57 mints (57 novel), 1 migration, 0 unparsed, store 1021 → 1078 launches.
 
 - [ ] **P1-03 — Outcome labeller**
   Add `botsensai label --min-age-hours 24` that walks launches older than the

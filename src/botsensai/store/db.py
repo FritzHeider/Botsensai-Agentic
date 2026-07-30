@@ -383,6 +383,19 @@ class Database:
                        website, twitter, telegram, initial_supply, dev_buy_sol, source)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(token_key) DO UPDATE SET
+                       -- Both timestamps take the minimum, and neither is a
+                       -- detail. The websocket ingester learns of a mint before
+                       -- anything else does but is given no mint time by the
+                       -- feed, so it writes its receipt time — an upper bound.
+                       -- Letting the first writer pin `created_at` would leave
+                       -- that approximation in place permanently and skew every
+                       -- age screen; taking the minimum lets the REST path's
+                       -- authoritative `created_timestamp` correct it. And
+                       -- `observed_at` must be the *earliest* observation for
+                       -- the latency measurement to mean anything, so a later
+                       -- sweep re-seeing a token must not push it forward.
+                       created_at=MIN(excluded.created_at, launches.created_at),
+                       observed_at=MIN(excluded.observed_at, launches.observed_at),
                        symbol=COALESCE(excluded.symbol, launches.symbol),
                        name=COALESCE(excluded.name, launches.name),
                        deployer=COALESCE(excluded.deployer, launches.deployer),
@@ -993,6 +1006,64 @@ class Database:
                     }
                 )
         return gaps
+
+    def observation_latency(self, since: datetime | None = None) -> dict[str, dict[str, Any]]:
+        """Per-source time from mint to the first time Botsensai saw the token.
+
+        `source` on a launch row is the collector that *created* it and is never
+        overwritten by a later upsert, so grouping by it answers the question the
+        websocket work exists to answer: which surface got there first, and by
+        how much did it beat the poller.
+
+        Two counts are reported and they are not interchangeable:
+
+        * `launches` — every row this source discovered.
+        * `measured` — the subset with `created_at < observed_at`, i.e. those
+          whose mint time came from somewhere other than the observation itself.
+
+        The distinction is the whole point. The pumpportal feed carries no mint
+        timestamp, so a websocket-discovered token starts life with
+        `created_at == observed_at` and a latency of exactly zero — not because
+        it was seen instantly, but because nothing yet knows when it was minted.
+        Those rows are excluded from the percentiles rather than averaged in as
+        zeroes, which would manufacture a spectacular and completely fictional
+        latency figure. They join `measured` once the REST path corroborates the
+        mint time, which `upsert_launch` folds in with a MIN.
+
+        Percentiles are computed here rather than in SQL because sqlite has no
+        median, and the alternative — an average — is meaningless over a
+        distribution with a tail this long.
+        """
+        clause = "WHERE observed_at >= ?" if since is not None else ""
+        params: tuple[Any, ...] = (_ts(since),) if since is not None else ()
+        rows = self.conn.execute(
+            f"SELECT source, created_at, observed_at FROM launches {clause}", params
+        ).fetchall()
+
+        buckets: dict[str, list[float]] = {}
+        totals: dict[str, int] = {}
+        for row in rows:
+            source = row["source"] or "unknown"
+            totals[source] = totals.get(source, 0) + 1
+            seconds = float(row["observed_at"]) - float(row["created_at"])
+            if seconds > 0:
+                buckets.setdefault(source, []).append(seconds)
+
+        def percentile(values: list[float], fraction: float) -> float:
+            index = min(len(values) - 1, max(0, int(round(fraction * (len(values) - 1)))))
+            return values[index]
+
+        report: dict[str, dict[str, Any]] = {}
+        for source, count in sorted(totals.items(), key=lambda kv: -kv[1]):
+            measured = sorted(buckets.get(source, []))
+            report[source] = {
+                "launches": count,
+                "measured": len(measured),
+                "median_seconds": round(percentile(measured, 0.5), 2) if measured else None,
+                "p90_seconds": round(percentile(measured, 0.9), 2) if measured else None,
+                "fastest_seconds": round(measured[0], 2) if measured else None,
+            }
+        return report
 
 
 def _b(value: bool | None) -> int | None:

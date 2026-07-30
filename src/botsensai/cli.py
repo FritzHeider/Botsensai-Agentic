@@ -328,6 +328,93 @@ def collect(
     db.close()
 
 
+@app.command()
+def stream(
+    minutes: float = typer.Option(10.0, "--minutes", help="How long to stay subscribed."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    url: str = typer.Option(None, help="Override the websocket endpoint (testing)."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Take pump.fun mints off the websocket instead of waiting for the next poll.
+
+    `collect` discovers by polling `frontend-api-v3/coins` once a sweep, so at a
+    one-minute cadence a token is on average thirty seconds old before this
+    system has heard of it. This command subscribes to the mint firehose and
+    writes each launch on arrival.
+
+    It is meant to be run *alongside* `collect`, as a second process — the store
+    is a WAL sqlite and takes concurrent writers, and keeping the two apart means
+    a socket outage cannot disturb the sweep loop's deadline handling. Whichever
+    path sees a token first supplies its `observed_at`; whichever supplies the
+    earlier `created_at` wins that, which is how the latency below is measured.
+    """
+    from botsensai.collectors.pumpfun_ws import PUMPPORTAL_WS, WS_SURFACE, PumpPortalStream
+
+    settings = _settings(config, log_level)
+    _banner(settings)
+
+    db = Database(settings.path(settings.db_path))
+    before = db.counts()
+    endpoint = url or PUMPPORTAL_WS
+    console.print(
+        f"streaming {endpoint} for {minutes:g} minute(s). "
+        f"store holds {before['launches']} launches. Ctrl-C to stop early.\n"
+    )
+
+    ws = PumpPortalStream(settings, db=db, url=endpoint)
+
+    async def run() -> Any:
+        return await ws.run(max_seconds=minutes * 60.0)
+
+    try:
+        stats = asyncio.run(run())
+    except KeyboardInterrupt:
+        # Same split as `collect`: the loop catches the cancellation asyncio.run
+        # delivers, and this only catches one that landed outside it.
+        stats = ws.stats
+        stats.stopped_because = "interrupted"
+
+    summary = stats.summary()
+    after = db.counts()
+
+    table = Table(title="stream session")
+    table.add_column("field")
+    table.add_column("value", justify="right")
+    table.add_row("stopped because", summary["stopped_because"])
+    table.add_row("duration", f"{summary['duration_seconds']:.0f}s")
+    table.add_row("connections", f"{summary['connections']} ({summary['failed_connections']} failed)")
+    table.add_row("messages", str(summary["messages"]))
+    table.add_row("mints", f"{summary['launches']} ({summary['novel_mints']} not already stored)")
+    table.add_row("migrations", str(summary["migrations"]))
+    table.add_row("unparsed frames", str(summary["unparsed"]))
+    for name in ("launches", "market_snapshots"):
+        table.add_row(f"new {name}", f"+{after[name] - before[name]}")
+    console.print(table)
+
+    for error in summary["errors"]:
+        console.print(f"[yellow]{error}[/yellow]")
+
+    latency = db.observation_latency()
+    if latency:
+        table = Table(title="latency to first observation, by discovering surface")
+        table.add_column("source")
+        table.add_column("launches", justify="right")
+        table.add_column("measured", justify="right")
+        table.add_column("median", justify="right")
+        table.add_column("p90", justify="right")
+        for source, row in latency.items():
+            median = f"{row['median_seconds']:.0f}s" if row["median_seconds"] is not None else "—"
+            p90 = f"{row['p90_seconds']:.0f}s" if row["p90_seconds"] is not None else "—"
+            table.add_row(source, str(row["launches"]), str(row["measured"]), median, p90)
+        console.print(table)
+        console.print(
+            "[dim]measured counts only tokens whose mint time came from somewhere other than "
+            f"the observation itself. The {WS_SURFACE} feed carries no timestamp, so its rows "
+            "join that column once a REST sweep corroborates them.[/dim]"
+        )
+    db.close()
+
+
 def _print_sweep(report: Any) -> None:
     summary = report.summary()
     console.print(

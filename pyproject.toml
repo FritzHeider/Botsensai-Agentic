@@ -31,6 +31,10 @@ dependencies = [
     "python-dateutil>=2.9",
     "PyYAML>=6.0",
     "jinja2>=3.1",
+    # The pump.fun mint firehose is a websocket and httpx does not speak one.
+    # Pure Python, no build step, no transitive weight — this is the cheapest
+    # way to stop discovering tokens a poll interval late.
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]
