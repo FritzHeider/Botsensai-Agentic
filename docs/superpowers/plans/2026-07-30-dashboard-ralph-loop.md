@@ -77,4 +77,6 @@ a server, read an API key, or send data anywhere.
 The run is complete when every checkbox in the plan file is ticked, all
 acceptance commands above exit 0, and the work is committed.
 
-TASK_COMPLETE
+Only when all three are true, output `TASK_COMPLETE` as the final line of your
+response. Do not output it in any other circumstance — it ends the run, and
+emitting it early strands the remaining tasks half-built.
