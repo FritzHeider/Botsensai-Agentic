@@ -233,3 +233,119 @@ def test_snapshot_marks_pre_fix_scores_as_contaminated(db: Database):
     assert snap["contaminated_before"] == CONTAMINATED_BEFORE
     assert snap["families"], "metric families must be present"
     assert "integrity" in snap
+
+
+def _minimal_snapshot() -> dict:
+    return {
+        "generated_at": utcnow(),
+        "mode": "static",
+        "trading_mode": "paper",
+        "candidates": [
+            {"token_key": "solana:" + "1" * 44, "symbol": "CHEEMS", "composite": 0.59,
+             "coverage": 0.39, "regime": "hot", "vetoes": ["mint_authority_live"],
+             "refused": True, "as_of": utcnow(), "contaminated": True,
+             "explanation": "REJECTED (mint authority live)"},
+        ],
+        "families": {"social_authenticity": {"total": 9, "measured": 5, "metric_ids": []}},
+        "integrity": [
+            {"id": "posts_reachable", "level": "alarm",
+             "headline": "No collected post is readable by any metric",
+             "detail": "0 of 494 posts carry a token_key."},
+        ],
+        "posts": {},
+        "counts": {"social_posts": 494, "outcomes": 0},
+        "runs": [],
+        "weights_version": "v0",
+        "entry_threshold": 0.68,
+        "min_coverage": 0.5,
+        "labelled_outcomes": 0,
+        "contaminated_before": utcnow(),
+    }
+
+
+def test_render_produces_a_self_contained_page():
+    from botsensai.dashboard.render import render_html
+
+    html = render_html(_minimal_snapshot())
+
+    assert "<html" in html
+    assert len(html) > 5000
+    assert "http://" not in html
+    assert 'src="https://' not in html
+    assert 'href="https://' not in html
+    assert "UNVALIDATED" in html
+    assert "0 labelled outcomes" in html
+
+
+def test_render_shows_integrity_alarms_and_contamination():
+    from botsensai.dashboard.render import render_html
+
+    html = render_html(_minimal_snapshot())
+
+    assert "No collected post is readable by any metric" in html
+    assert "PRE-FIX" in html
+    assert "mint_authority_live" in html
+
+
+def test_render_shows_an_unmeasured_family_as_absent_not_zero():
+    """A family with nothing measured must not read as a zero score.
+
+    Asserting on the rendered family row rather than on any static template
+    text: a test that passes because the word MISSING appears somewhere in the
+    stylesheet proves nothing.
+    """
+    import re
+
+    from botsensai.dashboard.render import render_html
+
+    snap = _minimal_snapshot()
+    snap["families"] = {"social_authenticity": {"total": 9, "measured": 0,
+                                                "metric_ids": []}}
+    html = render_html(snap)
+
+    assert "0/9" in html, "must state how many of the family were measured"
+    # The bar for an unmeasured family must be empty, not absent or full.
+    assert re.search(r'<i style="width:0%"></i>', html)
+    assert "MISSING, not zero" in html
+
+
+def test_render_marks_every_pre_fix_candidate():
+    """Contamination marking must be per-row, not a page-level note."""
+    from botsensai.dashboard.render import render_html
+
+    snap = _minimal_snapshot()
+    snap["candidates"].append({
+        "token_key": "solana:" + "2" * 44, "symbol": "CLEAN", "composite": 0.4,
+        "coverage": 0.5, "regime": "hot", "vetoes": [], "refused": True,
+        "as_of": utcnow(), "contaminated": False, "explanation": None,
+    })
+    html = render_html(snap)
+
+    assert html.count("PRE-FIX") == 1, "only the contaminated row may be marked"
+
+
+def test_render_escapes_store_supplied_strings():
+    """Nothing read out of the store may reach the page as live markup.
+
+    `select_autoescape(["html"])` matches on the filename suffix and
+    `dashboard.html.j2` ends in `.j2`, so it silently disables escaping. Post
+    authors, token symbols and collector error text are attacker-supplied, and
+    an injected remote <img> would also defeat the no-external-assets rule.
+    """
+    from botsensai.dashboard.render import render_html
+
+    snap = _minimal_snapshot()
+    snap["integrity"] = [{
+        "id": "posts_reachable", "level": 'x"><script>alert(1)</script>',
+        "headline": "<script>alert(1)</script>",
+        "detail": '<img src="https://evil.test/pixel">',
+    }]
+    html = render_html(snap)
+
+    assert "<script>" not in html
+    assert "<img" not in html
+    # The hostile URL may survive as inert escaped text; what must not survive
+    # is a live attribute the browser would fetch.
+    assert 'src="https://evil.test' not in html
+    assert 'href="https://evil.test' not in html
+    assert "&lt;script&gt;" in html, "the text must still be shown, escaped"

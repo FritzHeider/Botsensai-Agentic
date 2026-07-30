@@ -918,7 +918,7 @@ git commit -m "feat: build the dashboard snapshot"
 - Consumes: `build_snapshot`'s dict.
 - Produces: `render_html(snapshot: dict[str, Any]) -> str`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_dashboard.py`:
 
@@ -1012,12 +1012,12 @@ def test_render_marks_every_pre_fix_candidate():
     assert html.count("PRE-FIX") == 1, "only the contaminated row may be marked"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "render" -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'botsensai.dashboard.render'`
 
-- [ ] **Step 3: Create the template**
+- [x] **Step 3: Create the template**
 
 Create `src/botsensai/dashboard/templates/dashboard.html.j2`:
 
@@ -1163,7 +1163,7 @@ footer{padding:10px 16px;color:var(--dim);border-top:1px solid var(--line)}
 </html>
 ```
 
-- [ ] **Step 4: Implement the renderer**
+- [x] **Step 4: Implement the renderer**
 
 Create `src/botsensai/dashboard/render.py`:
 
@@ -1202,7 +1202,7 @@ def render_html(snapshot: dict[str, Any]) -> str:
 __all__ = ["render_html"]
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "render" -v`
 Expected: 3 passed
@@ -1217,7 +1217,7 @@ shown are single proportions. If a later panel needs a real chart — a
 distribution, a time series — load the `dataviz` skill before writing it, as the
 spec requires.
 
-- [ ] **Step 6: Ensure the template ships with the package**
+- [x] **Step 6: Ensure the template ships with the package**
 
 Check `pyproject.toml` for a `[tool.setuptools.package-data]` section. If absent,
 add:
@@ -1227,18 +1227,50 @@ add:
 botsensai = ["dashboard/templates/*.j2"]
 ```
 
-- [ ] **Step 7: Run the full suite and linter**
+- [x] **Step 7: Run the full suite and linter**
 
 Run: `python3 -m pytest -q && python3 -m ruff check src tests`
 Expected: 139 passed, "All checks passed!"
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/botsensai/dashboard/render.py src/botsensai/dashboard/templates/ \
         tests/test_dashboard.py pyproject.toml
 git commit -m "feat: render the static dashboard"
 ```
+
+**Deviations taken in Task 5, and why:**
+
+1. **`autoescape=True`, not `select_autoescape(["html"])`.** The plan's spelling
+   is a live XSS hole: `select_autoescape` matches on filename suffix, and
+   `dashboard.html.j2` ends in `.j2`, so it returns `False` and escaping is
+   silently off. Verified directly. Almost every string on the page is
+   store-sourced and attacker-supplied in practice (post author, token symbol,
+   collector error), and an injected `<img src="https://…">` would also defeat
+   the no-external-assets rule this artifact exists to satisfy. Pinned by a new
+   test, `test_render_escapes_store_supplied_strings`.
+2. **Two panels added: "Collector runs" and "Social posts by platform".** The
+   plan's template renders neither `snap.runs` nor `snap.posts`, so Task 2 —
+   which exists solely to make a timed-out surface visible — had no output path,
+   and the spec's panel list (line 111) and bug-3/bug-2 checks were unrepresented.
+   Also gave the integrity panel an empty state, per the spec's "empty panels
+   state why and print the command that would populate them".
+3. **Step 5's "3 passed" is 4** — the plan's own Step 1 block defines four
+   `render` tests. With the escaping regression added it is 5.
+4. **Step 6 needed no edit.** `pyproject.toml` builds with **hatchling**, not
+   setuptools, so `[tool.setuptools.package-data]` would have been dead config.
+   Hatchling's `packages = ["src/botsensai"]` already ships non-Python files;
+   confirmed by building a wheel and finding
+   `botsensai/dashboard/templates/dashboard.html.j2` inside it.
+5. **Step 7's "139 passed" is 141** (136 before this task, +5 render tests).
+
+**Hazard for Task 6 Step 6:** the acceptance grep is `grep -c "http://\|https://"`
+over the artifact. Escaped-but-inert URLs still match it. Nothing emits one today
+(a fresh store renders zero URLs), but `collector_runs.error` is free text and a
+transport error routinely embeds the request URL — e.g. the configured
+`solana_rpc_url`. If Step 6 finds a URL, it will be in a run error string, and
+the fix belongs in the template's error cell, not in the grep.
 
 ---
 
