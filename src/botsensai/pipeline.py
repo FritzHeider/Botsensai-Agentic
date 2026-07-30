@@ -280,8 +280,12 @@ class Pipeline:
         self.db.insert_holders(combined.holders)
         for report in combined.security:
             self.db.insert_security(report)
-        for post in combined.posts:
-            self.db.insert_posts([post])
+        # Each post carries the token it was collected for, so this must be a
+        # single call that lets `insert_posts` read `post.token_key`. Passing no
+        # key at all — which this did — wrote every post with token_key NULL,
+        # and `posts_as_of` filters on that column: 494 posts were stored and
+        # none was ever readable by a social metric.
+        self.db.insert_posts(combined.posts)
 
         fast = combined.raw.get("fast_follower_share")
         if isinstance(fast, dict):

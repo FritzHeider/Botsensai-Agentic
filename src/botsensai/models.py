@@ -333,6 +333,13 @@ class SocialPost(Base):
 
     platform: Platform
     post_id: str
+    token_key: str | None = Field(
+        default=None,
+        description="Which token this post was collected for. Without it a post is "
+        "unreachable: metrics read posts via Store.posts_as_of(token_key, ...), which "
+        "filters on this column, so an untagged post is invisible to every social "
+        "metric no matter how complete its contents are.",
+    )
     author: str
     author_id: str | None = None
     as_of: datetime = Field(description="When the post was created")

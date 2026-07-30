@@ -40,7 +40,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from botsensai.collectors.base import CollectionResult, Collector
+from botsensai.collectors.base import CollectionResult, Collector, tag_posts
 from botsensai.collectors.browser import BrowserUnavailableError, get_driver
 from botsensai.config import Settings
 from botsensai.models import (
@@ -489,8 +489,19 @@ class XCollector(Collector):
         """
         found: list[dict[str, Any]] = []
 
+        # The cap has to clear the deepest envelope we actually receive, not a
+        # round number. SearchTimeline nests tweets at depth 12-14:
+        #   data > search_by_raw_query > search_timeline > timeline >
+        #   instructions[] > entries[] > content > itemContent > tweet_results >
+        #   result > legacy
+        # measured live against $CHEEMS: 22 tweet nodes at depths 12-14, and a
+        # cap of 10 returned ZERO of them while reporting no error. That is the
+        # silent-absence failure this module exists to avoid — every
+        # session-gated social metric read MISSING because the walker gave up
+        # two levels short of the data. 16 recovers all of them and saturates
+        # (20 and 24 find nothing further).
         def walk(node: Any, depth: int = 0) -> None:
-            if depth > 10 or len(found) > 600:
+            if depth > 16 or len(found) > 600:
                 return
             if isinstance(node, dict):
                 legacy = node.get("legacy")
@@ -583,7 +594,7 @@ class XCollector(Collector):
                 if symbol and symbol.upper() not in mentions:
                     if not contains_address(post.text) and symbol.lower() not in post.text.lower():
                         continue
-                result.posts.append(post)
+                result.posts.extend(tag_posts([post], token.key))
 
         return result
 
@@ -683,7 +694,7 @@ class RedditCollector(Collector):
                     continue
                 if symbol.upper() not in post.mentioned_tokens:
                     post.mentioned_tokens.append(symbol.upper())
-                result.posts.append(post)
+                result.posts.extend(tag_posts([post], token.key))
         return result
 
 
@@ -809,7 +820,22 @@ class FourChanBizCollector(Collector):
                 for sym in matched:
                     if sym not in social.mentioned_tokens:
                         social.mentioned_tokens.append(sym)
-                result.posts.append(social)
+                # This board is scanned once for every ticker at a time, so a
+                # thread can mention several. `social_posts` is keyed
+                # (platform, post_id, observed_at) with token_key outside the
+                # key, so one post can only be attributed to one token: the
+                # first ticker matched wins, and the rest remain visible through
+                # `mentioned_tokens`. Fanning one post out to several tokens
+                # would need the key widened, which is a schema migration.
+                owner = symbols.get(matched[0]) if matched else None
+                if owner is not None:
+                    result.posts.extend(tag_posts([social], owner.key))
+                else:
+                    # Matched only by mint address, so which token is not known
+                    # here. Left untagged deliberately rather than guessed:
+                    # attributing it to the wrong token would corrupt that
+                    # token's social metrics, which is worse than one lost post.
+                    result.posts.append(social)
 
         return result
 
@@ -902,7 +928,7 @@ class TelegramChannelCollector(Collector):
             for post in posts:
                 if token.symbol and token.symbol.upper() not in post.mentioned_tokens:
                     post.mentioned_tokens.append(token.symbol.upper())
-                result.posts.append(post)
+                result.posts.extend(tag_posts([post], token.key))
 
         # Call channels are token-agnostic: read them once and let the caller
         # match mints out of the message text.
@@ -963,7 +989,7 @@ class PumpFunChatCollector(Collector):
                 continue
 
             for body in page.json_matching(r"(livechat|replies|messages)"):
-                result.posts.extend(self._parse_messages(body, token))
+                result.posts.extend(tag_posts(self._parse_messages(body, token), token.key))
 
         return result
 

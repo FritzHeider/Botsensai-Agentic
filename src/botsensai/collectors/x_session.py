@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from botsensai.collectors.base import CollectionResult
+from botsensai.collectors.base import CollectionResult, tag_posts
 from botsensai.collectors.browser import BrowserUnavailableError, PageResult, WebUseDriver
 from botsensai.collectors.social import XCollector, _int, _iso
 from botsensai.config import BrowserSettings, Settings
@@ -146,6 +146,35 @@ class AuthenticatedXCollector(XCollector):
         # collector runs its own driver rather than sharing the global one.
         self.rpm = float(self.session_settings.requests_per_minute or AUTHENTICATED_RPM)
         self.config.requests_per_minute = max(self.config.requests_per_minute, int(self.rpm))
+        # The base class kills an op at timeout_seconds * (max_retries + 2). The
+        # default 20s allows 100s, and a session enrich cannot finish in that: a
+        # single headed search waits 5s then scrolls four times at 1400ms before
+        # page load is even counted. Measured on a live sweep: enrich was killed
+        # at 100s having stored nothing, while the session verified healthy and
+        # no collector error was logged — the same silent-absence failure as the
+        # walker depth bug, one layer up.
+        self.config.timeout_seconds = max(
+            self.config.timeout_seconds, self._enrich_budget_seconds()
+        )
+
+    def _enrich_budget_seconds(self) -> float:
+        """Per-attempt seconds the base class must allow for a full enrich pass.
+
+        Sized from the work actually configured rather than a round number, so
+        raising `max_tokens_per_sweep` cannot silently reintroduce the timeout.
+
+        Because enrich surfaces run concurrently under `asyncio.gather`, this
+        budget sets the floor on total sweep duration whenever session
+        collection is active — `max_tokens_per_sweep` is the latency dial.
+        """
+        tokens = max(1, int(self.session_settings.max_tokens_per_sweep))
+        # Worst case per token: search, then the thread, then two engager lists.
+        loads_per_token = 4
+        seconds_per_token = 45.0
+        pacing = (tokens * loads_per_token) / max(self.rpm, 1.0) * 60.0
+        verify = 15.0
+        total = verify + tokens * seconds_per_token + pacing
+        return total / max(int(self.config.max_retries) + 2, 1)
 
     # -- profile and driver ------------------------------------------------- #
 
@@ -483,13 +512,13 @@ class AuthenticatedXCollector(XCollector):
             if not posts:
                 result.degraded = True
                 continue
-            result.posts.extend(posts)
+            result.posts.extend(tag_posts(posts, token.key))
 
             # Deepen only the single post most likely to carry the conversation.
             top = max(posts, key=lambda p: (p.replies or 0, p.engagement))
             if (top.replies or 0) >= self.session_settings.reply_threshold:
                 replies = await self.conversation(top.post_id, top.author)
-                result.posts.extend(replies)
+                result.posts.extend(tag_posts(replies, token.key))
                 result.raw.setdefault("reply_text_available", []).append(token.key)
 
             if top.engagement >= self.session_settings.engager_threshold:
@@ -532,8 +561,14 @@ def _walk_for_users(payload: Any, depth: int = 0) -> list[dict[str, Any]]:
     """
     found: list[dict[str, Any]] = []
 
+    # Same depth trap as _walk_for_tweets, same fix. The Favoriters/Retweeters
+    # envelope wraps users in the same instructions/entries/itemContent chain
+    # that buried tweets at depth 12-14, so a cap of 10 cannot reach them
+    # either. Not measured live (it needs a post with enough engagers to load
+    # those lists), so this is the tweet-side measurement applied to an
+    # identically-shaped envelope rather than an independently verified number.
     def walk(node: Any, level: int = 0) -> None:
-        if level > 10 or len(found) > 600:
+        if level > 16 or len(found) > 600:
             return
         if isinstance(node, dict):
             legacy = node.get("legacy")

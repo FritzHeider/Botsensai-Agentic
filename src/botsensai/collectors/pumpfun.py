@@ -34,7 +34,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from botsensai.collectors.base import CollectionResult, Collector
+from botsensai.collectors.base import CollectionResult, Collector, tag_posts
 from botsensai.config import Settings
 from botsensai.models import (
     Chain,
@@ -436,7 +436,7 @@ class PumpFunCollector(Collector):
                     result.raw.setdefault("livestreams", {})[mint] = stream
                     post = self._stream_to_post(stream, token)
                     if post is not None:
-                        result.posts.append(post)
+                        result.posts.extend(tag_posts([post], token.key))
             except Exception as exc:
                 log.debug("pumpfun.livestream_failed", mint=mint, error=str(exc))
 

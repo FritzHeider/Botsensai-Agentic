@@ -528,11 +528,18 @@ class Database:
             )
 
     def insert_posts(self, posts: Iterable[SocialPost], token_key: str | None = None) -> int:
+        """Store posts, tagged with the token they were collected for.
+
+        `token_key` overrides for callers that hold one token's posts; otherwise
+        each post's own `token_key` is used. One of the two must be present or the
+        row is written unreachable — `posts_as_of` filters on this column, so an
+        untagged post can never be read back by a metric.
+        """
         rows = [
             (
                 p.platform.value,
                 p.post_id,
-                token_key,
+                token_key if token_key is not None else p.token_key,
                 p.author,
                 p.author_id,
                 _ts(p.as_of),
@@ -962,6 +969,7 @@ def _row_to_post(row: sqlite3.Row) -> SocialPost:
     return SocialPost(
         platform=Platform(row["platform"]),
         post_id=row["post_id"],
+        token_key=row["token_key"],
         author=row["author"],
         author_id=row["author_id"],
         as_of=_dt(row["as_of"]),  # type: ignore[arg-type]
