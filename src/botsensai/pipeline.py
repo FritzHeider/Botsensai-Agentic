@@ -28,6 +28,7 @@ trades, then reads them back as inputs on the next pass.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -273,6 +274,23 @@ class Pipeline:
 
         tokens = [launch.token for launch in launches]
         results = await self.collectors.sweep_enrich(tokens)
+
+        # Record each surface separately before combining. `combine` folds
+        # everything into one result, which is what made a single surface being
+        # killed by its timeout invisible: the sweep reported "degraded: enrich"
+        # and never said which surface, or that it had produced nothing.
+        run_id = uuid.uuid4().hex
+        for outcome in results:
+            self.db.record_run(
+                run_id=run_id,
+                surface=outcome.surface,
+                started_at=outcome.started_at,
+                finished_at=outcome.finished_at,
+                ok=outcome.ok and not outcome.degraded,
+                records=outcome.record_count,
+                error=outcome.error,
+            )
+
         combined = CollectorRegistry.combine(results, surface="enrich")
 
         self.db.insert_snapshots(combined.snapshots)

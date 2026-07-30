@@ -937,6 +937,25 @@ class Database:
             for r in rows
         }
 
+    def recent_runs(self, limit: int = 40) -> list[dict[str, Any]]:
+        """Latest collector runs, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM collector_runs ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "run_id": r["run_id"],
+                "surface": r["surface"],
+                "started_at": _dt(r["started_at"]),
+                "finished_at": _dt(r["finished_at"]),
+                "ok": bool(r["ok"]),
+                "records": int(r["records"] or 0),
+                "error": r["error"],
+            }
+            for r in rows
+        ]
+
 
 def _b(value: bool | None) -> int | None:
     return None if value is None else int(value)

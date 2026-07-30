@@ -307,7 +307,7 @@ every sweep.
 - Consumes: `CollectionResult` fields `surface`, `started_at`, `finished_at`, `ok`, `degraded`, `error`, and the `record_count` property.
 - Produces: `Database.recent_runs(limit: int = 40) -> list[dict[str, Any]]`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_dashboard.py`:
 
@@ -359,12 +359,12 @@ async def test_pipeline_records_a_run_per_surface(tmp_path):
         store.close()
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "runs" -v`
 Expected: FAIL with `AttributeError: 'Database' object has no attribute 'recent_runs'`
 
-- [ ] **Step 3: Add `recent_runs` to `Database`**
+- [x] **Step 3: Add `recent_runs` to `Database`**
 
 In `src/botsensai/store/db.py`, after `metric_raw_spread`:
 
@@ -389,7 +389,7 @@ In `src/botsensai/store/db.py`, after `metric_raw_spread`:
         ]
 ```
 
-- [ ] **Step 4: Wire the pipeline to record runs**
+- [x] **Step 4: Wire the pipeline to record runs**
 
 In `src/botsensai/pipeline.py`, inside `enrich`, replace:
 
@@ -425,17 +425,17 @@ with:
 Add `import uuid` to the imports at the top of `pipeline.py` if it is not
 already present.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "runs" -v`
 Expected: 2 passed
 
-- [ ] **Step 6: Run the full suite and linter**
+- [x] **Step 6: Run the full suite and linter**
 
 Run: `python3 -m pytest -q && python3 -m ruff check src tests`
 Expected: 130 passed, "All checks passed!"
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/botsensai/store/db.py src/botsensai/pipeline.py tests/test_dashboard.py

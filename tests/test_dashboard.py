@@ -101,3 +101,50 @@ def test_metric_raw_spread_flags_a_constant_metric(db: Database):
     assert spread["always_same"]["distinct"] == 1
     assert spread["always_same"]["count"] == 4
     assert spread["varies"]["distinct"] == 4
+
+
+def test_recent_runs_reports_degraded_surfaces(db: Database):
+    now = utcnow()
+    db.record_run(run_id="r1", surface="x", started_at=now, finished_at=now,
+                  ok=False, records=0, error="enrich timed out")
+    db.record_run(run_id="r1", surface="dexscreener", started_at=now, finished_at=now,
+                  ok=True, records=42, error=None)
+
+    runs = db.recent_runs()
+    by_surface = {r["surface"]: r for r in runs}
+
+    assert by_surface["x"]["ok"] is False
+    assert by_surface["x"]["error"] == "enrich timed out"
+    assert by_surface["x"]["records"] == 0
+    assert by_surface["dexscreener"]["ok"] is True
+    assert by_surface["dexscreener"]["records"] == 42
+
+
+@pytest.mark.asyncio
+async def test_pipeline_records_a_run_per_surface(tmp_path):
+    """Regression: collector_runs was dead code, so a timed-out surface was invisible."""
+    from botsensai.collectors.base import CollectionResult
+    from botsensai.config import Settings
+    from botsensai.pipeline import Pipeline
+
+    settings = Settings()
+    store = Database(str(tmp_path / "runs.db"))
+    pipeline = Pipeline(settings, db=store)
+
+    async def fake_sweep_enrich(tokens):
+        now = utcnow()
+        return [
+            CollectionResult(surface="x", started_at=now, finished_at=now,
+                             ok=False, degraded=True, error="enrich timed out"),
+            CollectionResult(surface="pumpfun", started_at=now, finished_at=now, ok=True),
+        ]
+
+    pipeline.collectors.sweep_enrich = fake_sweep_enrich  # type: ignore[assignment]
+    try:
+        await pipeline.enrich([])
+        surfaces = {r["surface"]: r for r in store.recent_runs()}
+        assert surfaces["x"]["ok"] is False
+        assert surfaces["x"]["error"] == "enrich timed out"
+        assert surfaces["pumpfun"]["ok"] is True
+    finally:
+        store.close()
