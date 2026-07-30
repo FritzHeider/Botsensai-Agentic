@@ -772,7 +772,7 @@ mode and the later served mode render from this, so they cannot disagree.
 - Consumes: `Database.recent_scores`, `.social_post_integrity`, `.metric_raw_spread`, `.recent_runs`, `.counts`; `build_registry()`; `Settings`.
 - Produces: `build_snapshot(settings: Settings, db: Database) -> dict[str, Any]` with top-level keys: `generated_at`, `mode`, `trading_mode`, `candidates`, `families`, `integrity`, `counts`, `runs`, `weights_version`, `entry_threshold`, `min_coverage`, `contaminated_before`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_dashboard.py`:
 
@@ -797,12 +797,12 @@ def test_snapshot_marks_pre_fix_scores_as_contaminated(db: Database):
     assert "integrity" in snap
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "snapshot" -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'botsensai.dashboard.data'`
 
-- [ ] **Step 3: Implement the snapshot builder**
+- [x] **Step 3: Implement the snapshot builder**
 
 Create `src/botsensai/dashboard/data.py`:
 
@@ -888,17 +888,17 @@ def build_snapshot(settings: Settings, db: Database) -> dict[str, Any]:
 __all__ = ["CONTAMINATED_BEFORE", "build_snapshot"]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "snapshot" -v`
 Expected: 1 passed
 
-- [ ] **Step 5: Run the full suite and linter**
+- [x] **Step 5: Run the full suite and linter**
 
 Run: `python3 -m pytest -q && python3 -m ruff check src tests`
 Expected: 136 passed, "All checks passed!"
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/botsensai/dashboard/data.py tests/test_dashboard.py

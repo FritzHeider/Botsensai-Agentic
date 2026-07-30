@@ -213,3 +213,23 @@ def test_integrity_is_quiet_when_everything_is_healthy():
     flags = check_integrity(posts, runs=runs, spread=spread)
 
     assert all(f.level == "ok" for f in flags), [f.headline for f in flags if f.level != "ok"]
+
+
+def test_snapshot_marks_pre_fix_scores_as_contaminated(db: Database):
+    from datetime import UTC, datetime
+
+    from botsensai.config import Settings
+    from botsensai.dashboard.data import CONTAMINATED_BEFORE, build_snapshot
+
+    old = datetime(2026, 7, 28, 12, 0, tzinfo=UTC)
+    db.insert_score(Score(token=_token("OLD", "1"), as_of=old, composite=0.5, coverage=0.4))
+    db.insert_score(Score(token=_token("NEW", "2"), as_of=utcnow(), composite=0.5, coverage=0.4))
+
+    snap = build_snapshot(Settings(), db)
+    by_key = {c["token_key"]: c for c in snap["candidates"]}
+
+    assert by_key["solana:" + "1" * 44]["contaminated"] is True
+    assert by_key["solana:" + "2" * 44]["contaminated"] is False
+    assert snap["contaminated_before"] == CONTAMINATED_BEFORE
+    assert snap["families"], "metric families must be present"
+    assert "integrity" in snap
