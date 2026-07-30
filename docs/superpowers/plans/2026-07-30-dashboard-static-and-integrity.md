@@ -1284,7 +1284,7 @@ the fix belongs in the template's error cell, not in the grep.
 - Consumes: `build_snapshot`, `render_html`, the existing `_settings` helper in `cli.py`.
 - Produces: CLI command `dashboard --out PATH [--config PATH]`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_dashboard.py`:
 
@@ -1306,12 +1306,12 @@ def test_p5_01_acceptance_command(tmp_path):
     assert len(html) > 5000
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "acceptance" -v`
 Expected: FAIL — the CLI exits non-zero with "No such command 'dashboard'"
 
-- [ ] **Step 3: Add the command**
+- [x] **Step 3: Add the command**
 
 In `src/botsensai/cli.py`, add after the `x_session` command:
 
@@ -1355,12 +1355,12 @@ def dashboard(
 Confirm `from pathlib import Path` is already imported at the top of `cli.py`;
 add it if not.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m pytest tests/test_dashboard.py -k "acceptance" -v`
 Expected: 1 passed
 
-- [ ] **Step 5: Run the P5-01 acceptance command by hand**
+- [x] **Step 5: Run the P5-01 acceptance command by hand**
 
 Run:
 ```bash
@@ -1369,7 +1369,7 @@ python -c "import pathlib; h=pathlib.Path('/tmp/dash.html').read_text(); assert 
 ```
 Expected: exit 0, and the command prints any integrity alarms.
 
-- [ ] **Step 6: Confirm the artifact has no external references**
+- [x] **Step 6: Confirm the artifact has no external references**
 
 Run:
 ```bash
@@ -1377,12 +1377,12 @@ grep -c "http://\|https://" /tmp/dash.html || echo "no external references"
 ```
 Expected: "no external references" (grep exits 1 when it finds nothing).
 
-- [ ] **Step 7: Run the full suite and linter**
+- [x] **Step 7: Run the full suite and linter**
 
 Run: `python3 -m pytest -q && python3 -m ruff check src tests`
 Expected: 140 passed, "All checks passed!"
 
-- [ ] **Step 8: Update `@fix_plan.md`**
+- [x] **Step 8: Update `@fix_plan.md`**
 
 Mark P5-01 as done, and note what changed:
 
@@ -1394,12 +1394,32 @@ Mark P5-01 as done, and note what changed:
   Regeneration on every sweep is not wired yet.
 ```
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/botsensai/cli.py tests/test_dashboard.py @fix_plan.md
 git commit -m "feat: add the dashboard CLI command"
 ```
+
+**Deviations taken in Task 6 (2026-07-30):**
+
+1. **Dropped the local `from botsensai.store.db import Database`.** `Database`
+   is already imported at the top of `cli.py` (line 33) and three other commands
+   (`doctor`, `sweep`, `recap`) open it as `Database(settings.path(settings.db_path))`.
+   The function-local re-import in the plan's block was redundant. `build_snapshot`
+   and `render_html` stay local, matching how `x_session` defers its collector import.
+2. **Step 7 predicts 140 passed; actual is 142.** Same +2 offset Task 5 recorded —
+   the plan under-counts its own Step 1 render tests by one and does not include
+   the escaping regression test added in Task 5.
+3. **`--config` pointing at a nonexistent file exits 0 rather than erroring.**
+   That is `_settings`/`load_settings` behaviour shared by every command in
+   `cli.py`, not something this task introduced. Noted, not fixed — out of scope.
+
+Step 6's URL grep found nothing against the **real** store (13,243 bytes,
+1 integrity alarm: `launch_timing_quality` is constant). The risk flagged under
+Task 5 — a transport error embedding `solana_rpc_url` in a `collector_runs.error`
+cell — did not materialise here, but the template's error cell is still where a
+future fix belongs if it ever does.
 
 ---
 

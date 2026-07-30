@@ -203,10 +203,14 @@ a guess. Every task here is worth more than a new metric.
 
 ## Phase 5 — Operate
 
-- [ ] **P5-01 — Live status dashboard**
-  A single self-contained HTML file, regenerated each sweep, showing current
-  candidates with scores and vetoes, open paper positions, collector health,
-  and metric coverage. No server, no build step, no external assets.
+- [x] **P5-01 — Live status dashboard**
+  Done 2026-07-30. `botsensai dashboard --out FILE`. Adds a collection-integrity
+  panel not in the original spec: five silent collection bugs on 2026-07-29
+  motivated making integrity the primary panel rather than scores.
+  Regeneration on every sweep is not wired yet.
+  A single self-contained HTML file, showing current candidates with scores and
+  vetoes, collector runs, social-post reachability, and metric coverage.
+  No server, no build step, no external assets.
   _Depends on: P1-01._
   _Accept:_ `python -m botsensai.cli dashboard --out /tmp/dash.html && python -c "import pathlib; h=pathlib.Path('/tmp/dash.html').read_text(); assert '<html' in h and len(h)>5000"` exits 0.
 

@@ -632,6 +632,41 @@ def x_session(
 
 
 @app.command()
+def dashboard(
+    out: str = typer.Option(..., "--out", help="Where to write the HTML file."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Write a self-contained HTML dashboard.
+
+    One file, no server, no external assets, safe to share. The integrity panel
+    is the point of it: five collection bugs found on 2026-07-29 all presented
+    as a healthy system, and two of them fabricated evidence rather than hiding
+    it. Scores alone would have looked entirely plausible throughout.
+    """
+    from botsensai.dashboard.data import build_snapshot
+    from botsensai.dashboard.render import render_html
+
+    settings = _settings(config, log_level)
+    db = Database(settings.path(settings.db_path))
+    try:
+        snapshot = build_snapshot(settings, db)
+    finally:
+        db.close()
+
+    target = Path(out).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(render_html(snapshot), encoding="utf-8")
+
+    alarms = [f for f in snapshot["integrity"] if f["level"] == "alarm"]
+    console.print(f"wrote {target} ({target.stat().st_size} bytes)")
+    if alarms:
+        console.print(f"[red]{len(alarms)} integrity alarm(s):[/red]")
+        for flag in alarms:
+            console.print(f"  [red]{flag['headline']}[/red] — {flag['detail']}")
+
+
+@app.command()
 def memory(
     config: str = typer.Option(None, help="Path to a config YAML."),
     subject: str = typer.Option(None, help="Filter to one subject (token key, wallet, 'global')."),

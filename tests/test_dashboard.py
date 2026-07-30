@@ -349,3 +349,20 @@ def test_render_escapes_store_supplied_strings():
     assert 'src="https://evil.test' not in html
     assert 'href="https://evil.test' not in html
     assert "&lt;script&gt;" in html, "the text must still be shown, escaped"
+
+
+def test_p5_01_acceptance_command(tmp_path):
+    """The acceptance command from @fix_plan.md P5-01, run verbatim."""
+    import subprocess
+    import sys
+
+    out = tmp_path / "dash.html"
+    result = subprocess.run(
+        [sys.executable, "-m", "botsensai.cli", "dashboard", "--out", str(out)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    html = out.read_text()
+    assert "<html" in html
+    assert len(html) > 5000
