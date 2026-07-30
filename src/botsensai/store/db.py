@@ -840,6 +840,103 @@ class Database:
             out[t] = int(row["c"]) if row else 0
         return out
 
+    # -- dashboard reads ---------------------------------------------------- #
+
+    def recent_scores(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Most recent scores, newest first.
+
+        Returns plain dicts rather than `Score` models: the row stores a
+        `token_key` string, not a full `TokenRef`, and reconstructing one would
+        invent a chain/mint split the display does not need.
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM scores ORDER BY as_of DESC, composite DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "token_key": r["token_key"],
+                "as_of": _dt(r["as_of"]),
+                "composite": float(r["composite"]),
+                "coverage": float(r["coverage"]),
+                "regime": r["regime"] or "unknown",
+                "weights_version": r["weights_version"] or "v0",
+                "vetoes": _unjson(r["vetoes"]),
+                "explanation": r["explanation"],
+            }
+            for r in rows
+        ]
+
+    def social_post_integrity(self, since: float | None = None) -> dict[str, dict[str, int]]:
+        """Per-platform counts that make silent collection failures visible.
+
+        `reachable` is the load-bearing one: a post whose `token_key` is NULL is
+        stored complete and invisible to every metric, because `posts_as_of`
+        filters on that column.
+        """
+        clause = " WHERE observed_at >= ?" if since is not None else ""
+        params: list[Any] = [since] if since is not None else []
+        rows = self.conn.execute(
+            f"""SELECT platform,
+                       COUNT(*) AS total,
+                       SUM(CASE WHEN token_key IS NOT NULL AND token_key != ''
+                                THEN 1 ELSE 0 END) AS reachable,
+                       COUNT(DISTINCT author) AS distinct_authors,
+                       SUM(CASE WHEN author = 'unknown' OR author LIKE 'id:%'
+                                THEN 1 ELSE 0 END) AS unresolved_authors,
+                       SUM(CASE WHEN views IS NOT NULL THEN 1 ELSE 0 END) AS with_views,
+                       SUM(CASE WHEN bookmarks IS NOT NULL THEN 1 ELSE 0 END) AS with_bookmarks,
+                       SUM(CASE WHEN author_created_at IS NOT NULL
+                                THEN 1 ELSE 0 END) AS with_author_age
+                FROM social_posts{clause}
+                GROUP BY platform""",
+            params,
+        ).fetchall()
+        return {
+            r["platform"]: {
+                "total": int(r["total"]),
+                "reachable": int(r["reachable"] or 0),
+                "distinct_authors": int(r["distinct_authors"] or 0),
+                "unresolved_authors": int(r["unresolved_authors"] or 0),
+                "with_views": int(r["with_views"] or 0),
+                "with_bookmarks": int(r["with_bookmarks"] or 0),
+                "with_author_age": int(r["with_author_age"] or 0),
+            }
+            for r in rows
+        }
+
+    def metric_raw_spread(self) -> dict[str, dict[str, Any]]:
+        """Distinct raw values per metric in the newest batch.
+
+        A metric returning one raw value for every token is reporting a
+        constant, not a signal. That is exactly how a clamped entropy term hid
+        for the life of the project, and it is cheap to detect.
+        """
+        latest = self.conn.execute("SELECT MAX(as_of) AS t FROM metric_values").fetchone()
+        if latest is None or latest["t"] is None:
+            return {}
+        cutoff = float(latest["t"]) - 300.0
+        rows = self.conn.execute(
+            """SELECT metric_id,
+                      COUNT(*) AS n,
+                      COUNT(DISTINCT ROUND(raw, 6)) AS distinct_raw,
+                      MIN(raw) AS lo,
+                      MAX(raw) AS hi
+               FROM metric_values
+               WHERE as_of >= ? AND raw IS NOT NULL AND confidence != 'missing'
+               GROUP BY metric_id""",
+            (cutoff,),
+        ).fetchall()
+        return {
+            r["metric_id"]: {
+                "count": int(r["n"]),
+                "distinct": int(r["distinct_raw"] or 0),
+                "min": float(r["lo"]) if r["lo"] is not None else None,
+                "max": float(r["hi"]) if r["hi"] is not None else None,
+            }
+            for r in rows
+        }
+
 
 def _b(value: bool | None) -> int | None:
     return None if value is None else int(value)

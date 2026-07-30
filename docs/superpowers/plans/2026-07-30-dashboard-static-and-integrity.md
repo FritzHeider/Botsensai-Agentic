@@ -54,7 +54,7 @@ because `insert_score` has no counterpart reader at all.
   - `Database.social_post_integrity(since: float | None = None) -> dict[str, dict[str, int]]`
   - `Database.metric_raw_spread() -> dict[str, dict[str, Any]]`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_dashboard.py`:
 
@@ -164,12 +164,12 @@ def test_metric_raw_spread_flags_a_constant_metric(db: Database):
     assert spread["varies"]["distinct"] == 4
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m pytest tests/test_dashboard.py -v`
 Expected: FAIL with `AttributeError: 'Database' object has no attribute 'recent_scores'`
 
-- [ ] **Step 3: Implement the three helpers**
+- [x] **Step 3: Implement the three helpers**
 
 In `src/botsensai/store/db.py`, add to the `Database` class immediately after `counts`:
 
@@ -272,17 +272,17 @@ In `src/botsensai/store/db.py`, add to the `Database` class immediately after `c
         }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m pytest tests/test_dashboard.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Run the full suite and linter**
+- [x] **Step 5: Run the full suite and linter**
 
 Run: `python3 -m pytest -q && python3 -m ruff check src tests`
 Expected: 128 passed, "All checks passed!"
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/botsensai/store/db.py tests/test_dashboard.py
