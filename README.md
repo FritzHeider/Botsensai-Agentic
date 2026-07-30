@@ -55,6 +55,25 @@ Optional extras: `pip install -e ".[browser]" && playwright install chromium`
 enables the web-use collectors. `pip install -e ".[ml]"` enables the weight
 fitter's optional models.
 
+### Checks
+
+```bash
+python -m pytest                      # the suite
+python -m ruff check src tests        # lint
+python scripts/audit.py               # dependency vulnerabilities, scoped to our closure
+python scripts/benchmark.py           # how the store's read paths scale as the corpus grows
+```
+
+`scripts/audit.py` exists because bare `pip-audit` audits the whole
+interpreter — on a conda base environment that is mostly packages this repo
+neither depends on nor can fix. It exits 0 clean, 1 on findings, 2 if the
+scanner itself is missing.
+
+`scripts/benchmark.py` prints microseconds per call for each hot read path at
+increasing corpus sizes. It is a measurement, not a gate; the gate is
+`tests/test_performance.py`, which fails if any of those paths starts planning a
+full table scan.
+
 A live `botsensai sweep` on 2026-07-25 pulled 165 launches, screened them to
 eight, collected 2,583 real trades enriching those, scored them, and entered
 nothing — the top candidate scored 0.61 against a 0.68 threshold. That refusal is

@@ -15,8 +15,15 @@ dependencies = [
     "httpx>=0.27",
     "anyio>=4.4",
     "pydantic>=2.7",
-    "pydantic-settings>=2.3",
-    "python-dotenv>=1.0",
+    # 2.14.2 fixes GHSA-4xgf-cpjx-pc3j: with `secrets_nested_subdir=True` a
+    # symlink inside `secrets_dir` was followed out of the directory, reading
+    # arbitrary local files into settings. Botsensai reads secrets from the
+    # environment and never sets that flag, so the exposure was latent — but
+    # this is a floor, not a preference. See `python scripts/audit.py`.
+    "pydantic-settings>=2.14.2",
+    # 1.2.2 fixes PYSEC-2026-2270: `set_key()`/`unset_key()` followed symlinks
+    # when rewriting `.env`. We only ever read, so again latent, and again a floor.
+    "python-dotenv>=1.2.2",
     "orjson>=3.10",
     "structlog>=24.1",
     "typer>=0.12",
@@ -48,6 +55,10 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
     "hypothesis>=6.100",
+    # Drives `python scripts/audit.py`. Bare `pip-audit` audits the whole
+    # interpreter, which on a conda base env is mostly packages this repo
+    # neither depends on nor can fix; the script scopes it to our closure.
+    "pip-audit>=2.7",
 ]
 
 [project.scripts]
