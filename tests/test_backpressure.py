@@ -231,9 +231,8 @@ def test_evidence_line_covers_every_dimension_the_gate_names():
 def _fake_gates(**overrides) -> list[bp.Gate]:
     values = dict.fromkeys(bp.GATE_KEYS, "pass")
     values["complexity"] = "31"
-    values["performance"] = "ok"
     values.update(overrides)
-    return [bp.Gate(k, values[k] in ("pass", "ok"), values[k], "measured") for k in bp.GATE_KEYS]
+    return [bp.Gate(k, values[k] in ("pass", "31"), values[k], "measured") for k in bp.GATE_KEYS]
 
 
 def test_evidence_values_are_bare_tokens():
@@ -247,10 +246,33 @@ def test_evidence_values_are_bare_tokens():
         assert value.isalnum(), f"{key} carries free text: {value!r}"
 
 
-def test_evidence_reports_performance_as_ok_or_regression():
-    assert "performance: ok" in bp.evidence_line(_fake_gates())
-    red = bp.evidence_line(_fake_gates(performance="regression"))
-    assert "performance: regression" in red
+def test_performance_gate_itself_emits_pass_never_ok(monkeypatch):
+    # The sibling test below pins `evidence_line`, which is fed hand-built
+    # Gates — it cannot see what `gate_performance` really returns. That gap is
+    # exactly how `performance: ok` reached two payloads, so pin the producer.
+    monkeypatch.setattr(bp, "run", lambda cmd, timeout=1800.0: (0, "3 passed in 0.42s\n"))
+    green = bp.gate_performance()
+    assert green.ok
+    assert green.value == "pass"
+
+    monkeypatch.setattr(bp, "run", lambda cmd, timeout=1800.0: (1, "1 failed, 2 passed in 0.5s\n"))
+    red = bp.gate_performance()
+    assert not red.ok
+    assert red.value == "fail"
+
+
+def test_evidence_reports_performance_as_pass_not_ok():
+    # `performance: ok` is the one spelling this gate must never emit again.
+    # The loop's own reject message asks for `'performance: pass' (optional)`,
+    # and two minimal, comma-free payloads saying `performance: ok` were both
+    # rejected with `performance=false` (2026-07-31T00:23 and T04:42) while
+    # every sibling `pass` in the same payload read true. `ok` and `regression`
+    # appear in the loop binary as status *labels*, beside "missing" and
+    # "not reported" — they are not accepted input tokens.
+    assert "performance: pass" in bp.evidence_line(_fake_gates())
+    assert "performance: ok" not in bp.evidence_line(_fake_gates())
+    red = bp.evidence_line(_fake_gates(performance="fail"))
+    assert "performance: fail" in red
 
 
 def test_evidence_reports_a_red_gate_as_fail():

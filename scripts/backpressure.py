@@ -12,7 +12,7 @@ each one actually measured, and prints the evidence line to hand to
 `ralph emit build.done`:
 
     tests: pass, lint: pass, typecheck: pass, audit: pass, coverage: pass,
-    complexity: 17, duplication: pass, performance: ok, specs: pass
+    complexity: 17, duplication: pass, performance: pass, specs: pass
 
 Nothing here is asserted. Every value comes from a command's exit code or its
 output, and a gate that cannot be measured is reported red rather than skipped.
@@ -205,7 +205,7 @@ def gate_performance() -> Gate:
     return Gate(
         "performance",
         ok,
-        "ok" if ok else "regression",
+        "pass" if ok else "fail",
         f"{passed} query-plan guards passed; no hot read path scans",
     )
 
