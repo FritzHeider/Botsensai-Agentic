@@ -88,6 +88,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
 ignore = ["E501", "B008", "UP042", "SIM102", "SIM103", "SIM108"]
 
 [tool.mypy]
-python_version = "3.11"
+# Deliberately no `python_version`. Pinning it to 3.11 while running on a 3.13
+# interpreter made mypy read 3.13's numpy stubs under 3.11 rules, and
+# `numpy/__init__.pyi` uses a PEP 695 `type` statement — one syntax error that
+# aborted the whole run before a single line of ours was checked. Letting mypy
+# follow the interpreter keeps stubs and rules in agreement; ruff's
+# `target-version = "py311"` is what holds the language floor.
 ignore_missing_imports = true
 warn_unused_ignores = false

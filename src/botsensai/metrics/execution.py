@@ -272,8 +272,11 @@ class PriceStabilityUnderFlow(Metric):
         if len(priced) < 3:
             return None, len(priced), "insufficient price readings"
 
-        first, last = priced[0], priced[-1]
-        price_change = abs(math.log(last.price_native / first.price_native))
+        # The comprehension above already dropped the None prices, but a filter
+        # over an attribute does not narrow the Optional, so read them once.
+        prices = [s.price_native for s in priced if s.price_native is not None]
+        last = priced[-1]
+        price_change = abs(math.log(prices[-1] / prices[0]))
 
         trades = ctx.trades_within(900.0)
         if trades:

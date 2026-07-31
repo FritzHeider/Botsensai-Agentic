@@ -86,7 +86,7 @@ REDDIT_BASE = "https://www.reddit.com"
 FOURCHAN_API = "https://a.4cdn.org"
 FOURCHAN_CDN = "https://i.4cdn.org"
 #: Documented hard rule: no more than one request per second.
-FOURCHAN_RPM = 55.0
+FOURCHAN_RPM = 55
 
 # --- Telegram ------------------------------------------------------------- #
 TELEGRAM_PREVIEW = "https://t.me/s"
@@ -566,7 +566,8 @@ class XCollector(Collector):
         }
 
     def _parse_graphql_tweet(self, node: dict[str, Any]) -> SocialPost | None:
-        legacy = node.get("legacy") if isinstance(node.get("legacy"), dict) else node
+        raw_legacy = node.get("legacy")
+        legacy = raw_legacy if isinstance(raw_legacy, dict) else node
         post_id = str(legacy.get("id_str") or node.get("rest_id") or "").strip()
         created = _iso(legacy.get("created_at"))
         if not post_id or created is None:

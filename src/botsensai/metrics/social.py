@@ -300,9 +300,9 @@ class FollowerEngagementCoherence(Metric):
         # Empirical rule of thumb across social platforms: engagement rate decays
         # roughly as followers^-0.25, i.e. expected engagement ~ followers^0.75.
         deviations: list[float] = []
-        for followers, eng in pairs:
-            expected = max(1.0, 0.02 * followers**0.75)
-            ratio = eng / expected
+        for follower_count, engagement in pairs:
+            expected = max(1.0, 0.02 * follower_count**0.75)
+            ratio = engagement / expected
             # Symmetric in log space so 4x-under and 4x-over penalise equally.
             deviations.append(abs(math.log10(max(ratio, 1e-6))))
         mean_dev = sum(deviations) / len(deviations)

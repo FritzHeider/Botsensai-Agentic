@@ -466,7 +466,8 @@ class AuthenticatedXCollector(XCollector):
         # reading `legacy` alone yields no handle and drops the account silently.
         # `_user_fields` reads both shapes; see its docstring for why the old
         # behaviour was worse than a plain miss.
-        legacy = node.get("legacy") if isinstance(node.get("legacy"), dict) else node
+        raw_legacy = node.get("legacy")
+        legacy = raw_legacy if isinstance(raw_legacy, dict) else node
         fields = self._user_fields(node)
         handle = fields["screen_name"]
         if not handle:

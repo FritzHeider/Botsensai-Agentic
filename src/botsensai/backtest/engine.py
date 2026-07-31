@@ -375,9 +375,9 @@ class Backtester:
             "graduation_rate_24h": graduated / len(recent),
             "launches_per_hour": len(recent) / hours,
             "new_token_inflow_usd_1h": sum(
-                (t.snapshot_at(when).liquidity_usd or 0.0)
-                for t in recent
-                if t.snapshot_at(when) is not None
+                snap.liquidity_usd or 0.0
+                for snap in (t.snapshot_at(when) for t in recent)
+                if snap is not None
             )
             / hours,
             "sample_size": len(recent),
@@ -544,7 +544,7 @@ class Backtester:
                 continue
 
             forward = tape.snapshot_after(when)
-            fill = broker.open_position(
+            entry_fill = broker.open_position(
                 tape.token,
                 size,
                 snapshot,
@@ -556,7 +556,7 @@ class Backtester:
                 future_price_native=forward.price_native if forward else None,
                 recent_volatility=self._volatility(tape, when),
             )
-            if fill is not None and not fill.rejected:
+            if entry_fill is not None and not entry_fill.rejected:
                 entered += 1
                 entry_info[key] = (score, size)
 

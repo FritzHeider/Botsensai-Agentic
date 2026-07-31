@@ -124,7 +124,7 @@ def _address(rng: random.Random, prefix: str = "") -> str:
     raw = f"{prefix}{rng.random()}".encode()
     digest = hashlib.sha256(raw).hexdigest()
     alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    out = []
+    out: list[str] = []
     n = int(digest[:32], 16)
     while n > 0 and len(out) < 44:
         n, rem = divmod(n, 58)
@@ -448,7 +448,7 @@ def generate_token(
             head = rng.choice(_ORGANIC_HEADS)
             text = f"{head}{base_text} {tail}".strip()
             offset = rng.expovariate(1 / 120.0) * (1 + i / 12.0)
-            author_age_days = rng.choice([12, 90, 400, 900, 1800, 2600, 60, 300])
+            author_age_days: float = rng.choice([12, 90, 400, 900, 1800, 2600, 60, 300])
             followers = int(rng.lognormvariate(5.0, 1.6))
         else:
             text = _FARM_REPLIES[i % len(_FARM_REPLIES)].replace("$TICK", f"${symbol}")

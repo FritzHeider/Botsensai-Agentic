@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 import orjson
 
@@ -285,7 +285,21 @@ CREATE TABLE IF NOT EXISTS collector_runs (
 """
 
 
+@overload
+def _ts(value: datetime | float) -> float: ...
+
+
+@overload
+def _ts(value: None) -> None: ...
+
+
 def _ts(value: datetime | float | None) -> float | None:
+    """Seconds since the epoch, or None for None.
+
+    Overloaded so a caller that passes a real datetime gets `float` back rather
+    than `float | None`. Every `as_of` read subtracts a lookback from this, and
+    without the overloads that arithmetic reads as `None - float`.
+    """
     if value is None:
         return None
     if isinstance(value, (int, float)):

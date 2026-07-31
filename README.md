@@ -58,11 +58,30 @@ fitter's optional models.
 ### Checks
 
 ```bash
+python scripts/backpressure.py        # every gate below, in one run, with the numbers
 python -m pytest                      # the suite
-python -m ruff check src tests        # lint
+python -m ruff check src tests scripts   # lint
+python -m mypy src                    # types (see below for why `src` and not `tests`)
 python scripts/audit.py               # dependency vulnerabilities, scoped to our closure
 python scripts/benchmark.py           # how the store's read paths scale as the corpus grows
 ```
+
+`scripts/backpressure.py` runs nine gates — tests, lint, typecheck, audit,
+coverage, complexity, duplication, performance, metric registry — and prints
+what each one measured rather than whether it was claimed. Exit 0 means every
+gate is green. It exists because a check that has never been installed and a
+check that passes are indistinguishable from a summary; both had happened.
+Complexity comes from `ruff --select C901` and is a ratchet at the current worst
+function, and duplication is a six-line sliding window over `src`; the two
+thresholds and the coverage floor are constants at the top of the file with the
+date they were measured.
+
+Types are gated on `src` only. `tests/` and `scripts/` are linted but not
+type-checked: mypy skips the body of an unannotated function by default, which
+is most of the suite, so gating them would buy annotation churn rather than
+safety. `[tool.mypy]` deliberately sets no `python_version` — pinning 3.11 on a
+3.13 interpreter made mypy abort inside numpy's stubs before checking anything,
+and ruff's `target-version` is what holds the 3.11 floor.
 
 `scripts/audit.py` exists because bare `pip-audit` audits the whole
 interpreter — on a conda base environment that is mostly packages this repo

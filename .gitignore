@@ -21,3 +21,8 @@ botsensai-x-profile/
 
 # ralph-orchestrator runtime state: locks, event logs, agent scratchpad.
 .ralph/
+
+# Coverage database. `scripts/backpressure.py` rewrites it on every run, so a
+# tracked copy is a binary that changes on every check and means nothing.
+.coverage
+.coverage.*
