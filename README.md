@@ -45,6 +45,7 @@ pip install -e ".[dev]"
 botsensai doctor                      # which surfaces are actually reachable
 botsensai metrics                     # the full suite
 botsensai sweep                       # one live pass: discover → screen → enrich → score
+botsensai label --min-age-hours 24    # ground truth for launches old enough to have one
 botsensai backtest --synthetic        # prove the pipeline executes end to end
 
 botsensai x-setup                     # optional: set up the logged-in X profile
@@ -92,6 +93,16 @@ scanner itself is missing.
 increasing corpus sizes. It is a measurement, not a gate; the gate is
 `tests/test_performance.py`, which fails if any of those paths starts planning a
 full table scan.
+
+`botsensai label` writes the ground truth everything downstream is fitted
+against, and it reports two multiples side by side on purpose. The peak is what
+the chart did; the realizable figure is what a 0.25 SOL position would have
+received selling into the depth that was actually there. Measured on the label
+policy's own curve, a 10x costs 79% of itself on 200 USD of liquidity, 27% on
+2,000 USD and 4% on 20,000 USD. Training on the peak teaches the scorer to hunt
+for spikes nobody could have sold. Where the t0 price is genuinely unknown —
+181 of 716 launches on the current corpus were first seen more than fifteen
+minutes after the mint — both multiples are `NULL` rather than 1.0.
 
 A live `botsensai sweep` on 2026-07-25 pulled 165 launches, screened them to
 eight, collected 2,583 real trades enriching those, scored them, and entered

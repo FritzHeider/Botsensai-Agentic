@@ -1079,6 +1079,52 @@ class Database:
             }
         return report
 
+    def outcome_spread(self) -> dict[str, Any]:
+        """Distribution of the two multiples across every labelled outcome.
+
+        Reported side by side on purpose. `peak` is the price ratio the chart
+        shows; `realizable` is what the position size the system actually takes
+        would have received selling into the depth that was there. The gap
+        between them is the liquidity tax, and on this asset class it is usually
+        most of the number — a labelling pass where the two are close is a
+        reason to distrust the depth data, not a reason to celebrate.
+
+        Counts are separate from percentiles for the same reason
+        `observation_latency` splits them: an outcome whose t0 price is unknown
+        carries `NULL`, and folding those in as zeroes would understate every
+        figure here.
+        """
+        rows = self.conn.execute(
+            "SELECT max_multiple_from_t0 AS peak, max_realizable_multiple AS realizable "
+            "FROM outcomes"
+        ).fetchall()
+
+        def stats(values: list[float]) -> dict[str, Any]:
+            values = sorted(values)
+            if not values:
+                return {"n": 0, "median": None, "p90": None, "max": None}
+
+            def at(fraction: float) -> float:
+                index = min(len(values) - 1, max(0, round(fraction * (len(values) - 1))))
+                return values[index]
+
+            return {
+                "n": len(values),
+                "median": round(at(0.5), 4),
+                "p90": round(at(0.9), 4),
+                "max": round(values[-1], 4),
+            }
+
+        peaks = [float(r["peak"]) for r in rows if r["peak"] is not None]
+        realizable = [float(r["realizable"]) for r in rows if r["realizable"] is not None]
+        both = [r for r in rows if r["peak"] is not None and r["realizable"] is not None]
+        return {
+            "labelled": len(rows),
+            "with_both": len(both),
+            "peak": stats(peaks),
+            "realizable": stats(realizable),
+        }
+
 
 def _b(value: bool | None) -> int | None:
     return None if value is None else int(value)

@@ -415,6 +415,107 @@ def stream(
     db.close()
 
 
+@app.command()
+def label(
+    min_age_hours: float = typer.Option(
+        24.0, "--min-age-hours", help="Only label launches at least this old."
+    ),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    limit: int = typer.Option(None, help="Stop after this many launches."),
+    refresh: bool = typer.Option(False, "--refresh", help="Re-label launches that already have an outcome."),
+    ohlcv: bool = typer.Option(True, "--ohlcv/--no-ohlcv", help="Extend thin paths with GeckoTerminal candles."),
+    max_ohlcv: int = typer.Option(40, help="Cap on tokens fetched from GeckoTerminal this pass."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Write ground-truth `Outcome` rows for launches old enough to have one.
+
+    This is the command that unblocks every fitting and walk-forward task: with
+    no outcomes there is no training target, and a scorer with no target is a
+    set of opinions.
+
+    The number to look at in the output is the gap between the peak multiple and
+    the realizable one. The peak is what the chart did; the realizable figure is
+    what a position of the size this system actually takes would have received
+    selling into the depth that was really there. On thin tokens the second is a
+    small fraction of the first, and training on the first teaches the scorer to
+    find spikes nobody could have sold.
+    """
+    from botsensai.labeller import LabelPolicy, OutcomeLabeller
+
+    settings = _settings(config, log_level)
+    _banner(settings)
+
+    db = Database(settings.path(settings.db_path))
+    before = db.counts()
+    policy = LabelPolicy.from_settings(settings, min_age_hours=min_age_hours)
+    labeller = OutcomeLabeller(settings, db=db, policy=policy)
+    console.print(
+        f"labelling launches older than {min_age_hours:g}h at a "
+        f"{policy.position_size_native:g} SOL exit size. "
+        f"store holds {before['outcomes']} outcomes.\n"
+    )
+
+    async def run() -> Any:
+        try:
+            return await labeller.run(
+                limit=limit, refresh=refresh, use_ohlcv=ohlcv, max_ohlcv=max_ohlcv
+            )
+        finally:
+            await labeller.aclose()
+
+    try:
+        stats = asyncio.run(run())
+    except KeyboardInterrupt:
+        # Outcomes are written one at a time, so whatever finished is committed.
+        stats = labeller.stats
+        console.print("[yellow]interrupted; outcomes written so far are committed[/yellow]")
+
+    summary = stats.summary()
+    after = db.counts()
+
+    table = Table(title="labelling pass")
+    table.add_column("field")
+    table.add_column("value", justify="right")
+    table.add_row("considered", str(summary["considered"]))
+    table.add_row("labelled", str(summary["labelled"]))
+    table.add_row("no snapshots", str(summary["skipped_no_path"]))
+    table.add_row("no usable price", str(summary["skipped_no_price"]))
+    table.add_row("no t0 price", str(summary["without_t0"]))
+    table.add_row("graduated", str(summary["graduated"]))
+    table.add_row("rugged", str(summary["rugged"]))
+    table.add_row(
+        "ohlcv tokens",
+        f"{summary['ohlcv_fetched']}/{summary['ohlcv_attempts']} "
+        f"({summary['ohlcv_points']} candles)",
+    )
+    table.add_row("new outcomes", f"+{after['outcomes'] - before['outcomes']}")
+    console.print(table)
+
+    for error in summary["errors"][:5]:
+        console.print(f"[yellow]{error}[/yellow]")
+
+    spread = db.outcome_spread()
+    if spread["labelled"]:
+        table = Table(title="peak vs realizable, over every labelled outcome")
+        table.add_column("figure")
+        table.add_column("median", justify="right")
+        table.add_column("p90", justify="right")
+        table.add_column("max", justify="right")
+        for name, key in (("peak multiple", "peak"), ("realizable multiple", "realizable")):
+            row = spread[key]
+            if row["median"] is None:
+                table.add_row(name, "—", "—", "—")
+                continue
+            table.add_row(name, f"{row['median']:.2f}x", f"{row['p90']:.2f}x", f"{row['max']:.2f}x")
+        console.print(table)
+        console.print(
+            f"[dim]{spread['with_both']} outcomes carry both numbers; the realizable figure is "
+            "the peak net of the depth actually available to exit at "
+            f"{policy.position_size_native:g} SOL.[/dim]"
+        )
+    db.close()
+
+
 def _print_sweep(report: Any) -> None:
     summary = report.summary()
     console.print(

@@ -356,13 +356,31 @@ class GeckoTerminalCollector(Collector):
     # -- extras ------------------------------------------------------------- #
 
     async def ohlcv(
-        self, pool_address: str, timeframe: str = "minute", aggregate: int = 1, limit: int = 100
+        self,
+        pool_address: str,
+        timeframe: str = "minute",
+        aggregate: int = 1,
+        limit: int = 100,
+        before_timestamp: int | None = None,
     ) -> list[dict[str, Any]]:
-        """OHLCV candles for one pool. Used to build outcome labels after the fact."""
+        """OHLCV candles for one pool. Used to build outcome labels after the fact.
+
+        Candles are USD-denominated. `currency=token` is available and returns a
+        figure that does not reconcile with spot SOL (measured 2026-07-31: 73x
+        the USD price against a ~150 USD/SOL market), so it is not used.
+
+        `before_timestamp` walks backwards from a chosen instant. Without it the
+        API returns the newest hundred candles, which for a token that died on
+        its first day is a hundred flat minutes at the wrong end of its life —
+        the labeller needs the *first* hour, not the last.
+        """
+        params: dict[str, Any] = {"aggregate": aggregate, "limit": limit}
+        if before_timestamp is not None:
+            params["before_timestamp"] = int(before_timestamp)
         try:
             payload = await self.client.get_json(
                 f"{BASE}/networks/{NETWORK}/pools/{pool_address}/ohlcv/{timeframe}",
-                params={"aggregate": aggregate, "limit": limit},
+                params=params,
                 cache_ttl=60.0,
             )
         except Exception as exc:

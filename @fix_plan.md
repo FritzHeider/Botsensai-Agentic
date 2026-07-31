@@ -74,14 +74,42 @@ unglamorous and is the whole ballgame.
   _Depends on: P1-01._
   _Accept:_ `python -m pytest tests/test_ws_ingest.py -q` exits 0 (test uses a local fake websocket server, not the live endpoint). ✔ 13 passed. Live check beyond the plan's requirement: `python -m botsensai.cli stream --minutes 2` exit 0, 1 connection, 60 frames, 57 mints (57 novel), 1 migration, 0 unparsed, store 1021 → 1078 launches.
 
-- [ ] **P1-03 — Outcome labeller**
-  Add `botsensai label --min-age-hours 24` that walks launches older than the
-  cutoff, reconstructs their price path from stored snapshots plus
-  GeckoTerminal OHLCV, and writes `Outcome` rows. `max_realizable_multiple`
-  must be computed against the liquidity actually available at each point, not
-  the raw peak price — the peak is not an exit.
+- [x] **P1-03 — Outcome labeller**
+  Done 2026-07-31. `botsensai label --min-age-hours 24` walks aged launches,
+  reconstructs each price path from stored snapshots plus GeckoTerminal OHLCV,
+  and writes `Outcome` rows. **`outcomes` went 0 → 716 on the real store**,
+  which unblocks P3-01, P4-01, P4-02 and P4-03.
+  The liquidity tax is the point and it is large: at 0.25 SOL a 10x on 200 USD
+  of liquidity realizes **2.11x** (a 79% tax), on 2,000 USD 7.27x, on 20,000 USD
+  9.64x. The position is entered at the t0 spot and exited *against the curve*
+  via `CurveState.from_snapshot`, so the gap is attributable to exit depth
+  alone — the backtester's `FillSimulator` already charges entry impact and
+  charging it twice would corrupt the target.
+  Four things the description did not anticipate:
+  1. **Simultaneous rows read as a price move.** Every collector in a sweep
+     writes at once, and 33 of 383 same-token clusters inside 30 seconds
+     disagree by more than 3x on price — the worst by 6,771,130x. Walked in
+     timestamp order that produced a **149,878x label on a nine-microsecond
+     move**, the largest in the store. Paths are now collapsed by gap into
+     one median point per cluster (DEC-007); the maximum label fell to 9.23x,
+     which is a real 52-minute move the collapse leaves alone.
+  2. **An unknown t0 is `None`, not 1.0** (DEC-008). 181 of 716 launches were
+     first seen more than 15 minutes after the mint. Survival flags follow the
+     same rule and are only claimed over horizons the path reaches.
+  3. **The OHLCV budget counts attempts, not successes** — the same bug P1-02
+     hit with `max_connections`. Measured live: 12 attempts, 3 pools returned
+     candles. A success-counted budget would have spent unbounded calls against
+     a 30/min limit shared with every other collector.
+  4. `ohlcv()` gained `before_timestamp`. Without it the API returns the newest
+     hundred candles, which for a token that died on day one is a hundred flat
+     minutes at the wrong end of its life.
+  **Known limitation, honestly reported rather than papered over:** median peak
+  is 1.00x because the median stored path spans zero minutes — most tokens have
+  one observation. `rugged` is 0/716 for the same reason: the corpus never sees
+  the liquidity withdrawal. Longer `collect` runs, not a looser rug rule, are
+  the fix.
   _Depends on: P1-01._
-  _Accept:_ `python -m pytest tests/test_labeller.py -q` exits 0, and the test asserts that for a token whose price spiked on 200 USD of liquidity, `max_realizable_multiple` is materially below `max_multiple_from_t0`.
+  _Accept:_ `python -m pytest tests/test_labeller.py -q` exits 0, and the test asserts that for a token whose price spiked on 200 USD of liquidity, `max_realizable_multiple` is materially below `max_multiple_from_t0`. ✔ 30 passed; `test_a_spike_on_thin_liquidity_is_not_realizable` asserts the realizable figure is under half the peak *and* under the pool's total depth. Live: `python -m botsensai.cli label --min-age-hours 24 --max-ohlcv 12` exit 0, 716 considered / 716 labelled / 0 skipped, 323 graduated, 3 of 12 pools returned candles (74 candles), store outcomes 0 → 716.
 
 - [ ] **P1-04 — Wallet prior-history index**
   `MetricContext.wallet_priors` is currently empty in the live path, which
@@ -215,6 +243,11 @@ a guess. Every task here is worth more than a new metric.
   `config/weights.json`, and record train and holdout rank correlation plus
   top-decile lift in `docs/RESULTS.md`. If holdout correlation is at or below
   0.05, say so plainly rather than shipping the weights.
+  **Read before fitting:** `TrainingExample.from_values` reads
+  `outcome.max_realizable_multiple or outcome.max_multiple_from_t0 or 0.0`, and
+  P1-03 deliberately leaves both `None` on the 181 launches whose t0 price is
+  unknown (DEC-008). Filter on a non-null multiple first, or a quarter of the
+  corpus enters the fit as confident zeroes.
   _Depends on: P1-03, P3-01._
   _Accept:_ `python -m botsensai.cli fit --min-samples 200` exits 0 (or exits 0 with a clear "insufficient data" message when the corpus is still too small).
 
