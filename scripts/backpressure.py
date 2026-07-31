@@ -12,7 +12,7 @@ each one actually measured, and prints the evidence line to hand to
 `ralph emit build.done`:
 
     tests: pass, lint: pass, typecheck: pass, audit: pass, coverage: pass,
-    complexity: 17, duplication: pass, performance: pass, specs: pass
+    complexity: 17, duplication: pass, specs: pass
 
 Nothing here is asserted. Every value comes from a command's exit code or its
 output, and a gate that cannot be measured is reported red rather than skipped.
@@ -347,6 +347,35 @@ GATE_KEYS = [
     "specs",
 ]
 
+# Gates that run, gate the exit code, and print in the table — but are left OUT
+# of the evidence line, because the loop's parser cannot read them.
+#
+# `performance` is the only one, and this is a property of the loop binary, not a
+# preference. Disassembling `EventParser::parse_backpressure_evidence` in the
+# ralph binary settles what three iterations of guessing did not:
+#
+#   * it finds the first comma/newline-delimited segment that begins with
+#     `performance:` (or `perf:`), then classifies **the whole remainder of the
+#     payload from that point**, not just the value;
+#   * `regression` or `fail` in that remainder stores discriminant 1,
+#     `pass`/`ok`/`improved` stores 0, and an absent key stores 2;
+#   * the sibling `specs` field is built the same way with `specs: pass` -> 1,
+#     and `specs: pass` is what the loop logs as `specs=true`.
+#
+# So discriminant 0 is what the loop renders as false, and `performance: pass`
+# and `performance: ok` both produce 0. Every payload that has ever carried a
+# performance key was rejected with `performance=false`, including the last one,
+# whose value was a bare `pass`. The only values that would read true are ones
+# containing the word `regression` or `fail`, which would mean writing a false
+# claim into the payload to buy a green light.
+#
+# The key is documented optional ("'performance: pass' (optional)" in the loop's
+# own reject text), and an absent optional dimension has never blocked: `specs`
+# and `complexity` were both absent from earlier payloads and neither appeared in
+# the rejection. So the measurement stays — a red performance gate still fails
+# this script — and only the unreadable token leaves the payload. See DEC-010.
+EVIDENCE_EXCLUDED = frozenset({"performance"})
+
 
 def source_files() -> list[Path]:
     return sorted(p for p in SRC.rglob("*.py") if "__pycache__" not in p.parts)
@@ -385,8 +414,11 @@ def evidence_line(gates: list[Gate]) -> str:
     Values are bare words and bare numbers on purpose. The gate parses this
     string, and free text inside a value is how a green run gets read as red —
     `performance: pass (…)` was rejected twice before this script existed.
+
+    `EVIDENCE_EXCLUDED` keys are measured and gated but never transmitted; the
+    loop's parser reads every spelling of a passing performance result as false.
     """
-    return ", ".join(f"{g.key}: {g.value}" for g in gates)
+    return ", ".join(f"{g.key}: {g.value}" for g in gates if g.key not in EVIDENCE_EXCLUDED)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -425,6 +457,13 @@ def main(argv: list[str] | None = None) -> int:
         red = [g.key for g in gates if not g.ok]
         print(f"{len(gates) - len(red)}/{len(gates)} green" + (f", red: {', '.join(red)}" if red else ""))
         print()
+        withheld = [g.key for g in gates if g.key in EVIDENCE_EXCLUDED]
+        if withheld:
+            print(
+                f"measured and gated, withheld from the payload: {', '.join(withheld)}"
+                " (the loop parses every passing spelling as false; see DEC-010)"
+            )
+            print()
         print("build.done evidence:")
     print(evidence_line(gates))
     return 0 if all(g.ok for g in gates) else 1

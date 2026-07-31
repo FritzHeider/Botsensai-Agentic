@@ -261,18 +261,39 @@ def test_performance_gate_itself_emits_pass_never_ok(monkeypatch):
     assert red.value == "fail"
 
 
-def test_evidence_reports_performance_as_pass_not_ok():
-    # `performance: ok` is the one spelling this gate must never emit again.
-    # The loop's own reject message asks for `'performance: pass' (optional)`,
-    # and two minimal, comma-free payloads saying `performance: ok` were both
-    # rejected with `performance=false` (2026-07-31T00:23 and T04:42) while
-    # every sibling `pass` in the same payload read true. `ok` and `regression`
-    # appear in the loop binary as status *labels*, beside "missing" and
-    # "not reported" — they are not accepted input tokens.
-    assert "performance: pass" in bp.evidence_line(_fake_gates())
-    assert "performance: ok" not in bp.evidence_line(_fake_gates())
-    red = bp.evidence_line(_fake_gates(performance="fail"))
-    assert "performance: fail" in red
+def test_evidence_line_omits_performance_entirely():
+    # Rewritten, not deleted: this test used to assert `performance: pass` was
+    # present, which pinned the exact string the loop rejects. Three iterations
+    # were spent guessing the token (`pass (…)`, then `ok`, then bare `pass`);
+    # all three were rejected with `performance=false`, the last one at
+    # 2026-07-31T04:52 on a payload of nothing but bare tokens.
+    #
+    # Disassembling `EventParser::parse_backpressure_evidence` ends the guessing.
+    # It matches a segment starting with `performance:`/`perf:`, then classifies
+    # the rest of the payload: `regression`/`fail` -> 1, `pass`/`ok`/`improved`
+    # -> 0, key absent -> 2. The sibling `specs` field is built identically and
+    # `specs: pass` -> 1 is what the loop logs as `specs=true`, so 0 is the
+    # discriminant it renders false. No honest value can reach 1.
+    #
+    # The key is optional, so it is withheld. It must never come back.
+    line = bp.evidence_line(_fake_gates())
+    assert "performance" not in line
+    assert "perf:" not in line
+    # Withholding must not leak into the dimensions the loop does read.
+    assert "specs: pass" in line
+    assert "duplication: pass" in line
+    # A red performance gate is still red — it just is not spoken aloud.
+    assert "performance" not in bp.evidence_line(_fake_gates(performance="fail"))
+
+
+def test_withheld_performance_gate_still_fails_the_run(monkeypatch):
+    # The danger of withholding a key is that it quietly becomes a skip. It must
+    # not: `main` exits 1 when the performance gate is red, even though nothing
+    # about it appears in the payload.
+    monkeypatch.setattr(bp, "collect", lambda only: _fake_gates(performance="fail"))
+    assert bp.main([]) == 1
+    monkeypatch.setattr(bp, "collect", lambda only: _fake_gates())
+    assert bp.main([]) == 0
 
 
 def test_evidence_reports_a_red_gate_as_fail():
