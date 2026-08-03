@@ -176,6 +176,31 @@ class Weights:
         return cls.from_dict(json.loads(p.read_text(encoding="utf-8")))
 
 
+def _over(value: MetricValue, threshold: float) -> bool:
+    """Whether a metric produced a reading above `threshold`. Absent is not above."""
+    return value.raw is not None and value.raw > threshold
+
+
+def _contract_vetoes(sec: SecurityReport) -> list[VetoReason]:
+    """Vetoes readable off the contract itself, independent of market state."""
+    vetoes: list[VetoReason] = []
+    if sec.mint_authority_revoked is False:
+        vetoes.append(VetoReason.MINT_AUTHORITY_LIVE)
+    if sec.freeze_authority_revoked is False:
+        vetoes.append(VetoReason.FREEZE_AUTHORITY_LIVE)
+    if sec.transfer_fee_bps is not None and sec.transfer_fee_bps > 0:
+        vetoes.append(VetoReason.TRANSFER_TAX_PRESENT)
+    return vetoes
+
+
+def _lp_not_burned(sec: SecurityReport, ctx: MetricContext) -> bool:
+    """Only meaningful once the token has actually graduated to a pool."""
+    if sec.lp_burned_share is None or sec.lp_burned_share >= 0.5:
+        return False
+    pool = ctx.latest
+    return pool is not None and pool.stage is CurveStage.GRADUATED
+
+
 class VetoEngine:
     """Hard refusals, evaluated before and independently of the score.
 
@@ -197,48 +222,14 @@ class VetoEngine:
         risk_min_age: float = 45.0,
         kill_switch: bool = False,
     ) -> list[VetoReason]:
-        vetoes: list[VetoReason] = []
-
         if kill_switch:
             return [VetoReason.KILL_SWITCH]
 
+        vetoes: list[VetoReason] = []
         sec = security or ctx.security
-
         if sec is not None:
-            if sec.mint_authority_revoked is False:
-                vetoes.append(VetoReason.MINT_AUTHORITY_LIVE)
-            if sec.freeze_authority_revoked is False:
-                vetoes.append(VetoReason.FREEZE_AUTHORITY_LIVE)
-            if sec.transfer_fee_bps is not None and sec.transfer_fee_bps > 0:
-                vetoes.append(VetoReason.TRANSFER_TAX_PRESENT)
-            if sec.lp_burned_share is not None and sec.lp_burned_share < 0.5:
-                # Only meaningful once the token has actually graduated to a pool.
-                pool = ctx.latest
-                if pool is not None and pool.stage is CurveStage.GRADUATED:
-                    vetoes.append(VetoReason.LP_NOT_BURNED)
-            if sec.top10_share is not None:
-                # Concentration is structurally normal on a young bonding curve —
-                # there are simply not many holders yet — and becomes damning only
-                # once the token has graduated and had time to distribute. Applying
-                # one threshold to both stages rejects every early token, which is
-                # exactly the population we are here to trade.
-                latest = ctx.latest
-                stage = latest.stage if latest is not None else None
-                early = stage is not None and stage in (
-                    CurveStage.BONDING,
-                    CurveStage.NEAR_GRADUATION,
-                )
-                threshold = (
-                    min(0.90, self.settings.veto_top10_share + 0.30)
-                    if early
-                    else self.settings.veto_top10_share
-                )
-                if sec.top10_share > threshold:
-                    vetoes.append(VetoReason.HOLDER_CONCENTRATION_EXTREME)
-            if sec.insider_share is not None and sec.insider_share > self.settings.veto_insider_share:
-                vetoes.append(VetoReason.INSIDER_SUPPLY_EXCESSIVE)
-            if sec.bundled_share is not None and sec.bundled_share > self.settings.veto_bundle_share:
-                vetoes.append(VetoReason.BUNDLE_SUPPLY_EXCESSIVE)
+            vetoes.extend(_contract_vetoes(sec))
+            vetoes.extend(self._supply_vetoes(sec, ctx))
             if sec.dev_sold:
                 vetoes.append(VetoReason.DEV_ALREADY_SOLD)
 
@@ -250,49 +241,97 @@ class VetoEngine:
         # Metric-derived vetoes: extreme readings that the weighted sum would
         # merely dilute.
         by_id = {v.metric_id: v for v in values}
+        vetoes.extend(self._social_vetoes(by_id))
+        vetoes.extend(self._supply_metric_vetoes(by_id))
+        vetoes.extend(self._risk_vetoes(ctx, by_id, risk_min_liquidity, risk_min_age))
 
+        # A reason reached by two routes — a security report and the metric that
+        # measures the same thing — is one veto, not two. Deduplicating once here
+        # is why the individual checks do not each have to ask what came before.
+        return list(dict.fromkeys(vetoes))
+
+    def _supply_vetoes(self, sec: SecurityReport, ctx: MetricContext) -> list[VetoReason]:
+        """Vetoes from how the supply is distributed, per the security report."""
+        vetoes: list[VetoReason] = []
+        if _lp_not_burned(sec, ctx):
+            vetoes.append(VetoReason.LP_NOT_BURNED)
+        if self._top10_extreme(sec, ctx):
+            vetoes.append(VetoReason.HOLDER_CONCENTRATION_EXTREME)
+        if sec.insider_share is not None and sec.insider_share > self.settings.veto_insider_share:
+            vetoes.append(VetoReason.INSIDER_SUPPLY_EXCESSIVE)
+        if sec.bundled_share is not None and sec.bundled_share > self.settings.veto_bundle_share:
+            vetoes.append(VetoReason.BUNDLE_SUPPLY_EXCESSIVE)
+        return vetoes
+
+    def _top10_extreme(self, sec: SecurityReport, ctx: MetricContext) -> bool:
+        """Whether top-10 concentration is damning *for this curve stage*.
+
+        Concentration is structurally normal on a young bonding curve — there are
+        simply not many holders yet — and becomes damning only once the token has
+        graduated and had time to distribute. Applying one threshold to both
+        stages rejects every early token, which is exactly the population we are
+        here to trade.
+        """
+        if sec.top10_share is None:
+            return False
+        latest = ctx.latest
+        stage = latest.stage if latest is not None else None
+        early = stage is not None and stage in (
+            CurveStage.BONDING,
+            CurveStage.NEAR_GRADUATION,
+        )
+        threshold = (
+            min(0.90, self.settings.veto_top10_share + 0.30)
+            if early
+            else self.settings.veto_top10_share
+        )
+        return sec.top10_share > threshold
+
+    def _social_vetoes(self, by_id: dict[str, MetricValue]) -> list[VetoReason]:
         template = by_id.get("reply_template_ratio")
         if (
             template is not None
             and template.raw is not None
-            and template.confidence
-            not in (Confidence.MISSING, Confidence.LOW)
+            and template.confidence not in (Confidence.MISSING, Confidence.LOW)
             and template.raw >= self.settings.veto_inauthenticity
         ):
-            vetoes.append(VetoReason.SOCIAL_ENGAGEMENT_INAUTHENTIC)
+            return [VetoReason.SOCIAL_ENGAGEMENT_INAUTHENTIC]
+        return []
 
+    def _supply_metric_vetoes(self, by_id: dict[str, MetricValue]) -> list[VetoReason]:
+        """The metric-measured counterparts of the security report's supply vetoes."""
+        vetoes: list[VetoReason] = []
         overhang = by_id.get("insider_supply_overhang")
-        if (
-            overhang is not None
-            and overhang.raw is not None
-            and overhang.raw > self.settings.veto_insider_share
-            and VetoReason.INSIDER_SUPPLY_EXCESSIVE not in vetoes
-        ):
+        if overhang is not None and _over(overhang, self.settings.veto_insider_share):
             vetoes.append(VetoReason.INSIDER_SUPPLY_EXCESSIVE)
-
         bundle = by_id.get("bundle_supply_share")
-        if (
-            bundle is not None
-            and bundle.raw is not None
-            and bundle.raw > self.settings.veto_bundle_share
-            and VetoReason.BUNDLE_SUPPLY_EXCESSIVE not in vetoes
-        ):
+        if bundle is not None and _over(bundle, self.settings.veto_bundle_share):
             vetoes.append(VetoReason.BUNDLE_SUPPLY_EXCESSIVE)
+        return vetoes
 
+    @staticmethod
+    def _risk_vetoes(
+        ctx: MetricContext,
+        by_id: dict[str, MetricValue],
+        risk_min_liquidity: float,
+        risk_min_age: float,
+    ) -> list[VetoReason]:
+        vetoes: list[VetoReason] = []
         depth = by_id.get("realizable_exit_depth")
         if depth is not None and depth.raw is not None and depth.raw < 1.0:
             # Cannot exit the intended size. Nothing else matters.
             vetoes.append(VetoReason.LIQUIDITY_BELOW_FLOOR)
 
         latest = ctx.latest
-        if latest is not None and latest.liquidity_usd is not None:
-            if latest.liquidity_usd < risk_min_liquidity:
-                if VetoReason.LIQUIDITY_BELOW_FLOOR not in vetoes:
-                    vetoes.append(VetoReason.LIQUIDITY_BELOW_FLOOR)
+        if (
+            latest is not None
+            and latest.liquidity_usd is not None
+            and latest.liquidity_usd < risk_min_liquidity
+        ):
+            vetoes.append(VetoReason.LIQUIDITY_BELOW_FLOOR)
 
         if ctx.age_seconds < risk_min_age:
             vetoes.append(VetoReason.AGE_BELOW_FLOOR)
-
         return vetoes
 
 

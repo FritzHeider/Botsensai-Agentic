@@ -170,6 +170,51 @@ class StreamStats:
         }
 
 
+@dataclass
+class _Budget:
+    """The limits that can end a run, and where each one is checked."""
+
+    stats: StreamStats
+    deadline: float | None
+    max_messages: int | None
+    max_connections: int | None
+
+    def data(self) -> str | None:
+        """Budgets that can be exhausted *while connected*."""
+        if self.max_messages is not None and self.stats.messages >= self.max_messages:
+            return "max_messages"
+        if self.deadline is not None and utcnow().timestamp() >= self.deadline:
+            return "deadline"
+        return None
+
+    def dial(self) -> str | None:
+        """Budgets checked before dialling.
+
+        `max_connections` bounds *attempts*, not successful handshakes. Counting
+        handshakes leaves an unreachable host redialling until the deadline,
+        and — worse — makes the check fire immediately after a successful
+        connect, ending an episode before it has read a single frame and
+        recording a healthy socket as mute.
+        """
+        if self.max_connections is not None and self.stats.attempts >= self.max_connections:
+            return "max_connections"
+        return self.data()
+
+
+@dataclass
+class _Episode:
+    """How one connection episode ended.
+
+    `stop` is a terminal reason for the whole run; `error` is what the episode
+    row records; `interrupted` means the operator stopped us and the reconnect
+    loop must not redial.
+    """
+
+    stop: str | None = None
+    error: str | None = None
+    interrupted: bool = False
+
+
 class PumpPortalStream:
     """Reads new mints off the pumpportal socket and writes them straight through.
 
@@ -377,6 +422,93 @@ class PumpPortalStream:
             if on_event is not None:
                 on_event(payload)
 
+    @staticmethod
+    def _open_timeout(deadline: float | None) -> float:
+        """Handshake timeout, never longer than the time left in the run."""
+        if deadline is None:
+            return 20.0
+        return min(20.0, max(0.1, deadline - utcnow().timestamp()))
+
+    async def _episode(
+        self,
+        deadline: float | None,
+        idle_timeout: float,
+        data_budget: Callable[[], str | None],
+        on_event: Callable[[dict[str, Any]], None] | None,
+        messages_before: int,
+    ) -> _Episode:
+        """Dial once, subscribe, and read until something ends the episode.
+
+        Returns rather than raises for every network outcome, so the reconnect
+        loop above stays a loop rather than an exception funnel.
+        """
+        # Imported here rather than at module scope so that importing this module
+        # — which `cli.py` does at command level — cannot fail on an environment
+        # where the wheel has not been reinstalled since `websockets` was added.
+        import websockets
+        from websockets.exceptions import ConnectionClosedOK, WebSocketException
+
+        stats = self.stats
+        out = _Episode()
+        try:
+            async with websockets.connect(
+                self.url,
+                open_timeout=self._open_timeout(deadline),
+                ping_interval=20,
+                ping_timeout=20,
+                close_timeout=5,
+            ) as socket:
+                stats.connections += 1
+                for method in SUBSCRIPTIONS:
+                    await socket.send(json.dumps({"method": method}))
+
+                _, out.stop = await self._read_frames(
+                    socket, data_budget, deadline, idle_timeout, on_event
+                )
+        except ConnectionClosedOK:
+            # The peer said goodbye properly (close code 1000). That is a
+            # disconnection, not a fault, and recording it as an error would mark
+            # every clean server restart as a failed surface on the integrity
+            # panel. The reconnect is still visible: it opens a new episode row.
+            log.debug("pumpfun_ws.closed_cleanly", messages=stats.messages - messages_before)
+        except TimeoutError:
+            # Either the idle watchdog or the deadline. Only the former is a
+            # fault; the latter is the run ending normally.
+            if deadline is not None and utcnow().timestamp() >= deadline:
+                out.stop = "deadline"
+            else:
+                out.error = f"no frames for {idle_timeout:.0f}s"
+                stats.errors.append(out.error)
+                log.warning("pumpfun_ws.idle", seconds=idle_timeout)
+        except (WebSocketException, OSError) as exc:
+            out.error = f"{type(exc).__name__}: {exc}"
+            stats.errors.append(out.error)
+            if stats.messages == messages_before:
+                stats.failed_connections += 1
+            log.warning("pumpfun_ws.connection_failed", error=str(exc))
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # `asyncio.run` cancels the task rather than raising KeyboardInterrupt
+            # inside it, so both spellings are caught here for the same reason
+            # they are in `Pipeline.collect`. The episode is still recorded, with
+            # "interrupted" as its error, by the caller.
+            out.error = "interrupted"
+            out.stop = "interrupted"
+            out.interrupted = True
+        return out
+
+    async def _wait_before_redial(self, attempt: int, deadline: float | None) -> bool:
+        """Sleep the backoff delay. False if the sleep was interrupted."""
+        delay = backoff_delay(attempt)
+        if deadline is not None:
+            delay = min(delay, max(0.0, deadline - utcnow().timestamp()))
+        if delay <= 0:
+            return True
+        try:
+            await self._sleep(delay)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            return False
+        return True
+
     async def run(
         self,
         max_seconds: float | None = None,
@@ -395,12 +527,6 @@ class PumpPortalStream:
         refuses every dial still terminates. All three limits exist for tests and
         for bounded operational runs; the daemon case passes none of them.
         """
-        # Imported here rather than at module scope so that importing this module
-        # — which `cli.py` does at command level — cannot fail on an environment
-        # where the wheel has not been reinstalled since `websockets` was added.
-        import websockets
-        from websockets.exceptions import ConnectionClosedOK, WebSocketException
-
         stats = StreamStats()
         self.stats = stats
         deadline = None if max_seconds is None else stats.started_at.timestamp() + max_seconds
@@ -409,37 +535,17 @@ class PumpPortalStream:
         # default is already a terminal reason.
         stop: str | None = None
 
-        def data_budget() -> str | None:
-            """Budgets that can be exhausted *while connected*."""
-            if max_messages is not None and stats.messages >= max_messages:
-                return "max_messages"
-            if deadline is not None and utcnow().timestamp() >= deadline:
-                return "deadline"
-            return None
-
-        def dial_budget() -> str | None:
-            """Budgets checked before dialling.
-
-            `max_connections` bounds *attempts*, not successful handshakes.
-            Counting handshakes leaves an unreachable host redialling until the
-            deadline, and — worse — makes the check fire immediately after a
-            successful connect, ending an episode before it has read a single
-            frame and recording a healthy socket as mute.
-            """
-            if max_connections is not None and stats.attempts >= max_connections:
-                return "max_connections"
-            return data_budget()
+        budget = _Budget(stats, deadline, max_messages, max_connections)
 
         try:
             while stop is None:
-                stop = dial_budget()
+                stop = budget.dial()
                 if stop is not None:
                     break
 
                 stats.attempts += 1
                 episode_started = utcnow()
                 run_id = uuid.uuid4().hex
-                episode_error: str | None = None
                 # Counted as a delta rather than returned, because the episode
                 # almost always ends by *raising* out of the read loop — a
                 # returned count would be lost on exactly the paths that need
@@ -447,61 +553,17 @@ class PumpPortalStream:
                 # would be recorded as a mute one.
                 messages_before = stats.messages
 
-                try:
-                    remaining = (
-                        None if deadline is None else max(0.1, deadline - utcnow().timestamp())
-                    )
-                    async with websockets.connect(
-                        self.url,
-                        open_timeout=min(20.0, remaining) if remaining else 20.0,
-                        ping_interval=20,
-                        ping_timeout=20,
-                        close_timeout=5,
-                    ) as socket:
-                        stats.connections += 1
-                        for method in SUBSCRIPTIONS:
-                            await socket.send(json.dumps({"method": method}))
-
-                        _, stop = await self._read_frames(
-                            socket, data_budget, deadline, idle_timeout, on_event
-                        )
-                except ConnectionClosedOK:
-                    # The peer said goodbye properly (close code 1000). That is a
-                    # disconnection, not a fault, and recording it as an error
-                    # would mark every clean server restart as a failed surface
-                    # on the integrity panel. The reconnect is still visible: it
-                    # opens a new episode row.
-                    log.debug("pumpfun_ws.closed_cleanly", messages=stats.messages - messages_before)
-                except TimeoutError:
-                    # Either the idle watchdog or the deadline. Only the former
-                    # is a fault; the latter is the run ending normally.
-                    if deadline is not None and utcnow().timestamp() >= deadline:
-                        stop = "deadline"
-                    else:
-                        episode_error = f"no frames for {idle_timeout:.0f}s"
-                        stats.errors.append(episode_error)
-                        log.warning("pumpfun_ws.idle", seconds=idle_timeout)
-                except (WebSocketException, OSError) as exc:
-                    episode_error = f"{type(exc).__name__}: {exc}"
-                    stats.errors.append(episode_error)
-                    if stats.messages == messages_before:
-                        stats.failed_connections += 1
-                    log.warning("pumpfun_ws.connection_failed", error=str(exc))
-                except (KeyboardInterrupt, asyncio.CancelledError):
-                    # `asyncio.run` cancels the task rather than raising
-                    # KeyboardInterrupt inside it, so both spellings are caught
-                    # here for the same reason they are in `Pipeline.collect`.
-                    self._record_episode(
-                        run_id, episode_started, stats.messages - messages_before, "interrupted"
-                    )
+                episode = await self._episode(
+                    deadline, idle_timeout, budget.data, on_event, messages_before
+                )
+                self._record_episode(
+                    run_id, episode_started, stats.messages - messages_before, episode.error
+                )
+                if episode.interrupted:
                     stop = "interrupted"
                     break
 
-                self._record_episode(
-                    run_id, episode_started, stats.messages - messages_before, episode_error
-                )
-
-                stop = stop or dial_budget()
+                stop = episode.stop or budget.dial()
                 if stop is not None:
                     break
 
@@ -510,16 +572,10 @@ class PumpPortalStream:
                 # mute socket at full speed forever.
                 if stats.messages > messages_before:
                     attempt = 0
-                delay = backoff_delay(attempt)
+                if not await self._wait_before_redial(attempt, deadline):
+                    stop = "interrupted"
+                    break
                 attempt += 1
-                if deadline is not None:
-                    delay = min(delay, max(0.0, deadline - utcnow().timestamp()))
-                if delay > 0:
-                    try:
-                        await self._sleep(delay)
-                    except (KeyboardInterrupt, asyncio.CancelledError):
-                        stop = "interrupted"
-                        break
         finally:
             stats.stopped_because = stop or "deadline"
             stats.finished_at = utcnow()

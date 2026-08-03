@@ -45,11 +45,14 @@ SRC = REPO_ROOT / "src"
 # Floors and ceilings, all measured on 2026-07-31 and set just outside the
 # current reading so a real regression trips them and normal drift does not.
 COVERAGE_FLOOR = 55.0  # measured 63%
-# A ratchet, not an aspiration: 31 is what `util.synthetic.generate_token`
-# already scores, so this forbids anything *worse* arriving without forcing a
-# refactor of the fixture builder into this iteration. Lower it when the
-# offenders `--only complexity` names get split up.
-MAX_COMPLEXITY = 31
+# A ratchet, lowered as the offenders `--only complexity` names get split up.
+# The destination is 10, not a number of our choosing: the loop's own gate is
+# `complexity_score <= QualityReport::COMPLEXITY_THRESHOLD`, which is a hardcoded
+# 10.0 (ralph 2.10.1, crates/ralph-core/src/event_parser.rs:163) and is not
+# configurable. Every build.done this repo has ever emitted was rejected on it.
+# 31 -> 18 on 2026-08-03 by splitting the four worst functions; 21 functions
+# remain above 10 and each drop of the ceiling needs the current maximum gone.
+MAX_COMPLEXITY = 18
 MAX_DUPLICATION_PCT = 3.0  # measured 2.1%
 MIN_METRICS = 32  # the objective's floor; registry currently holds 33
 DUPLICATE_WINDOW = 6  # consecutive normalised lines before it counts as a clone

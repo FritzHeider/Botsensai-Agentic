@@ -11,6 +11,52 @@ fit on, and fitting on nothing produces confident nonsense.
 
 ---
 
+## Phase 0 — Unblock the loop's own gate
+
+The loop refuses every `build.done` whose reported cyclomatic complexity is
+above **10**. That number is not ours: it is `QualityReport::COMPLEXITY_THRESHOLD`,
+a hardcoded `f64` in ralph 2.10.1 (`crates/ralph-core/src/event_parser.rs:163`),
+read by `BackpressureEvidence::all_passed()`. No config key raises it. Until the
+maximum in `src` is ≤ 10, no iteration's work can be accepted — so these come
+before the data tasks even though they add no signal. See DEC-011.
+
+Only the *maximum* is reported, so these are worked worst-first: lowering an 11
+while an 18 stands moves the reported number not at all. Each chunk lowers
+`MAX_COMPLEXITY` in `scripts/backpressure.py` to the new measured maximum.
+
+- [x] **P0-01 — The four worst functions (31, 28, 22, 20)**
+  Done 2026-08-03. `util.synthetic.generate_token` 31→4 (section builders plus
+  per-archetype tables instead of nested ternaries), `backtest.engine.run` 28→7
+  (`_RunState`/`_RegimeCache` and one method per replay phase),
+  `scoring.composite.VetoEngine.evaluate` 22→7 (vetoes grouped by domain, and a
+  single dedupe replacing four `not in vetoes` guards),
+  `collectors.pumpfun_ws.run` 20→6 (`_Budget`, `_Episode`, `_wait_before_redial`).
+  Repo maximum 31 → 18; `MAX_COMPLEXITY` lowered to match.
+  _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=18" src` exits 0. ✔ Also `python scripts/backpressure.py` 9/9 green, 237 tests pass, and both refactors were verified output-identical rather than assumed: 36 synthetic tokens + a 12-token cohort digest-identical, and a 40-token synthetic backtest identical on every field (digest `85ff1fc8…`, 2400 evaluated, 6 entered, pnl 0.065458).
+
+- [ ] **P0-02 — The collector and CLI offenders (18, 18, 18, 17, 13, 13, 12, 12, 12)**
+  `collectors.social.enrich` 18, `collectors.pumpfun.enrich` 18,
+  `collectors.dexscreener.discover` 18, `collectors.browser.visit` 17,
+  `collectors.pumpfun._parse_trade` 13, `collectors.dexscreener.enrich` 13,
+  `collectors.pumpfun.discover` 12, `collectors.pumpfun._parse_holders` 12,
+  `collectors.geckoterminal.enrich` 12, `_pool_to_records` 11. Mostly
+  per-field parse guards; extract one parser per record type. The
+  never-raise-out-of-discover/enrich contract must survive the split — that is
+  what `tests/test_collectors.py` is for.
+  _Depends on: P0-01._
+  _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=13" src` exits 0, and `python -m pytest tests/test_collectors.py -q` exits 0.
+
+- [ ] **P0-03 — The remaining nine, down to 10**
+  `scoring.fit.fit` 15, `execution.broker.check_entry` 14, `util.http.request` 13,
+  `cli.backtest` 13, `pipeline.sweep` 13, `pipeline.collect` 13, `cli.collect` 12,
+  `metrics.credibility.compute` 12, `metrics.community.compute` 12,
+  `metrics.topology.compute` 11. With these gone the reported number is ≤ 10 and
+  `build.done` can be accepted for the first time.
+  _Depends on: P0-02._
+  _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=10" src` exits 0, and `python scripts/backpressure.py` prints `complexity: 10` or lower with 9/9 green.
+
+---
+
 ## Phase 1 — Get real data on disk
 
 Nothing downstream means anything until there is a corpus. This phase is
