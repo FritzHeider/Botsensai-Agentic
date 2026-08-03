@@ -96,6 +96,35 @@ def _ms_to_dt(value: Any) -> datetime | None:
     return None
 
 
+def _merge_boosts(boosts: Sequence[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Fold the two boost ledgers into one record per token.
+
+    The same token appears in both the latest and top feeds with different
+    figures; the larger is the truthful one, since both are cumulative spend
+    snapshots taken at different moments.
+    """
+    by_token: dict[str, dict[str, Any]] = {}
+    for row in boosts:
+        chain_id = str(row.get("chainId") or "").lower()
+        address = row.get("tokenAddress")
+        if not address or chain_id not in CHAIN_IDS:
+            continue
+        existing = by_token.setdefault(
+            f"{chain_id}:{address}",
+            {
+                "chainId": chain_id,
+                "tokenAddress": address,
+                "amount": 0.0,
+                "totalAmount": 0.0,
+                "description": row.get("description"),
+                "links": row.get("links"),
+            },
+        )
+        existing["amount"] = max(existing["amount"], _f(row.get("amount")) or 0.0)
+        existing["totalAmount"] = max(existing["totalAmount"], _f(row.get("totalAmount")) or 0.0)
+    return by_token
+
+
 class DexscreenerCollector(Collector):
     """Promotion ledger, narrative metas, and cross-venue pair data."""
 
@@ -236,6 +265,32 @@ class DexscreenerCollector(Collector):
         """
         result = self._empty()
 
+        by_token = _merge_boosts(await self._fetch_boosts(result))
+        result.raw["boosts"] = by_token
+
+        await self._fetch_raw_list(
+            result, "/token-profiles/latest/v1", "profiles", 45.0,
+            event="dexscreener.profiles_failed", degrade=True, cap=200,
+        )
+        await self._fetch_raw_list(
+            result, "/metas/trending/v1", "metas", 120.0,
+            event="dexscreener.metas_failed", degrade=False,
+        )
+        await self._fetch_raw_list(
+            result, "/community-takeovers/latest/v1", "community_takeovers", 300.0,
+            event="dexscreener.cto_failed", degrade=False,
+        )
+
+        # Resolve the boosted tokens to actual pair data, batched 30 at a time.
+        solana_addresses = [
+            v["tokenAddress"] for v in by_token.values() if v["chainId"] == "solana"
+        ][: max(0, limit)]
+        await self._collect_pairs(result, "solana", solana_addresses, cache_ttl=15.0,
+                                  event="dexscreener.tokens_batch_failed")
+        return result
+
+    async def _fetch_boosts(self, result: CollectionResult) -> list[dict[str, Any]]:
+        """Both boost ledgers, concatenated. Either failing degrades the surface."""
         boosts: list[dict[str, Any]] = []
         for endpoint in ("/token-boosts/latest/v1", "/token-boosts/top/v1"):
             try:
@@ -245,60 +300,50 @@ class DexscreenerCollector(Collector):
             except Exception as exc:
                 result.degraded = True
                 log.debug("dexscreener.boosts_failed", endpoint=endpoint, error=str(exc))
+        return boosts
 
-        by_token: dict[str, dict[str, Any]] = {}
-        for row in boosts:
-            chain_id = str(row.get("chainId") or "").lower()
-            address = row.get("tokenAddress")
-            if not address or chain_id not in CHAIN_IDS:
-                continue
-            key = f"{chain_id}:{address}"
-            existing = by_token.setdefault(
-                key,
-                {
-                    "chainId": chain_id,
-                    "tokenAddress": address,
-                    "amount": 0.0,
-                    "totalAmount": 0.0,
-                    "description": row.get("description"),
-                    "links": row.get("links"),
-                },
-            )
-            existing["amount"] = max(existing["amount"], _f(row.get("amount")) or 0.0)
-            existing["totalAmount"] = max(existing["totalAmount"], _f(row.get("totalAmount")) or 0.0)
-        result.raw["boosts"] = by_token
+    async def _fetch_raw_list(
+        self,
+        result: CollectionResult,
+        endpoint: str,
+        key: str,
+        cache_ttl: float,
+        *,
+        event: str,
+        degrade: bool,
+        cap: int | None = None,
+    ) -> None:
+        """Store one list-shaped promo endpoint under ``result.raw[key]``.
 
+        `degrade` is per-endpoint on purpose: a missing promotion ledger means
+        the surface is impaired, whereas the metas and CTO feeds are commentary
+        and their absence says nothing about collection health.
+        """
         try:
-            profiles = await self.promo.get_json(f"{BASE}/token-profiles/latest/v1", cache_ttl=45.0)
-            if isinstance(profiles, list):
-                result.raw["profiles"] = [p for p in profiles if isinstance(p, dict)][:200]
+            payload = await self.promo.get_json(f"{BASE}{endpoint}", cache_ttl=cache_ttl)
+            if isinstance(payload, list):
+                rows = [row for row in payload if isinstance(row, dict)]
+                result.raw[key] = rows[:cap] if cap is not None else rows
         except Exception as exc:
-            result.degraded = True
-            log.debug("dexscreener.profiles_failed", error=str(exc))
+            if degrade:
+                result.degraded = True
+            log.debug(event, error=str(exc))
 
-        try:
-            metas = await self.promo.get_json(f"{BASE}/metas/trending/v1", cache_ttl=120.0)
-            if isinstance(metas, list):
-                result.raw["metas"] = [m for m in metas if isinstance(m, dict)]
-        except Exception as exc:
-            log.debug("dexscreener.metas_failed", error=str(exc))
-
-        try:
-            ctos = await self.promo.get_json(f"{BASE}/community-takeovers/latest/v1", cache_ttl=300.0)
-            if isinstance(ctos, list):
-                result.raw["community_takeovers"] = [c for c in ctos if isinstance(c, dict)]
-        except Exception as exc:
-            log.debug("dexscreener.cto_failed", error=str(exc))
-
-        # Resolve the boosted tokens to actual pair data, batched 30 at a time.
-        solana_addresses = [
-            v["tokenAddress"] for v in by_token.values() if v["chainId"] == "solana"
-        ][: max(0, limit)]
-        for batch_start in range(0, len(solana_addresses), 30):
-            batch = solana_addresses[batch_start : batch_start + 30]
+    async def _collect_pairs(
+        self,
+        result: CollectionResult,
+        chain_id: str,
+        addresses: Sequence[str],
+        *,
+        cache_ttl: float,
+        event: str,
+    ) -> None:
+        """Resolve addresses to pair records, 30 per call as the endpoint allows."""
+        for start in range(0, len(addresses), 30):
+            batch = addresses[start : start + 30]
             try:
                 pairs = await self.client.get_json(
-                    f"{BASE}/tokens/v1/solana/{','.join(batch)}", cache_ttl=15.0
+                    f"{BASE}/tokens/v1/{chain_id}/{','.join(batch)}", cache_ttl=cache_ttl
                 )
                 for pair in pairs or []:
                     if not isinstance(pair, dict):
@@ -310,9 +355,7 @@ class DexscreenerCollector(Collector):
                         result.snapshots.append(snapshot)
             except Exception as exc:
                 result.degraded = True
-                log.debug("dexscreener.tokens_batch_failed", error=str(exc))
-
-        return result
+                log.debug(event, chain=chain_id, error=str(exc))
 
     # -- enrichment --------------------------------------------------------- #
 
@@ -327,23 +370,8 @@ class DexscreenerCollector(Collector):
             by_chain.setdefault(token.chain.value, []).append(token.mint)
 
         for chain_id, addresses in by_chain.items():
-            for start in range(0, len(addresses), 30):
-                batch = addresses[start : start + 30]
-                try:
-                    pairs = await self.client.get_json(
-                        f"{BASE}/tokens/v1/{chain_id}/{','.join(batch)}", cache_ttl=10.0
-                    )
-                    for pair in pairs or []:
-                        if not isinstance(pair, dict):
-                            continue
-                        launch, snapshot = self._pair_to_records(pair)
-                        if launch is not None:
-                            result.launches.append(launch)
-                        if snapshot is not None:
-                            result.snapshots.append(snapshot)
-                except Exception as exc:
-                    result.degraded = True
-                    log.debug("dexscreener.enrich_pairs_failed", chain=chain_id, error=str(exc))
+            await self._collect_pairs(result, chain_id, addresses, cache_ttl=10.0,
+                                      event="dexscreener.enrich_pairs_failed")
 
         # The order ledger costs one call per token from the scarce bucket, so
         # it is only pulled for a bounded prefix of the candidate list.

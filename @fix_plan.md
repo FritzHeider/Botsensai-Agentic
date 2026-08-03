@@ -34,24 +34,38 @@ while an 18 stands moves the reported number not at all. Each chunk lowers
   Repo maximum 31 → 18; `MAX_COMPLEXITY` lowered to match.
   _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=18" src` exits 0. ✔ Also `python scripts/backpressure.py` 9/9 green, 237 tests pass, and both refactors were verified output-identical rather than assumed: 36 synthetic tokens + a 12-token cohort digest-identical, and a 40-token synthetic backtest identical on every field (digest `85ff1fc8…`, 2400 evaluated, 6 entered, pnl 0.065458).
 
-- [ ] **P0-02 — The collector and CLI offenders (18, 18, 18, 17, 13, 13, 12, 12, 12)**
-  `collectors.social.enrich` 18, `collectors.pumpfun.enrich` 18,
-  `collectors.dexscreener.discover` 18, `collectors.browser.visit` 17,
-  `collectors.pumpfun._parse_trade` 13, `collectors.dexscreener.enrich` 13,
-  `collectors.pumpfun.discover` 12, `collectors.pumpfun._parse_holders` 12,
-  `collectors.geckoterminal.enrich` 12, `_pool_to_records` 11. Mostly
-  per-field parse guards; extract one parser per record type. The
-  never-raise-out-of-discover/enrich contract must survive the split — that is
-  what `tests/test_collectors.py` is for.
+- [x] **P0-02 — The collector and CLI offenders (18, 18, 18, 17, 13, 13, 12, 12, 12)**
+  Done 2026-08-03. Every collector is now ≤ 10, not ≤ 13:
+  `social.enrich` 18→7 (`_catalog_matches`, `_attribute_post`),
+  `pumpfun.enrich` 18→5 (one `_enrich_*` per sub-surface),
+  `dexscreener.discover` 18→3 (`_fetch_boosts`, `_merge_boosts`,
+  `_fetch_raw_list`, `_collect_pairs` — the last shared with `enrich` 13→6),
+  `browser.visit` 17→6 (`_response_listener`, `_route_blocker`, `_drive_page`),
+  `pumpfun._parse_trade` 13→6 (`_trade_as_of`/`_trade_side`/`_trade_amounts`),
+  `pumpfun.discover` 12→4, `pumpfun._parse_holders` 12→6 (`_holder_rows`,
+  `_holder_labels`, `_labelled_share`), `geckoterminal.enrich` 12→3
+  (`_enrich_batch`, `_entry_to_snapshot`, `_enrich_token_info`),
+  `_pool_to_records` 11→7 (`_launchpad_from_pool` table).
+  Also `scoring.fit.fit` 15→7 (`_search`/`_tune_metrics`/`_tune_families`) and
+  `execution.broker.check_entry` 14→9 (`_size_within_limits`, `_token_veto`),
+  because this task's own acceptance command is repo-wide and those two were
+  the only functions left above 13. They are struck from P0-03 below.
+  Repo maximum 18 → 13; `MAX_COMPLEXITY` lowered to match.
   _Depends on: P0-01._
-  _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=13" src` exits 0, and `python -m pytest tests/test_collectors.py -q` exits 0.
+  _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=13" src` exits 0, and `python -m pytest tests/test_collectors.py -q` exits 0. ✔ Also `python scripts/backpressure.py` 9/9 green (`complexity: 13`, coverage 65%), 247 tests pass, and the split was verified behaviour-preserving rather than assumed: a probe digesting a 40-token backtest (2400 evaluated, 7 entered, pnl 0.042817437), a 260-example weight fit, a 480-row `check_entry` grid, the record parsers, nine collector surface runs against a canned transport and four browser visits is identical on both sides of the refactor (`bd9a9ba18d434791`).
+  New: `tests/test_collector_surfaces.py` — 10 tests driving `discover`/`enrich`
+  through a fake transport, pinning the never-raise and partial-result contract
+  that this split put at risk. They pass unmodified against pre-refactor HEAD,
+  and two deliberate mutations (dropping a `degraded=True`, guessing an owner
+  for an address-only 4chan post) each turn one red.
 
-- [ ] **P0-03 — The remaining nine, down to 10**
-  `scoring.fit.fit` 15, `execution.broker.check_entry` 14, `util.http.request` 13,
-  `cli.backtest` 13, `pipeline.sweep` 13, `pipeline.collect` 13, `cli.collect` 12,
-  `metrics.credibility.compute` 12, `metrics.community.compute` 12,
-  `metrics.topology.compute` 11. With these gone the reported number is ≤ 10 and
-  `build.done` can be accepted for the first time.
+- [ ] **P0-03 — The remaining seven, down to 10**
+  `util.http.request` 13, `cli.backtest` 13, `pipeline.sweep` 13,
+  `pipeline.collect` 13, `cli.collect` 12, `metrics.credibility.compute` 12,
+  `metrics.community.compute` 12, `media.generator.blog_post` 12 (missed by the
+  original survey), `metrics.topology.compute` 11. `scoring.fit.fit` and
+  `execution.broker.check_entry` were done under P0-02. With these gone the
+  reported number is ≤ 10 and `build.done` can be accepted for the first time.
   _Depends on: P0-02._
   _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=10" src` exits 0, and `python scripts/backpressure.py` prints `complexity: 10` or lower with 9/9 green.
 

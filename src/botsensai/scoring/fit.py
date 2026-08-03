@@ -223,6 +223,66 @@ class WeightFitter:
 
     # -- fitting ------------------------------------------------------------ #
 
+    def _search(self, train: Sequence[TrainingExample], weights: Weights) -> None:
+        """Coordinate ascent over metric weights then family budgets.
+
+        The step halves only when a full pass moves neither, so the search
+        spends its iterations where they still buy something and stops when the
+        step is too small to matter.
+        """
+        best = self._objective(train, weights)
+        step = 0.5
+        for iteration in range(self.iterations):
+            best, metrics_improved = self._tune_metrics(train, weights, step, best)
+            best, families_improved = self._tune_families(train, weights, best)
+            if metrics_improved or families_improved:
+                continue
+            step *= 0.5
+            if step < 0.02:
+                log.debug("fit.converged", iteration=iteration)
+                break
+
+    def _tune_metrics(
+        self, train: Sequence[TrainingExample], weights: Weights, step: float, best: float
+    ) -> tuple[float, bool]:
+        """One pass over the metric weights in random order."""
+        improved = False
+        order = [m.id for m in self.registry]
+        self.rng.shuffle(order)
+        for metric_id in order:
+            current = weights.metrics.get(metric_id, 0.05)
+            for candidate in (current * (1.0 + step), current * (1.0 - step)):
+                candidate = max(0.0, candidate)
+                if abs(candidate - current) < 1e-6:
+                    continue
+                weights.metrics[metric_id] = candidate
+                value = self._objective(train, weights)
+                if value > best + 1e-6:
+                    best = value
+                    current = candidate
+                    improved = True
+                else:
+                    weights.metrics[metric_id] = current
+        return best, improved
+
+    def _tune_families(
+        self, train: Sequence[TrainingExample], weights: Weights, best: float
+    ) -> tuple[float, bool]:
+        """The same treatment for the family budgets, at a coarser step."""
+        improved = False
+        for family in list(DEFAULT_FAMILY_WEIGHTS):
+            current = weights.families.get(family, 0.1)
+            for candidate in (current * 1.25, current * 0.8):
+                weights.families[family] = max(0.0, candidate)
+                value = self._objective(train, weights)
+                if value > best + 1e-6:
+                    best = value
+                    current = max(0.0, candidate)
+                    improved = True
+                else:
+                    weights.families[family] = current
+        return best, improved
+
     def fit(
         self,
         examples: Sequence[TrainingExample],
@@ -250,45 +310,7 @@ class WeightFitter:
         train, holdout = shuffled[:split], shuffled[split:]
 
         weights = Weights(version=version or f"v{utcnow():%Y%m%d}")
-        best = self._objective(train, weights)
-
-        metric_ids = [m.id for m in self.registry]
-        step = 0.5
-        for iteration in range(self.iterations):
-            improved = False
-            order = list(metric_ids)
-            self.rng.shuffle(order)
-            for metric_id in order:
-                current = weights.metrics.get(metric_id, 0.05)
-                for candidate in (current * (1.0 + step), current * (1.0 - step)):
-                    candidate = max(0.0, candidate)
-                    if abs(candidate - current) < 1e-6:
-                        continue
-                    weights.metrics[metric_id] = candidate
-                    value = self._objective(train, weights)
-                    if value > best + 1e-6:
-                        best = value
-                        current = candidate
-                        improved = True
-                    else:
-                        weights.metrics[metric_id] = current
-            # Family budgets get the same treatment, at a coarser step.
-            for family in list(DEFAULT_FAMILY_WEIGHTS):
-                current = weights.families.get(family, 0.1)
-                for candidate in (current * 1.25, current * 0.8):
-                    weights.families[family] = max(0.0, candidate)
-                    value = self._objective(train, weights)
-                    if value > best + 1e-6:
-                        best = value
-                        current = max(0.0, candidate)
-                        improved = True
-                    else:
-                        weights.families[family] = current
-            if not improved:
-                step *= 0.5
-                if step < 0.02:
-                    log.debug("fit.converged", iteration=iteration)
-                    break
+        self._search(train, weights)
 
         # Renormalize families so the budget sums to one; scores stay in 0..1.
         family_total = sum(weights.families.values())

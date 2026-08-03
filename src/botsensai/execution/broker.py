@@ -100,17 +100,9 @@ class RiskManager:
         if open_count >= s.max_concurrent_positions:
             return RiskDecision(False, f"at position limit ({s.max_concurrent_positions})")
 
-        size = min(order.size_native, s.max_position_native)
-
-        headroom = s.max_portfolio_exposure_native - account.open_exposure_native
-        if headroom <= 0:
-            return RiskDecision(False, "portfolio exposure limit reached")
-        size = min(size, headroom)
-
-        if size > account.cash_native:
-            size = account.cash_native
-        if size <= 1e-6:
-            return RiskDecision(False, "insufficient cash after limits")
+        size, sizing_veto = self._size_within_limits(order, account)
+        if sizing_veto is not None:
+            return RiskDecision(False, sizing_veto)
 
         if account.daily_loss_native >= s.max_daily_loss_native:
             return RiskDecision(
@@ -122,18 +114,46 @@ class RiskManager:
         if len(recent) >= s.max_trades_per_hour:
             return RiskDecision(False, f"trade rate limit ({s.max_trades_per_hour}/hr)")
 
+        token_veto = self._token_veto(snapshot, age_seconds)
+        if token_veto is not None:
+            return RiskDecision(False, token_veto)
+
+        return RiskDecision(True, "ok", adjusted_size=size)
+
+    def _size_within_limits(
+        self, order: Order, account: AccountState
+    ) -> tuple[float, str | None]:
+        """Clamp the requested size to the position, portfolio and cash limits.
+
+        Returns the clamped size and, if one of those limits leaves nothing to
+        trade, the reason to veto on.
+        """
+        s = self.settings
+        size = min(order.size_native, s.max_position_native)
+
+        headroom = s.max_portfolio_exposure_native - account.open_exposure_native
+        if headroom <= 0:
+            return size, "portfolio exposure limit reached"
+        size = min(size, headroom)
+
+        if size > account.cash_native:
+            size = account.cash_native
+        if size <= 1e-6:
+            return size, "insufficient cash after limits"
+        return size, None
+
+    def _token_veto(self, snapshot: MarketSnapshot | None, age_seconds: float) -> str | None:
+        """Age and liquidity gates on the token itself, or None if it passes."""
+        s = self.settings
         if age_seconds < s.min_token_age_seconds:
-            return RiskDecision(False, f"token too young ({age_seconds:.0f}s)")
+            return f"token too young ({age_seconds:.0f}s)"
         if age_seconds > s.max_token_age_seconds:
-            return RiskDecision(False, f"token too old ({age_seconds / 3600:.1f}h)")
+            return f"token too old ({age_seconds / 3600:.1f}h)"
 
         if snapshot is not None and snapshot.liquidity_usd is not None:
             if snapshot.liquidity_usd < s.min_liquidity_usd:
-                return RiskDecision(
-                    False, f"liquidity ${snapshot.liquidity_usd:,.0f} below floor"
-                )
-
-        return RiskDecision(True, "ok", adjusted_size=size)
+                return f"liquidity ${snapshot.liquidity_usd:,.0f} below floor"
+        return None
 
 
 class PaperBroker:

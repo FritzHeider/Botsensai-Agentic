@@ -27,7 +27,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -95,6 +95,57 @@ class PageResult:
             if c.matches(pattern) and c.body is not None:
                 return c.body
         return None
+
+
+def _response_listener(
+    url: str, capture_patterns: Sequence[str], captured: list[CapturedResponse]
+) -> Callable[[Any], Coroutine[Any, Any, None]]:
+    """Build the response handler that fills `captured`.
+
+    Attached before navigation so the app's own bootstrap fetches are seen —
+    which is where the data actually lives. It swallows everything: a listener
+    that raises would kill the visit that is still loading.
+    """
+
+    async def on_response(response: Any) -> None:
+        try:
+            if capture_patterns and not any(re.search(p, response.url) for p in capture_patterns):
+                return
+            ctype = (response.headers or {}).get("content-type", "")
+            if "json" not in ctype and capture_patterns == ():
+                return
+            body: Any = None
+            if "json" in ctype:
+                with contextlib.suppress(Exception):
+                    body = await response.json()
+            if body is None:
+                with contextlib.suppress(Exception):
+                    body = await response.text()
+            captured.append(
+                CapturedResponse(
+                    url=response.url,
+                    status=response.status,
+                    body=body,
+                    method=response.request.method,
+                    resource_type=response.request.resource_type,
+                )
+            )
+        except Exception as exc:  # never let a listener kill the visit
+            log.debug("browser.capture_error", url=url, error=str(exc))
+
+    return on_response
+
+
+def _route_blocker(blocked: set[str]) -> Callable[[Any], Coroutine[Any, Any, None]]:
+    """Build the route handler that aborts the blocked resource types."""
+
+    async def route_handler(route: Any) -> None:
+        if route.request.resource_type in blocked:
+            await route.abort()
+        else:
+            await route.continue_()
+
+    return route_handler
 
 
 class WebUseDriver:
@@ -236,74 +287,25 @@ class WebUseDriver:
             captured: list[CapturedResponse] = []
             console: list[str] = []
 
-            async def on_response(response: Any) -> None:
-                try:
-                    if capture_patterns and not any(
-                        re.search(p, response.url) for p in capture_patterns
-                    ):
-                        return
-                    ctype = (response.headers or {}).get("content-type", "")
-                    if "json" not in ctype and capture_patterns == ():
-                        return
-                    body: Any = None
-                    if "json" in ctype:
-                        with contextlib.suppress(Exception):
-                            body = await response.json()
-                    if body is None:
-                        with contextlib.suppress(Exception):
-                            body = await response.text()
-                    captured.append(
-                        CapturedResponse(
-                            url=response.url,
-                            status=response.status,
-                            body=body,
-                            method=response.request.method,
-                            resource_type=response.request.resource_type,
-                        )
-                    )
-                except Exception as exc:  # never let a listener kill the visit
-                    log.debug("browser.capture_error", url=url, error=str(exc))
-
+            on_response = _response_listener(url, capture_patterns, captured)
             page.on("response", lambda r: asyncio.create_task(on_response(r)))
             page.on("console", lambda m: console.append(f"{m.type}: {m.text}"[:500]))
 
             if self.settings.block_resources:
-                blocked = set(self.settings.block_resources)
-
-                async def route_handler(route: Any) -> None:
-                    if route.request.resource_type in blocked:
-                        await route.abort()
-                    else:
-                        await route.continue_()
-
-                await page.route("**/*", route_handler)
+                await page.route("**/*", _route_blocker(set(self.settings.block_resources)))
 
             try:
-                response = await page.goto(url, wait_until="domcontentloaded")
-                result.status = response.status if response else 0
-                result.final_url = page.url
-
-                if wait_selector:
-                    with contextlib.suppress(Exception):
-                        await page.wait_for_selector(wait_selector, timeout=self.settings.nav_timeout_ms)
-                if click_selector:
-                    with contextlib.suppress(Exception):
-                        await page.click(click_selector, timeout=5000)
-                if wait_ms:
-                    await page.wait_for_timeout(wait_ms)
-
-                for _ in range(scrolls):
-                    with contextlib.suppress(Exception):
-                        await page.mouse.wheel(0, 4000)
-                        await page.wait_for_timeout(scroll_pause_ms)
-
-                if extract_text:
-                    with contextlib.suppress(Exception):
-                        result.text = await page.inner_text("body")
-                if extract_html:
-                    with contextlib.suppress(Exception):
-                        result.html = await page.content()
-
+                await self._drive_page(
+                    page,
+                    result,
+                    wait_selector=wait_selector,
+                    click_selector=click_selector,
+                    wait_ms=wait_ms,
+                    scrolls=scrolls,
+                    scroll_pause_ms=scroll_pause_ms,
+                    extract_text=extract_text,
+                    extract_html=extract_html,
+                )
                 pacer.breaker.record_success()
             except Exception as exc:
                 result.error = str(exc)
@@ -318,6 +320,48 @@ class WebUseDriver:
                     await page.close()
 
         return result
+
+    async def _drive_page(
+        self,
+        page: Any,
+        result: PageResult,
+        *,
+        wait_selector: str | None,
+        click_selector: str | None,
+        wait_ms: int,
+        scrolls: int,
+        scroll_pause_ms: int,
+        extract_text: bool,
+        extract_html: bool,
+    ) -> None:
+        """Navigate and work the page. Navigation failure raises; every optional
+        step after it is suppressed, because a missing selector or a body that
+        will not serialise is not a reason to lose the responses already
+        captured."""
+        response = await page.goto(result.url, wait_until="domcontentloaded")
+        result.status = response.status if response else 0
+        result.final_url = page.url
+
+        if wait_selector:
+            with contextlib.suppress(Exception):
+                await page.wait_for_selector(wait_selector, timeout=self.settings.nav_timeout_ms)
+        if click_selector:
+            with contextlib.suppress(Exception):
+                await page.click(click_selector, timeout=5000)
+        if wait_ms:
+            await page.wait_for_timeout(wait_ms)
+
+        for _ in range(scrolls):
+            with contextlib.suppress(Exception):
+                await page.mouse.wheel(0, 4000)
+                await page.wait_for_timeout(scroll_pause_ms)
+
+        if extract_text:
+            with contextlib.suppress(Exception):
+                result.text = await page.inner_text("body")
+        if extract_html:
+            with contextlib.suppress(Exception):
+                result.html = await page.content()
 
     async def capture_json(
         self,

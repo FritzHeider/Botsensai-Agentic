@@ -750,6 +750,26 @@ class RedditCollector(Collector):
         return result
 
 
+def _catalog_matches(catalog: Any, symbols: set[str]) -> list[int]:
+    """Thread numbers whose subject or comment names a monitored ticker.
+
+    The catalog is scanned rather than the search endpoint because 4chan has no
+    search API; matching on the catalog blob is the only way to narrow 200-odd
+    threads to the handful worth a request each.
+    """
+    matches: list[int] = []
+    for page in catalog or []:
+        if not isinstance(page, dict):
+            continue
+        for thread in page.get("threads") or []:
+            if not isinstance(thread, dict):
+                continue
+            blob = f"{thread.get('sub') or ''} {thread.get('com') or ''}".upper()
+            if thread.get("no") and any(sym in blob for sym in symbols):
+                matches.append(int(thread["no"]))
+    return matches
+
+
 class FourChanBizCollector(Collector):
     """/biz/ via the read-only JSON API.
 
@@ -837,20 +857,8 @@ class FourChanBizCollector(Collector):
             log.debug("fourchan.catalog_failed", error=str(exc))
             return result
 
-        interesting: list[int] = []
-        for page in catalog or []:
-            if not isinstance(page, dict):
-                continue
-            for thread in page.get("threads") or []:
-                if not isinstance(thread, dict):
-                    continue
-                blob = f"{thread.get('sub') or ''} {thread.get('com') or ''}".upper()
-                if any(sym in blob for sym in symbols):
-                    if thread.get("no"):
-                        interesting.append(int(thread["no"]))
-
         # Bounded: the catalog is 200+ threads and the etiquette is 1 req/sec.
-        for thread_no in interesting[:8]:
+        for thread_no in _catalog_matches(catalog, set(symbols))[:8]:
             try:
                 payload = await self.client.get_json(
                     f"{FOURCHAN_API}/biz/thread/{thread_no}.json", cache_ttl=60.0
@@ -863,33 +871,41 @@ class FourChanBizCollector(Collector):
                 if not isinstance(post, dict):
                     continue
                 social = self._post_to_social(post, thread_no)
-                if social is None:
-                    continue
-                blob = social.text.upper()
-                matched = [sym for sym in symbols if sym in blob]
-                if not matched and not contains_address(social.text):
-                    continue
-                for sym in matched:
-                    if sym not in social.mentioned_tokens:
-                        social.mentioned_tokens.append(sym)
-                # This board is scanned once for every ticker at a time, so a
-                # thread can mention several. `social_posts` is keyed
-                # (platform, post_id, observed_at) with token_key outside the
-                # key, so one post can only be attributed to one token: the
-                # first ticker matched wins, and the rest remain visible through
-                # `mentioned_tokens`. Fanning one post out to several tokens
-                # would need the key widened, which is a schema migration.
-                owner = symbols.get(matched[0]) if matched else None
-                if owner is not None:
-                    result.posts.extend(tag_posts([social], owner.key))
-                else:
-                    # Matched only by mint address, so which token is not known
-                    # here. Left untagged deliberately rather than guessed:
-                    # attributing it to the wrong token would corrupt that
-                    # token's social metrics, which is worse than one lost post.
-                    result.posts.append(social)
+                if social is not None:
+                    self._attribute_post(result, social, symbols)
 
         return result
+
+    @staticmethod
+    def _attribute_post(
+        result: CollectionResult, social: SocialPost, symbols: dict[str, TokenRef]
+    ) -> None:
+        """Attach a thread post to a monitored token, or drop it.
+
+        This board is scanned once for every ticker at a time, so a thread can
+        mention several. `social_posts` is keyed (platform, post_id,
+        observed_at) with token_key outside the key, so one post can only be
+        attributed to one token: the first ticker matched wins, and the rest
+        remain visible through `mentioned_tokens`. Fanning one post out to
+        several tokens would need the key widened, which is a schema migration.
+        """
+        blob = social.text.upper()
+        matched = [sym for sym in symbols if sym in blob]
+        if not matched and not contains_address(social.text):
+            return
+        for sym in matched:
+            if sym not in social.mentioned_tokens:
+                social.mentioned_tokens.append(sym)
+
+        owner = symbols.get(matched[0]) if matched else None
+        if owner is not None:
+            result.posts.extend(tag_posts([social], owner.key))
+        else:
+            # Matched only by mint address, so which token is not known here.
+            # Left untagged deliberately rather than guessed: attributing it to
+            # the wrong token would corrupt that token's social metrics, which
+            # is worse than one lost post.
+            result.posts.append(social)
 
 
 class TelegramChannelCollector(Collector):

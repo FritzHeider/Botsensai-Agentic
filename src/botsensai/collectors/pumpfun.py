@@ -103,6 +103,89 @@ def _f(value: Any) -> float | None:
         return None
 
 
+def _coin_rows(payload: Any) -> list[dict[str, Any]]:
+    """The coin listings return either a bare array or a ``{"coins": [...]}``
+    envelope depending on the endpoint, and either can carry non-object rows."""
+    rows = payload if isinstance(payload, list) else (payload or {}).get("coins", [])
+    return [row for row in rows or [] if isinstance(row, dict)]
+
+
+def _trade_as_of(row: dict[str, Any]) -> datetime | None:
+    """Event time of a trade row.
+
+    ``timestamp`` is ISO-8601 on the current shape of the endpoint and epoch
+    millis on the previous one, so both are tried before falling back to
+    ``blockTime``.
+    """
+    raw = row.get("timestamp")
+    if isinstance(raw, str) and "-" in raw:
+        with contextlib.suppress(ValueError):
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return _ms_to_dt(raw) or _ms_to_dt(row.get("blockTime"))
+
+
+def _trade_side(row: dict[str, Any]) -> Side | None:
+    """Side of a trade row, or None when the row does not state one."""
+    text = str(row.get("type") or row.get("side") or "").strip().lower()
+    if text in ("buy", "b"):
+        return Side.BUY
+    if text in ("sell", "s"):
+        return Side.SELL
+    is_buy = row.get("isBuy", row.get("is_buy"))
+    if is_buy is None:
+        return None
+    return Side.BUY if is_buy else Side.SELL
+
+
+def _holder_rows(payload: Any) -> list[dict[str, Any]]:
+    """Top-holders rows out of either envelope shape this endpoint returns."""
+    if isinstance(payload, dict):
+        rows = payload.get("topHolders") or payload.get("holders")
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        rows = None
+    return [row for row in rows or [] if isinstance(row, dict)]
+
+
+def _holder_labels(row: dict[str, Any]) -> list[str]:
+    """The vendor's forensic flags, recorded as labels rather than consumed as
+    truth — see the class docstring."""
+    labels: list[str] = []
+    if row.get("isDev"):
+        labels.append("creator")
+    if row.get("isSniper"):
+        labels.append("sniper")
+    if row.get("isBundler") or row.get("isBundled"):
+        labels.append("bundler")
+    if row.get("isInsider"):
+        labels.append("insider")
+    return labels
+
+
+def _labelled_share(holders: Sequence[HolderRecord], label: str) -> float:
+    """Supply share held by everyone carrying ``label``."""
+    return sum(h.share_of_supply for h in holders if label in h.labels)
+
+
+def _trade_amounts(row: dict[str, Any]) -> tuple[float, float]:
+    """(sol, token) amounts, normalised out of the legacy lamport/micro units."""
+    sol = (
+        _f(row.get("amountSol"))
+        or _f(row.get("quoteAmount"))
+        or _f(row.get("solAmount"))
+        or 0.0
+    )
+    tokens = _f(row.get("baseAmount")) or _f(row.get("tokenAmount")) or 0.0
+    # Older shapes of this endpoint returned lamports and micro-tokens.
+    if sol > 1e6:
+        sol /= 1e9
+    if tokens > 1e15:
+        tokens /= 1e6
+    return sol, tokens
+
+
 class PumpFunCollector(Collector):
     """Discovery and enrichment for pump.fun, the dominant Solana launchpad."""
 
@@ -302,11 +385,7 @@ class PumpFunCollector(Collector):
             },
             cache_ttl=self.config.cache_ttl_seconds,
         )
-        coins = payload if isinstance(payload, list) else (payload or {}).get("coins", [])
-
-        for coin in coins or []:
-            if not isinstance(coin, dict):
-                continue
+        for coin in _coin_rows(payload):
             launch = self._coin_to_launch(coin)
             if launch is None:
                 continue
@@ -315,18 +394,19 @@ class PumpFunCollector(Collector):
             if snapshot is not None:
                 result.snapshots.append(snapshot)
 
-        # Currently-live coins carry ten extra fields the plain listing lacks.
+        await self._discover_live(result, sol_usd)
+        return result
+
+    async def _discover_live(self, result: CollectionResult, sol_usd: float) -> None:
+        """Fold in currently-live coins, which carry ten fields the listing lacks."""
         try:
             live = await self.client.get_json(
                 f"{FRONTEND_API}/coins/currently-live",
                 params={"limit": 50, "offset": 0, "includeNsfw": "false"},
                 cache_ttl=20.0,
             )
-            live_coins = live if isinstance(live, list) else (live or {}).get("coins", [])
             seen = {launch.token.mint for launch in result.launches}
-            for coin in live_coins or []:
-                if not isinstance(coin, dict):
-                    continue
+            for coin in _coin_rows(live):
                 mint = coin.get("mint")
                 if mint and mint not in seen:
                     launch = self._coin_to_launch(coin)
@@ -345,8 +425,6 @@ class PumpFunCollector(Collector):
         except Exception as exc:
             result.degraded = True
             log.debug("pumpfun.currently_live_failed", error=str(exc))
-
-        return result
 
     # -- enrichment --------------------------------------------------------- #
 
@@ -368,79 +446,94 @@ class PumpFunCollector(Collector):
         holder_budget = max(1, min(6, ADVANCED_RPM // 10))
 
         for index, token in enumerate(solana):
-            mint = token.mint
-
-            # --- trades (cheap host, paginated) -----------------------------
-            # The endpoint caps `limit` at 100 and returns roughly 20 rows per
-            # page regardless, so depth comes from following `nextCursor`. Depth
-            # matters: the sniper and bundle metrics need the *first* trades of a
-            # token's life, not the most recent twenty.
-            try:
-                cursor: str | None = None
-                for _page in range(TRADE_PAGES):
-                    params: dict[str, Any] = {"limit": TRADE_PAGE_LIMIT}
-                    if cursor:
-                        params["cursor"] = cursor
-                    payload = await self.swap.get_json(
-                        f"{SWAP_API}/v2/coins/{mint}/trades",
-                        params=params,
-                        cache_ttl=3.0,
-                    )
-                    rows = (payload or {}).get("trades", []) or []
-                    for row in rows:
-                        trade = self._parse_trade(row, token, sol_usd)
-                        if trade is not None:
-                            result.trades.append(trade)
-                    pagination = (payload or {}).get("pagination") or {}
-                    cursor = pagination.get("nextCursor")
-                    if not rows or not cursor or not pagination.get("hasMore"):
-                        break
-            except Exception as exc:
-                result.degraded = True
-                log.debug("pumpfun.trades_failed", mint=mint, error=str(exc))
-
-            # --- market activity (cheap host, high value) -------------------
-            try:
-                activity = await self.swap.get_json(
-                    f"{SWAP_API}/v1/coins/{mint}/market-activity", cache_ttl=8.0
-                )
-                if isinstance(activity, dict) and activity:
-                    result.raw.setdefault("market_activity", {})[mint] = activity
-                    snapshot = self._activity_to_snapshot(activity, token, sol_usd)
-                    if snapshot is not None:
-                        result.snapshots.append(snapshot)
-            except Exception as exc:
-                result.degraded = True
-                log.debug("pumpfun.activity_failed", mint=mint, error=str(exc))
-
-            # --- holder forensics (scarce host) -----------------------------
+            await self._enrich_trades(result, token, sol_usd)
+            await self._enrich_activity(result, token, sol_usd)
             if index < holder_budget:
-                try:
-                    holders_payload = await self.advanced.get_json(
-                        f"{ADVANCED_API}/coins/top-holders/{mint}", cache_ttl=25.0
-                    )
-                    holders, security = self._parse_holders(holders_payload, token)
-                    result.holders.extend(holders)
-                    if security is not None:
-                        result.security.append(security)
-                except Exception as exc:
-                    result.degraded = True
-                    log.debug("pumpfun.holders_failed", mint=mint, error=str(exc))
-
-            # --- livestream -------------------------------------------------
-            try:
-                stream = await self.livestream.get_json(
-                    f"{LIVESTREAM_API}/livestream", params={"mintId": mint}, cache_ttl=25.0
-                )
-                if isinstance(stream, dict) and stream.get("id"):
-                    result.raw.setdefault("livestreams", {})[mint] = stream
-                    post = self._stream_to_post(stream, token)
-                    if post is not None:
-                        result.posts.extend(tag_posts([post], token.key))
-            except Exception as exc:
-                log.debug("pumpfun.livestream_failed", mint=mint, error=str(exc))
+                await self._enrich_holders(result, token)
+            await self._enrich_livestream(result, token)
 
         return result
+
+    async def _enrich_trades(
+        self, result: CollectionResult, token: TokenRef, sol_usd: float
+    ) -> None:
+        """Follow the trade cursor for one token, appending every parsed row.
+
+        The endpoint caps `limit` at 100 and returns roughly 20 rows per page
+        regardless, so depth comes from following `nextCursor`. Depth matters:
+        the sniper and bundle metrics need the *first* trades of a token's life,
+        not the most recent twenty.
+        """
+        try:
+            cursor: str | None = None
+            for _page in range(TRADE_PAGES):
+                params: dict[str, Any] = {"limit": TRADE_PAGE_LIMIT}
+                if cursor:
+                    params["cursor"] = cursor
+                payload = await self.swap.get_json(
+                    f"{SWAP_API}/v2/coins/{token.mint}/trades",
+                    params=params,
+                    cache_ttl=3.0,
+                )
+                rows = (payload or {}).get("trades", []) or []
+                for row in rows:
+                    trade = self._parse_trade(row, token, sol_usd)
+                    if trade is not None:
+                        result.trades.append(trade)
+                pagination = (payload or {}).get("pagination") or {}
+                cursor = pagination.get("nextCursor")
+                if not rows or not cursor or not pagination.get("hasMore"):
+                    break
+        except Exception as exc:
+            result.degraded = True
+            log.debug("pumpfun.trades_failed", mint=token.mint, error=str(exc))
+
+    async def _enrich_activity(
+        self, result: CollectionResult, token: TokenRef, sol_usd: float
+    ) -> None:
+        """Market activity: cheap host, high value."""
+        try:
+            activity = await self.swap.get_json(
+                f"{SWAP_API}/v1/coins/{token.mint}/market-activity", cache_ttl=8.0
+            )
+            if isinstance(activity, dict) and activity:
+                result.raw.setdefault("market_activity", {})[token.mint] = activity
+                snapshot = self._activity_to_snapshot(activity, token, sol_usd)
+                if snapshot is not None:
+                    result.snapshots.append(snapshot)
+        except Exception as exc:
+            result.degraded = True
+            log.debug("pumpfun.activity_failed", mint=token.mint, error=str(exc))
+
+    async def _enrich_holders(self, result: CollectionResult, token: TokenRef) -> None:
+        """Holder forensics: the scarcest host in the system."""
+        try:
+            payload = await self.advanced.get_json(
+                f"{ADVANCED_API}/coins/top-holders/{token.mint}", cache_ttl=25.0
+            )
+            holders, security = self._parse_holders(payload, token)
+            result.holders.extend(holders)
+            if security is not None:
+                result.security.append(security)
+        except Exception as exc:
+            result.degraded = True
+            log.debug("pumpfun.holders_failed", mint=token.mint, error=str(exc))
+
+    async def _enrich_livestream(self, result: CollectionResult, token: TokenRef) -> None:
+        """Livestream state. A dead livestream API does not degrade the surface —
+        most tokens are simply not streaming, so an error here is uninformative.
+        """
+        try:
+            stream = await self.livestream.get_json(
+                f"{LIVESTREAM_API}/livestream", params={"mintId": token.mint}, cache_ttl=25.0
+            )
+            if isinstance(stream, dict) and stream.get("id"):
+                result.raw.setdefault("livestreams", {})[token.mint] = stream
+                post = self._stream_to_post(stream, token)
+                if post is not None:
+                    result.posts.extend(tag_posts([post], token.key))
+        except Exception as exc:
+            log.debug("pumpfun.livestream_failed", mint=token.mint, error=str(exc))
 
     # -- record parsing ----------------------------------------------------- #
 
@@ -485,43 +578,15 @@ class PumpFunCollector(Collector):
         if not signature or not wallet:
             return None
 
-        raw_timestamp = row.get("timestamp")
-        as_of: datetime | None = None
-        if isinstance(raw_timestamp, str) and "-" in raw_timestamp:
-            text = raw_timestamp.replace("Z", "+00:00")
-            with contextlib.suppress(ValueError):
-                parsed = datetime.fromisoformat(text)
-                as_of = parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-        if as_of is None:
-            as_of = _ms_to_dt(raw_timestamp) or _ms_to_dt(row.get("blockTime"))
+        as_of = _trade_as_of(row)
         if as_of is None:
             return None
 
-        side_text = str(row.get("type") or row.get("side") or "").strip().lower()
-        if side_text in ("buy", "b"):
-            side = Side.BUY
-        elif side_text in ("sell", "s"):
-            side = Side.SELL
-        else:
-            is_buy = row.get("isBuy", row.get("is_buy"))
-            if is_buy is None:
-                return None
-            side = Side.BUY if is_buy else Side.SELL
+        side = _trade_side(row)
+        if side is None:
+            return None
 
-        sol_amount = (
-            _f(row.get("amountSol"))
-            or _f(row.get("quoteAmount"))
-            or _f(row.get("solAmount"))
-            or 0.0
-        )
-        token_amount = (
-            _f(row.get("baseAmount")) or _f(row.get("tokenAmount")) or 0.0
-        )
-        # Older shapes of this endpoint returned lamports and micro-tokens.
-        if sol_amount > 1e6:
-            sol_amount /= 1e9
-        if token_amount > 1e15:
-            token_amount /= 1e6
+        sol_amount, token_amount = _trade_amounts(row)
 
         price_native = _f(row.get("priceSol"))
         if price_native is None and token_amount > 0:
@@ -604,45 +669,21 @@ class PumpFunCollector(Collector):
         raw trade data, so this endpoint disappearing degrades confidence rather
         than removing the signal.
         """
-        rows = None
-        if isinstance(payload, dict):
-            rows = payload.get("topHolders") or payload.get("holders")
-        elif isinstance(payload, list):
-            rows = payload
+        rows = _holder_rows(payload)
         if not rows:
             return [], None
 
         now = utcnow()
-        total = sum(_f(r.get("amount")) or 0.0 for r in rows if isinstance(r, dict))
+        total = sum(_f(r.get("amount")) or 0.0 for r in rows)
         if total <= 0:
             return [], None
 
         holders: list[HolderRecord] = []
-        dev_share = 0.0
-        sniper_share = 0.0
-        bundled_share = 0.0
-
         for row in rows:
-            if not isinstance(row, dict):
-                continue
             address = row.get("address") or row.get("owner") or row.get("wallet")
             amount = _f(row.get("amount")) or 0.0
             if not address or amount <= 0:
                 continue
-            share = min(1.0, amount / total)
-            labels: list[str] = []
-            if row.get("isDev"):
-                labels.append("creator")
-                dev_share += share
-            if row.get("isSniper"):
-                labels.append("sniper")
-                sniper_share += share
-            if row.get("isBundler") or row.get("isBundled"):
-                labels.append("bundler")
-                bundled_share += share
-            if row.get("isInsider"):
-                labels.append("insider")
-
             holders.append(
                 HolderRecord(
                     token=token,
@@ -650,12 +691,15 @@ class PumpFunCollector(Collector):
                     observed_at=now,
                     wallet=str(address),
                     balance=amount,
-                    share_of_supply=share,
-                    labels=labels,
+                    share_of_supply=min(1.0, amount / total),
+                    labels=_holder_labels(row),
                 )
             )
 
         holders.sort(key=lambda h: h.share_of_supply, reverse=True)
+        dev_share = _labelled_share(holders, "creator")
+        sniper_share = _labelled_share(holders, "sniper")
+        bundled_share = _labelled_share(holders, "bundler")
         security = SecurityReport(
             token=token,
             as_of=now,
