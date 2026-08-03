@@ -42,7 +42,7 @@ from botsensai.util.logging import get_logger
 
 log = get_logger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -127,6 +127,10 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 CREATE INDEX IF NOT EXISTS ix_trades_token_time ON trades(token_key, as_of);
 CREATE INDEX IF NOT EXISTS ix_trades_wallet ON trades(wallet, as_of);
+-- Prior-history counts filter a wallet on both time bounds. Carrying
+-- observed_at in the index keeps that count index-only instead of sending it to
+-- the table for every candidate row.
+CREATE INDEX IF NOT EXISTS ix_trades_wallet_seen ON trades(wallet, as_of, observed_at);
 CREATE INDEX IF NOT EXISTS ix_trades_slot ON trades(token_key, slot);
 
 CREATE TABLE IF NOT EXISTS holders (
@@ -826,12 +830,121 @@ class Database:
             "best_multiple": best,
         }
 
-    def wallet_seen_before(self, wallet: str, before: datetime) -> int:
-        row = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM trades WHERE wallet = ? AND as_of < ?",
-            (wallet, _ts(before)),
-        ).fetchone()
-        return int(row["c"]) if row else 0
+    def wallet_seen_before(
+        self, wallet: str, before: datetime, observed_before: datetime | None = None
+    ) -> int:
+        """Trades by `wallet` that happened — and were known — before a moment.
+
+        Two bounds, because they answer different questions. `before` is event
+        time: did the trade happen before this token existed. `observed_before`
+        is knowledge time: had we collected it by the instant we are scoring.
+        Filtering on `as_of` alone credits a wallet with history that was not
+        knowable at the decision point, which is look-ahead bias in a feature
+        that is fed straight to the backtester.
+        """
+        return self.wallet_prior_counts([wallet], before, observed_before).get(wallet, 0)
+
+    def wallet_prior_counts(
+        self,
+        wallets: Iterable[str],
+        before: datetime,
+        observed_before: datetime | None = None,
+    ) -> dict[str, int]:
+        """Batched `wallet_seen_before`, one query per chunk instead of per wallet.
+
+        A scored token routinely has hundreds of distinct buyers, and the live
+        path scores many tokens per sweep. Wallets with no prior trades are
+        absent from the result rows, so they are seeded to 0 first — a missing
+        key would read as "unknown history" to `fresh_wallet_ratio`, which is a
+        different claim from "no history".
+        """
+        unique = list(dict.fromkeys(wallets))
+        if not unique:
+            return {}
+
+        counts: dict[str, int] = dict.fromkeys(unique, 0)
+        clause = ""
+        tail: list[Any] = []
+        if observed_before is not None:
+            clause = " AND observed_at <= ?"
+            tail = [_ts(observed_before)]
+
+        # SQLITE_MAX_VARIABLE_NUMBER is 999 on older builds; stay well inside it.
+        chunk_size = 400
+        for start in range(0, len(unique), chunk_size):
+            chunk = unique[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT wallet, COUNT(*) AS c FROM trades "  # noqa: S608 - placeholders only
+                f"WHERE wallet IN ({placeholders}) AND as_of < ?" + clause + " GROUP BY wallet",
+                [*chunk, _ts(before), *tail],
+            ).fetchall()
+            for row in rows:
+                counts[row["wallet"]] = int(row["c"])
+        return counts
+
+    def refresh_wallet_profiles(self, wallets: Iterable[str] | None = None) -> int:
+        """Fold `trades` into the `wallet_profiles` summary table.
+
+        The summary is deliberately *lifetime* and carries no point-in-time
+        claim: `trade_count` here is everything we have ever seen, which is the
+        wrong number to hand a metric. What it is good for is the negative case
+        — a wallet whose `first_seen_at` is at or after the moment being scored
+        cannot have priors, and that is answerable without touching `trades`.
+        """
+        params: list[Any] = []
+        clause = ""
+        if wallets is not None:
+            unique = list(dict.fromkeys(wallets))
+            if not unique:
+                return 0
+            clause = " WHERE wallet IN (" + ",".join("?" * len(unique)) + ")"
+            params = list(unique)
+
+        rows = self.conn.execute(
+            "SELECT wallet, MIN(as_of) AS first_seen, MAX(as_of) AS last_seen, "  # noqa: S608
+            "COUNT(*) AS trades FROM trades" + clause + " GROUP BY wallet",
+            params,
+        ).fetchall()
+        if not rows:
+            return 0
+
+        now = _ts(utcnow())
+        payload = [
+            (r["wallet"], r["first_seen"], r["last_seen"], int(r["trades"]), now) for r in rows
+        ]
+        with self.tx() as conn:
+            conn.executemany(
+                """INSERT INTO wallet_profiles
+                       (wallet, first_seen_at, last_seen_at, trade_count, updated_at)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(wallet) DO UPDATE SET
+                       first_seen_at = MIN(COALESCE(wallet_profiles.first_seen_at, excluded.first_seen_at),
+                                           excluded.first_seen_at),
+                       last_seen_at  = MAX(COALESCE(wallet_profiles.last_seen_at, excluded.last_seen_at),
+                                           excluded.last_seen_at),
+                       trade_count   = excluded.trade_count,
+                       updated_at    = excluded.updated_at""",
+                payload,
+            )
+        return len(payload)
+
+    def wallet_first_seen(self, wallets: Iterable[str]) -> dict[str, float]:
+        """`first_seen_at` per wallet from the profile table, for wallets that have one."""
+        unique = list(dict.fromkeys(wallets))
+        out: dict[str, float] = {}
+        chunk_size = 400
+        for start in range(0, len(unique), chunk_size):
+            chunk = unique[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT wallet, first_seen_at FROM wallet_profiles "  # noqa: S608
+                f"WHERE wallet IN ({placeholders}) AND first_seen_at IS NOT NULL",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                out[row["wallet"]] = float(row["first_seen_at"])
+        return out
 
     def record_run(
         self,

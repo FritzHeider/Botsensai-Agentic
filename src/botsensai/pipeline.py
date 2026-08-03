@@ -56,6 +56,7 @@ from botsensai.models import (
     Score,
     utcnow,
 )
+from botsensai.onchain.wallet_priors import WalletPriorIndex
 from botsensai.scoring.composite import CompositeScorer, score_to_size
 from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
@@ -195,6 +196,7 @@ class Pipeline:
         self.metrics = registry or build_registry()
         self.scorer = CompositeScorer(self.metrics, None, self.settings)
         self.broker = broker or PaperBroker(self.settings, starting_native=10.0)
+        self.wallet_priors = WalletPriorIndex(self.db)
 
         self.collectors = CollectorRegistry(self.settings)
         for collector in collectors or self._default_collectors():
@@ -369,6 +371,12 @@ class Pipeline:
         self.db.insert_snapshots(combined.snapshots)
         self.db.insert_trades(combined.trades)
         self.db.insert_holders(combined.holders)
+        # Fold the wallets we just learned about into the profile summary, so the
+        # next sweep can answer "this wallet is younger than the token" without a
+        # counting query. Scoped to the wallets in hand — a full rebuild is a
+        # corpus-wide scan and this runs every sweep.
+        if combined.trades:
+            self.wallet_priors.refresh_profiles({t.wallet for t in combined.trades})
         for report in combined.security:
             self.db.insert_security(report)
         # Each post carries the token it was collected for, so this must be a
@@ -424,12 +432,20 @@ class Pipeline:
             if entry["token_key"] != key
         ]
 
+        trades = self.db.trades_as_of(key, when)
+        # Prior history is bounded twice: trades that happened before this token
+        # existed (`launch.created_at`) and that we had already collected by the
+        # instant being scored (`when`). Dropping either bound is look-ahead.
+        priors = self.wallet_priors.priors_for(
+            (t.wallet for t in trades), launch.created_at, observed_before=when
+        )
+
         return MetricContext(
             token=launch.token,
             as_of=when,
             launch=launch,
             snapshots=self.db.snapshots_as_of(key, when),
-            trades=self.db.trades_as_of(key, when),
+            trades=trades,
             holders=self.db.holders_as_of(key, when),
             security=self.db.security_as_of(key, when),
             posts=self.db.posts_as_of(key, when),
@@ -438,7 +454,7 @@ class Pipeline:
                 if launch.deployer
                 else {}
             ),
-            wallet_priors={},
+            wallet_priors=priors,
             recent_narratives=self._recent_narratives,
             degraded_surfaces=set(),
             extra={

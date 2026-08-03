@@ -111,13 +111,55 @@ unglamorous and is the whole ballgame.
   _Depends on: P1-01._
   _Accept:_ `python -m pytest tests/test_labeller.py -q` exits 0, and the test asserts that for a token whose price spiked on 200 USD of liquidity, `max_realizable_multiple` is materially below `max_multiple_from_t0`. ✔ 30 passed; `test_a_spike_on_thin_liquidity_is_not_realizable` asserts the realizable figure is under half the peak *and* under the pool's total depth. Live: `python -m botsensai.cli label --min-age-hours 24 --max-ohlcv 12` exit 0, 716 considered / 716 labelled / 0 skipped, 323 graduated, 3 of 12 pools returned candles (74 candles), store outcomes 0 → 716.
 
-- [ ] **P1-04 — Wallet prior-history index**
-  `MetricContext.wallet_priors` is currently empty in the live path, which
-  silently guts `fresh_wallet_ratio` and `sniper_supply_share`. Build a
-  `wallet_profiles` maintainer that counts each wallet's trades strictly before
-  a given timestamp, backed by the existing table and an in-memory LRU.
+- [x] **P1-04 — Wallet prior-history index**
+  Done 2026-08-03. `WalletPriorIndex` (`onchain/wallet_priors.py`) resolves
+  time-restricted prior-trade counts, batched through
+  `Database.wallet_prior_counts` and memoized in an LRU;
+  `Database.refresh_wallet_profiles` maintains the (until now completely empty)
+  `wallet_profiles` table. Wired into `Pipeline.build_context`, which passed a
+  literal `{}`.
+  **The empty index was not degrading `fresh_wallet_ratio`, it was inverting it.**
+  With no priors the metric falls back to `HolderRecord.wallet_age_seconds`, and
+  the store holds 187 holder rows against 7,271 trades — so essentially every
+  buyer was skipped, leaving numerator 0 over a full denominator. Measured over
+  the 25 most recent tokens with ≥10 distinct traders, it returned **0.0000 for
+  every one of them**: a hard "no fresh wallets", the most bullish reading the
+  metric can emit, on tokens whose buy side is ~89% fresh. Mean is now **0.8862**
+  (median 0.9029). `sniper_supply_share` moved far less (mean 0.0389 → 0.0400,
+  median unchanged at 0.0000) because it defaults a missing prior to 0 and so was
+  merely pinned at its 0.4 weight floor rather than inverted.
+  Three things the description did not anticipate:
+  1. **`wallet_seen_before` filtered on `as_of` only** (`db.py:829`), where every
+     other point-in-time read in the file filters on `as_of` *and* `observed_at`.
+     It is the one such read feeding a backtested feature. Not theoretical: all
+     7,271 trades have `observed_at > as_of`, and over the 40 most recent
+     launches with trades (1,684 wallets) the single-bound count credited
+     **2,511 prior trades against 1,987 knowable ones — 524 leaked, 20.9%**.
+     Both bounds are now enforced, and the correction is conservative (it can
+     only lower a prior count, i.e. make wallets read fresher and the signal more
+     bearish).
+  2. **The two bounds are what make the cache sound.** Once `observed_before` is
+     past, no later write can change the answer — a new row necessarily carries a
+     later `observed_at`. So `(wallet, before, observed_before)` is immutable and
+     safe to memoize across sweeps; keying on `wallet` alone would serve one
+     token's answer to another token's question.
+  3. **An unrounded knowledge bound made the LRU dead on arrival** — the live
+     path scores each token at its own `utcnow()`, measured at a 0% hit rate.
+     The bound is now floored to a 60s bucket, which is sound only because it
+     rounds *down* (it can exclude a trade just observed, never include one
+     observed too late). Re-scoring one candidate then goes 147 misses → 147 hits
+     with no extra queries. The cross-token win is smaller and comes from
+     elsewhere: `before` legitimately differs per token, so the LRU cannot share
+     across them — batching plus the `first_seen_at` fast path is what pays there
+     (523 of 629 wallets answered with no counting query, 629 wallets resolved in
+     2 queries instead of 629 round trips).
+  Schema: `SCHEMA_VERSION` 3 → 4, adding `ix_trades_wallet_seen(wallet, as_of,
+  observed_at)` so the count stays index-only.
+  Follow-up left undone on purpose: `Database.deployer_history` (`db.py:798`) has
+  the identical single-bound problem. Same class of leak, different feature; it
+  deserves its own task rather than being smuggled in here.
   _Depends on: P1-01._
-  _Accept:_ `python -m pytest tests/test_wallet_priors.py -q` exits 0 and asserts the count for a wallet is time-restricted.
+  _Accept:_ `python -m pytest tests/test_wallet_priors.py -q` exits 0 and asserts the count for a wallet is time-restricted. ✔ 15 passed, exit 0. Time restriction is pinned by `test_prior_count_is_restricted_to_trades_before_the_cutoff` (strict `<`) and the knowledge bound by `test_prior_count_excludes_trades_not_yet_observed`. Probed against the producers, not a formatter: restoring `wallet_priors={}` fails `test_live_context_populates_wallet_priors`, and removing the `observed_at` clause from `wallet_prior_counts` fails 2 tests.
 
 - [ ] **P1-05 — Funding-source resolution**
   `HolderRecord.funded_by` is the input to `funder_graph_dispersion`,

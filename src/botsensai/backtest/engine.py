@@ -45,6 +45,7 @@ from botsensai.models import (
     TokenRef,
     utcnow,
 )
+from botsensai.onchain.wallet_priors import WalletPriorIndex
 from botsensai.scoring.composite import CompositeScorer, Weights, score_to_size
 from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
@@ -317,6 +318,7 @@ class Backtester:
     ) -> list[TokenTape]:
         """Load a replayable universe from persisted collection data."""
         tapes: list[TokenTape] = []
+        index = WalletPriorIndex(db)
         for launch in db.launches_between(start, end):
             key = launch.token.key
             horizon = end
@@ -329,12 +331,19 @@ class Backtester:
                 security=db.security_as_of(key, horizon),
                 outcome=db.outcome(key),
             )
-            # Prior trading history per wallet, restricted to before this launch.
-            priors: dict[str, int] = {}
-            for t in tape.trades:
-                if t.wallet not in priors:
-                    priors[t.wallet] = db.wallet_seen_before(t.wallet, launch.created_at)
-            tape.wallet_priors = priors
+            # Prior trading history per wallet, restricted to before this launch
+            # *and* to what had been collected by then. The knowledge bound is
+            # the conservative choice available here: a tape's priors are fixed
+            # once and then reused at every decision instant, so they have to be
+            # valid at the earliest of them. Bounding on the launch instant can
+            # only undercount — which makes wallets read fresher and the signal
+            # more bearish — where dropping the bound silently credits a wallet
+            # with history nobody had yet seen.
+            tape.wallet_priors = index.priors_for(
+                (t.wallet for t in tape.trades),
+                launch.created_at,
+                observed_before=launch.created_at,
+            )
             tapes.append(tape)
         return tapes
 
