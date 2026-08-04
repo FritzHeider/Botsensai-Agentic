@@ -59,15 +59,49 @@ while an 18 stands moves the reported number not at all. Each chunk lowers
   and two deliberate mutations (dropping a `degraded=True`, guessing an owner
   for an address-only 4chan post) each turn one red.
 
-- [ ] **P0-03 — The remaining seven, down to 10**
-  `util.http.request` 13, `cli.backtest` 13, `pipeline.sweep` 13,
-  `pipeline.collect` 13, `cli.collect` 12, `metrics.credibility.compute` 12,
-  `metrics.community.compute` 12, `media.generator.blog_post` 12 (missed by the
-  original survey), `metrics.topology.compute` 11. `scoring.fit.fit` and
-  `execution.broker.check_entry` were done under P0-02. With these gone the
-  reported number is ≤ 10 and `build.done` can be accepted for the first time.
+- [x] **P0-03 — The remaining nine, down to 10**
+  Done 2026-08-03. All nine split, and the ratchet has reached its destination:
+  `util.http.request` 13→7 (`_without_network` for the cache/offline
+  short-circuits, `_attempt` for one paced round trip, `_backoff`),
+  `cli.backtest` 13→2 (`_backtest_tapes`, `_print_backtest_table`,
+  `_print_backtest_caveats`, `_backtest_payload`),
+  `pipeline.sweep` 13→6 (`_sweep_discover`, `_sweep_enrich`, `_rank`,
+  `_manage_open_positions`), `pipeline.collect` 13→8 (`_stop_before_sweep`,
+  `_sweep_budget`, `_sweep_within_budget`, `_nap_seconds`),
+  `cli.collect` 12→6 (`_report_collection`, `_report_collection_gaps`),
+  `credibility.InsiderSupplyOverhang.compute` 12→5 (`_linked_wallets`,
+  `_net_purchased`, `_overhang`),
+  `community.CrossPlatformPropagationLag.compute` 12→7 (`_origin_timestamp`,
+  `_organic_spread`), `media.generator.blog_post` 12→2 (`_split_evidence` plus
+  one builder per section, as P0-01 did for `generate_token`),
+  `topology.FunderGraphDispersion.compute` 11→4 (`_funder_degree`,
+  `_funding_graph`, `_cluster_shares`).
+  **Repo maximum 13 → 10 over 725 functions, and `python scripts/backpressure.py`
+  now reports `complexity: 10` with 9/9 green — the first payload this repo has
+  produced that the loop's own gate can accept.** The ceiling is not ours: it is
+  `QualityReport::COMPLEXITY_THRESHOLD`, a hardcoded 10.0 in ralph 2.10.1.
+  `MAX_COMPLEXITY` in `scripts/backpressure.py` is now 10 and is a ceiling to
+  hold rather than a ratchet to lower.
+  The split was verified behaviour-preserving rather than assumed: a probe
+  (`/var/tmp/p0_03_probe.py`) digesting 17 `PacedClient.request` cases, 8 funder
+  graphs, 13 insider-overhang cases, 11 propagation-lag cases, 11
+  sweep/collect sessions, 13 blog posts and 4 CLI invocations is identical on
+  both sides of the refactor (`ALL 2058f6956e74cc7b`, every section digest
+  equal). Four deliberate mutations — ignoring `Retry-After`, dropping the
+  zero-balance guard, ignoring the findings-section cap, dropping the
+  post sort — each changed a digest or crashed, so the probe is sensitive
+  rather than merely green. Two traps: the CLI banner prints `settings.db_path`
+  from a **process-wide singleton** that the pipeline section had already
+  repointed at its own tempdir, and `tempfile` names differ per run; both had
+  to be masked before the CLI section was stable across two runs of identical
+  code.
   _Depends on: P0-02._
-  _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=10" src` exits 0, and `python scripts/backpressure.py` prints `complexity: 10` or lower with 9/9 green.
+  _Accept:_ `python -m ruff check --select C901 --config "lint.mccabe.max-complexity=10" src` exits 0, and `python scripts/backpressure.py` prints `complexity: 10` or lower with 9/9 green. ✔ Both. 258 tests pass, coverage 65% → 73%, mypy clean over 51 files, duplication 1.8%.
+  New: `tests/test_http_client.py` — 11 tests pinning the retry contract of
+  `PacedClient.request`, which every collector's HTTP goes through and which
+  had **no direct test at all** before this split. They pass unmodified against
+  pre-refactor HEAD, and three deliberate mutations (ignoring `Retry-After`,
+  retrying a hard 4xx, dropping the GET cache) each turn one red.
 
 ---
 

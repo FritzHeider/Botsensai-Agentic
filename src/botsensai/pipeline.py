@@ -613,18 +613,62 @@ class Pipeline:
 
     # -- the sweep ---------------------------------------------------------- #
 
+    async def _sweep_discover(self, report: SweepReport, limit: int) -> CollectionResult | None:
+        """Discover into `report`, or return None if the surface raised outright."""
+        try:
+            discovered = await self.discover(limit)
+        except Exception as exc:
+            report.errors.append(f"discover failed: {exc}")
+            return None
+        report.discovered = len(discovered.launches)
+        if discovered.degraded:
+            report.degraded_surfaces.append("discover")
+        if discovered.error:
+            report.errors.append(discovered.error)
+        return discovered
+
+    async def _sweep_enrich(self, report: SweepReport, candidates: Sequence[Launch]) -> None:
+        """Enrich the candidates. A failure costs the detail, not the sweep."""
+        try:
+            enriched = await self.enrich(candidates)
+        except Exception as exc:
+            report.errors.append(f"enrich failed: {exc}")
+            return
+        report.enriched = len(candidates)
+        if enriched.degraded:
+            report.degraded_surfaces.append("enrich")
+
+    def _rank(self, report: SweepReport, candidates: Sequence[Launch]) -> list[tuple[float, Launch, Score]]:
+        """Score every candidate, best first. One bad token does not stop the rest."""
+        ranked: list[tuple[float, Launch, Score]] = []
+        for launch in candidates:
+            try:
+                result = self.score(launch)
+            except Exception as exc:
+                report.errors.append(f"score failed for {launch.token.key}: {exc}")
+                continue
+            report.scored += 1
+            ranked.append((result.composite, launch, result))
+        ranked.sort(key=lambda triple: triple[0], reverse=True)
+        return ranked
+
+    def _manage_open_positions(self, report: SweepReport) -> None:
+        """Mark and exit anything already open against the freshest snapshot."""
+        for key in list(self.broker.account.positions.keys()):
+            snapshots = self.db.snapshots_as_of(key, utcnow())
+            if not snapshots:
+                continue
+            latest = snapshots[-1]
+            position = self.broker.account.positions[key]
+            self.broker.mark(position.token, latest.price_native or 0.0)
+            fills = self.broker.apply_exits(position.token, latest, utcnow())
+            report.exited += sum(1 for f in fills if not f.rejected)
+
     async def sweep(self, discover_limit: int = 60, max_candidates: int = 25) -> SweepReport:
         report = SweepReport(started_at=utcnow())
 
-        try:
-            discovered = await self.discover(discover_limit)
-            report.discovered = len(discovered.launches)
-            if discovered.degraded:
-                report.degraded_surfaces.append("discover")
-            if discovered.error:
-                report.errors.append(discovered.error)
-        except Exception as exc:
-            report.errors.append(f"discover failed: {exc}")
+        discovered = await self._sweep_discover(report, discover_limit)
+        if discovered is None:
             report.finished_at = utcnow()
             return report
 
@@ -638,25 +682,9 @@ class Pipeline:
             report.finished_at = utcnow()
             return report
 
-        try:
-            enriched = await self.enrich(candidates)
-            report.enriched = len(candidates)
-            if enriched.degraded:
-                report.degraded_surfaces.append("enrich")
-        except Exception as exc:
-            report.errors.append(f"enrich failed: {exc}")
+        await self._sweep_enrich(report, candidates)
 
-        ranked: list[tuple[float, Launch, Score]] = []
-        for launch in candidates:
-            try:
-                result = self.score(launch)
-            except Exception as exc:
-                report.errors.append(f"score failed for {launch.token.key}: {exc}")
-                continue
-            report.scored += 1
-            ranked.append((result.composite, launch, result))
-
-        ranked.sort(key=lambda triple: triple[0], reverse=True)
+        ranked = self._rank(report, candidates)
         report.top_candidates = [
             {
                 "symbol": launch.token.symbol,
@@ -674,17 +702,7 @@ class Pipeline:
             if outcome.startswith("entered"):
                 report.entered += 1
 
-        # Manage anything already open against fresh snapshots.
-        for key in list(self.broker.account.positions.keys()):
-            snapshots = self.db.snapshots_as_of(key, utcnow())
-            if not snapshots:
-                continue
-            latest = snapshots[-1]
-            position = self.broker.account.positions[key]
-            self.broker.mark(position.token, latest.price_native or 0.0)
-            fills = self.broker.apply_exits(position.token, latest, utcnow())
-            report.exited += sum(1 for f in fills if not f.rejected)
-
+        self._manage_open_positions(report)
         self.review_closed_positions()
         report.finished_at = utcnow()
         log.info("pipeline.sweep", **report.summary())
@@ -720,6 +738,79 @@ class Pipeline:
         last = session.recent[-1]
         return ((last.finished_at or utcnow()) - last.started_at).total_seconds()
 
+    def _stop_before_sweep(
+        self,
+        session: CollectionSession,
+        deadline: datetime | None,
+        max_sweeps: int | None,
+        now: datetime,
+    ) -> tuple[str | None, float | None]:
+        """Why to stop before starting another sweep (or None), and the time left."""
+        if max_sweeps is not None and session.sweeps >= max_sweeps:
+            return "max_sweeps", None
+        remaining = (deadline - now).total_seconds() if deadline is not None else None
+        if remaining is not None and remaining <= 0:
+            return "deadline", remaining
+        # Do not start a sweep the window has no room for. Cutting one off at the
+        # deadline would write a failed heartbeat every single run, which would
+        # train whoever reads the integrity panel to ignore it — and a truncated
+        # sweep spends its rate-limit budget for a partial result.
+        if remaining is not None and session.sweeps and remaining < self._last_sweep_seconds(session):
+            return "deadline", remaining
+        return None, remaining
+
+    @staticmethod
+    def _sweep_budget(default: float, remaining: float | None) -> float:
+        if remaining is None:
+            return default
+        return min(default, remaining + DEADLINE_GRACE_SECONDS)
+
+    async def _sweep_within_budget(
+        self,
+        started_at: datetime,
+        budget: float,
+        discover_limit: int,
+        max_candidates: int,
+    ) -> tuple[SweepReport, bool]:
+        """Run one sweep under a hard time cap.
+
+        Returns the report and whether an interrupt ended it. Neither Ctrl-C
+        spelling is re-raised: everything the sweep wrote is already committed,
+        and the point of catching it is to close the heartbeat, so that whoever
+        reads this gap back next week can tell an operator stopping the daemon
+        from a crash.
+        """
+        report = SweepReport(started_at=started_at)
+        try:
+            return (
+                await asyncio.wait_for(self.sweep(discover_limit, max_candidates), timeout=budget),
+                False,
+            )
+        except TimeoutError:
+            report.errors.append(f"sweep exceeded its {budget:.0f}s budget and was cut off")
+            log.warning("pipeline.sweep_timeout", budget_seconds=round(budget, 1))
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # `asyncio.run` delivers Ctrl-C by cancelling the running task, not
+            # by raising KeyboardInterrupt inside it, so both spellings have to
+            # be caught here.
+            report.errors.append("interrupted before the sweep finished")
+            report.finished_at = utcnow()
+            return report, True
+        except Exception as exc:
+            report.errors.append(f"sweep failed: {type(exc).__name__}: {exc}")
+            log.warning("pipeline.sweep_failed", error=str(exc))
+        report.finished_at = utcnow()
+        return report, False
+
+    @staticmethod
+    def _nap_seconds(report: SweepReport, interval_seconds: float, deadline: datetime | None) -> float:
+        """Time to idle before the next sweep, never past the deadline."""
+        elapsed = (utcnow() - report.started_at).total_seconds()
+        nap = max(0.0, interval_seconds - elapsed)
+        if deadline is not None:
+            nap = min(nap, max(0.0, (deadline - utcnow()).total_seconds()))
+        return nap
+
     async def collect(
         self,
         hours: float | None = None,
@@ -750,66 +841,26 @@ class Pipeline:
         )
 
         while True:
-            if max_sweeps is not None and session.sweeps >= max_sweeps:
-                session.stopped_because = "max_sweeps"
-                break
             now = utcnow()
-            remaining = (deadline - now).total_seconds() if deadline is not None else None
-            if remaining is not None and remaining <= 0:
-                session.stopped_because = "deadline"
-                break
-            # Do not start a sweep the window has no room for. Cutting one off at
-            # the deadline would write a failed heartbeat every single run, which
-            # would train whoever reads the integrity panel to ignore it — and a
-            # truncated sweep spends its rate-limit budget for a partial result.
-            if (
-                remaining is not None
-                and session.sweeps
-                and remaining < self._last_sweep_seconds(session)
-            ):
-                session.stopped_because = "deadline"
+            stop, remaining = self._stop_before_sweep(session, deadline, max_sweeps, now)
+            if stop is not None:
+                session.stopped_because = stop
                 break
 
-            budget = budget_default
-            if remaining is not None:
-                budget = min(budget, remaining + DEADLINE_GRACE_SECONDS)
-
-            report = SweepReport(started_at=now)
-            try:
-                report = await asyncio.wait_for(
-                    self.sweep(discover_limit, max_candidates), timeout=budget
-                )
-            except TimeoutError:
-                report.errors.append(f"sweep exceeded its {budget:.0f}s budget and was cut off")
-                report.finished_at = utcnow()
-                log.warning("pipeline.sweep_timeout", budget_seconds=round(budget, 1))
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                # `asyncio.run` delivers Ctrl-C by cancelling the running task,
-                # not by raising KeyboardInterrupt inside it, so both spellings
-                # have to be caught. Neither is re-raised: everything this sweep
-                # wrote is already committed, and the point of catching it is to
-                # close the heartbeat, so that whoever reads this gap back next
-                # week can tell an operator stopping the daemon from a crash.
-                report.errors.append("interrupted before the sweep finished")
-                report.finished_at = utcnow()
-                self.record_heartbeat(report)
-                session.record(report)
-                session.stopped_because = "interrupted"
-                break
-            except Exception as exc:
-                report.errors.append(f"sweep failed: {type(exc).__name__}: {exc}")
-                report.finished_at = utcnow()
-                log.warning("pipeline.sweep_failed", error=str(exc))
+            budget = self._sweep_budget(budget_default, remaining)
+            report, interrupted = await self._sweep_within_budget(
+                now, budget, discover_limit, max_candidates
+            )
 
             self.record_heartbeat(report)
             session.record(report)
+            if interrupted:
+                session.stopped_because = "interrupted"
+                break
             if on_report is not None:
                 on_report(report)
 
-            elapsed = (utcnow() - report.started_at).total_seconds()
-            nap = max(0.0, interval_seconds - elapsed)
-            if deadline is not None:
-                nap = min(nap, max(0.0, (deadline - utcnow()).total_seconds()))
+            nap = self._nap_seconds(report, interval_seconds, deadline)
             if nap > 0:
                 try:
                     await asyncio.sleep(nap)

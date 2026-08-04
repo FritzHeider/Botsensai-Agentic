@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from datetime import timedelta
 
 import networkx as nx
@@ -106,21 +107,23 @@ class FunderGraphDispersion(Metric):
         "which `bundle_supply_share` captures independently."
     )
 
-    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
-        holders = tradeable_holders(ctx)
-        if len(holders) < 6:
-            return None, len(holders), "fewer than 6 holders"
+    @staticmethod
+    def _funder_degree(holders: Sequence[HolderRecord]) -> Counter[str]:
+        """How many of this token's holders each funder is behind.
 
-        # Degree of each funder tells us whether it is a shared exchange hot
-        # wallet (funds thousands of unrelated users) or a private distributor.
-        funder_degree: Counter[str] = Counter()
+        Degree is what separates a shared exchange hot wallet (funds thousands
+        of unrelated users, so a small share of any one token's holders) from a
+        private distributor (funds a large share of exactly this token).
+        """
+        degree: Counter[str] = Counter()
         for h in holders:
             if h.funded_by:
-                funder_degree[h.funded_by] += 1
+                degree[h.funded_by] += 1
+        return degree
 
-        # A funder appearing behind more than 30% of holders on a brand-new token
-        # is a distributor, not a coincidence; one appearing behind 2-3 could be
-        # an exchange. We treat very high degree as a distributor either way.
+    @classmethod
+    def _funding_graph(cls, holders: Sequence[HolderRecord]) -> nx.Graph:
+        funder_degree = cls._funder_degree(holders)
         total = len(holders)
         graph = nx.Graph()
         for h in holders:
@@ -130,21 +133,31 @@ class FunderGraphDispersion(Metric):
             if not h.funded_by:
                 continue
             degree = funder_degree[h.funded_by]
-            # Exchange hot wallets fund a small share of a random token's holders.
-            # Distributors fund a large share. Only link the latter.
+            # Only link the distributors; linking exchanges would collapse every
+            # unrelated user of that exchange into one apparent actor.
             if degree >= 2 and (degree / total) >= 0.08:
                 graph.add_node(f"funder:{h.funded_by}", weight=0.0)
                 graph.add_edge(h.wallet, f"funder:{h.funded_by}")
+        return graph
 
-        components = list(nx.connected_components(graph))
-        cluster_shares: list[float] = []
-        for comp in components:
+    @staticmethod
+    def _cluster_shares(graph: nx.Graph) -> list[float]:
+        """Supply share held by each connected component, funder nodes excluded."""
+        shares: list[float] = []
+        for comp in nx.connected_components(graph):
             share = sum(
                 graph.nodes[n].get("weight", 0.0) for n in comp if not n.startswith("funder:")
             )
             if share > 0:
-                cluster_shares.append(share)
+                shares.append(share)
+        return shares
 
+    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
+        holders = tradeable_holders(ctx)
+        if len(holders) < 6:
+            return None, len(holders), "fewer than 6 holders"
+
+        cluster_shares = self._cluster_shares(self._funding_graph(holders))
         if not cluster_shares:
             return None, len(holders), "no positive-share clusters"
 

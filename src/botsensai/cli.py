@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from botsensai.backtest.engine import Backtester
-from botsensai.config import TradingMode, get_settings, load_settings
+from botsensai.config import Settings, TradingMode, get_settings, load_settings
 from botsensai.media import ContentGenerator
 from botsensai.memory.store import MemoryStore
 from botsensai.metrics import build_registry, metric_catalogue
@@ -298,9 +298,14 @@ def collect(
             raise typer.Exit(130) from None
         session.stopped_because = "interrupted"
         session.finished_at = utcnow()
-    after = db.counts()
-    summary = session.summary()
+    _report_collection(session.summary(), before, db.counts())
+    _report_collection_gaps(db, tolerance_seconds=max(interval * 3, 120.0))
+    db.close()
 
+
+def _report_collection(
+    summary: dict[str, Any], before: dict[str, int], after: dict[str, int]
+) -> None:
     table = Table(title="collection session")
     table.add_column("field")
     table.add_column("value", justify="right")
@@ -317,15 +322,18 @@ def collect(
     if summary["degraded_surfaces"]:
         console.print(f"[yellow]degraded surfaces: {summary['degraded_surfaces']}[/yellow]")
 
-    gaps = db.collection_gaps(tolerance_seconds=max(interval * 3, 120.0))
-    if gaps:
-        console.print(f"\n[yellow]{len(gaps)} collection gap(s) in the heartbeat history:[/yellow]")
-        for gap in gaps[-5:]:
-            console.print(
-                f"  {gap['seconds']:.0f}s with nothing collecting, "
-                f"{gap['after']:%Y-%m-%d %H:%M} → {gap['before']:%H:%M}"
-            )
-    db.close()
+
+def _report_collection_gaps(db: Database, tolerance_seconds: float) -> None:
+    """Show when nothing was collecting, which is what the heartbeats are for."""
+    gaps = db.collection_gaps(tolerance_seconds=tolerance_seconds)
+    if not gaps:
+        return
+    console.print(f"\n[yellow]{len(gaps)} collection gap(s) in the heartbeat history:[/yellow]")
+    for gap in gaps[-5:]:
+        console.print(
+            f"  {gap['seconds']:.0f}s with nothing collecting, "
+            f"{gap['after']:%Y-%m-%d %H:%M} → {gap['before']:%H:%M}"
+        )
 
 
 @app.command()
@@ -578,27 +586,55 @@ def backtest(
     end = utcnow()
     start = end - timedelta(days=days)
 
-    if not synthetic:
-        db = Database(settings.path(settings.db_path))
-        tapes = Backtester.tapes_from_database(db, start, end)
-        usable = [t for t in tapes if len(t.snapshots) >= 3]
-        if len(usable) < 10:
-            console.print(
-                f"[yellow]store holds only {len(usable)} replayable tokens in the last "
-                f"{days} days — falling back to a synthetic run. Collect for a while with "
-                f"'botsensai sweep --repeat 0' to build a real corpus.[/yellow]"
-            )
-            synthetic = True
-        else:
-            tapes = usable
-
-    if synthetic:
-        cohort = generate_cohort(n=universe, seed=settings.seed)
-        tapes = Backtester.tapes_from_synthetic(cohort)
+    tapes, synthetic = _backtest_tapes(
+        settings, start, end, days=days, synthetic=synthetic, universe=universe
+    )
 
     result = tester.run(tapes, starting_native=capital, synthetic=synthetic)
     summary = result.summary()
 
+    _print_backtest_table(summary)
+    _print_backtest_caveats(result, summary)
+
+    if out:
+        Path(out).write_text(
+            json.dumps(_backtest_payload(result, summary), indent=2, default=str),
+            encoding="utf-8",
+        )
+        console.print(f"\nwrote {out}")
+
+
+def _backtest_tapes(
+    settings: Settings,
+    start: datetime,
+    end: datetime,
+    *,
+    days: float,
+    synthetic: bool,
+    universe: int,
+) -> tuple[list[Any], bool]:
+    """Replayable tapes for the window, falling back to synthetic when too thin.
+
+    Returns the tapes together with whether they ended up synthetic, because the
+    caller must label the result honestly and the fallback can flip the flag.
+    """
+    if not synthetic:
+        db = Database(settings.path(settings.db_path))
+        tapes = Backtester.tapes_from_database(db, start, end)
+        usable = [t for t in tapes if len(t.snapshots) >= 3]
+        if len(usable) >= 10:
+            return usable, False
+        console.print(
+            f"[yellow]store holds only {len(usable)} replayable tokens in the last "
+            f"{days} days — falling back to a synthetic run. Collect for a while with "
+            f"'botsensai sweep --repeat 0' to build a real corpus.[/yellow]"
+        )
+
+    cohort = generate_cohort(n=universe, seed=settings.seed)
+    return Backtester.tapes_from_synthetic(cohort), True
+
+
+def _print_backtest_table(summary: dict[str, Any]) -> None:
     table = Table(title="backtest result")
     table.add_column("metric")
     table.add_column("value", justify="right")
@@ -618,6 +654,9 @@ def backtest(
             table.add_row(key.replace("_", " "), str(summary[key]))
     console.print(table)
 
+
+def _print_backtest_caveats(result: Any, summary: dict[str, Any]) -> None:
+    """Everything that qualifies the headline: the CI, the warnings, the vetoes."""
     low, high = result.bootstrap_expectancy_ci()
     if low or high:
         console.print(
@@ -638,26 +677,25 @@ def backtest(
     if result.veto_counts:
         console.print(f"\nvetoes triggered: {result.veto_counts}")
 
-    if out:
-        payload = {
-            "summary": summary,
-            "veto_counts": result.veto_counts,
-            "metric_coverage": result.metric_coverage,
-            "trades": [
-                {
-                    "token": t.token_key,
-                    "symbol": t.symbol,
-                    "score": t.score,
-                    "pnl_native": t.pnl_native,
-                    "multiple": t.multiple,
-                    "exit_reason": t.exit_reason,
-                    "hold_seconds": t.hold_seconds,
-                }
-                for t in result.trades
-            ],
-        }
-        Path(out).write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        console.print(f"\nwrote {out}")
+
+def _backtest_payload(result: Any, summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "summary": summary,
+        "veto_counts": result.veto_counts,
+        "metric_coverage": result.metric_coverage,
+        "trades": [
+            {
+                "token": t.token_key,
+                "symbol": t.symbol,
+                "score": t.score,
+                "pnl_native": t.pnl_native,
+                "multiple": t.multiple,
+                "exit_reason": t.exit_reason,
+                "hold_seconds": t.hold_seconds,
+            }
+            for t in result.trades
+        ],
+    }
 
 
 # --------------------------------------------------------------------------- #

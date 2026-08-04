@@ -52,9 +52,11 @@ COVERAGE_FLOOR = 55.0  # measured 63%
 # configurable. Every build.done this repo has ever emitted was rejected on it.
 # 31 -> 18 on 2026-08-03 by splitting the four worst functions; 18 -> 13 the
 # same day by splitting the ten collector offenders (every collector is now at
-# or below 10) plus the two functions above 13 elsewhere. Nine functions remain
-# above 10; each drop of the ceiling needs the current maximum gone.
-MAX_COMPLEXITY = 13
+# or below 10) plus the two functions above 13 elsewhere; 13 -> 10 by splitting
+# the last nine (http.request, cli.backtest, cli.collect, pipeline.sweep,
+# pipeline.collect, three metric `compute`s and media.blog_post). The ratchet
+# has reached its destination: this is now a ceiling to hold, not one to lower.
+MAX_COMPLEXITY = 10
 MAX_DUPLICATION_PCT = 3.0  # measured 2.1%
 MIN_METRICS = 32  # the objective's floor; registry currently holds 33
 DUPLICATE_WINDOW = 6  # consecutive normalised lines before it counts as a clone

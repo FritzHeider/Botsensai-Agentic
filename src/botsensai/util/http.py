@@ -57,6 +57,26 @@ class _CacheEntry:
     payload: Any
 
 
+#: Sentinel distinguishing "no short-circuit applied" from a cached ``None``.
+_MISS = object()
+
+
+@dataclass(slots=True)
+class _AttemptOutcome:
+    """What one pass through the retry loop learned.
+
+    ``ok`` carries a payload. Otherwise ``error`` is the exception the caller
+    should re-raise once retries run out, and ``retry_after`` is the server's
+    own instruction if it sent one — a hard 4xx never reaches here because
+    :meth:`PacedClient._attempt` raises it immediately.
+    """
+
+    ok: bool = False
+    payload: Any = None
+    error: Exception | None = None
+    retry_after: float | None = None
+
+
 class ResponseCache:
     """Tiny TTL cache keyed on method+url+params. Bounded to avoid unbounded growth."""
 
@@ -207,16 +227,9 @@ class PacedClient:
         cache_key = ResponseCache.key(method, url, params)
         ttl = self.cache_ttl if cache_ttl is None else cache_ttl
 
-        if method.upper() == "GET":
-            cached = self.cache.get(cache_key)
-            if cached is not None:
-                self.stats["cache_hits"] += 1
-                return cached
-
-        if self.offline_dir is not None:
-            payload = self._load_fixture(method, url, params)
-            self.cache.put(cache_key, payload, ttl)
-            return payload
+        short_circuit = self._without_network(method, url, params, cache_key, ttl)
+        if short_circuit is not _MISS:
+            return short_circuit
 
         try:
             self.pacer.breaker.check()
@@ -228,67 +241,119 @@ class PacedClient:
         last_exc: Exception | None = None
 
         for attempt in range(self.max_retries + 1):
-            await self.pacer.bucket.acquire()
-            async with self.pacer.semaphore:
-                try:
-                    self.stats["requests"] += 1
-                    response = await client.request(
-                        method,
-                        url,
-                        params=params,
-                        json=json_body,
-                        headers=headers,
-                    )
-                except (httpx.TimeoutException, httpx.TransportError) as exc:
-                    last_exc = exc
-                    self.pacer.breaker.record_failure()
-                    log.debug(
-                        "http.transport_error",
-                        surface=self.surface,
-                        url=url,
-                        attempt=attempt,
-                        error=str(exc),
-                    )
-                else:
-                    if response.status_code < 400:
-                        self.pacer.breaker.record_success()
-                        payload = self._parse(response, expect_json)
-                        if method.upper() == "GET":
-                            self.cache.put(cache_key, payload, ttl)
-                        self._record_fixture(method, url, params, payload)
-                        return payload
+            outcome = await self._attempt(
+                client,
+                method,
+                url,
+                params=params,
+                json_body=json_body,
+                headers=headers,
+                expect_json=expect_json,
+                attempt=attempt,
+            )
+            if outcome.ok:
+                if method.upper() == "GET":
+                    self.cache.put(cache_key, outcome.payload, ttl)
+                self._record_fixture(method, url, params, outcome.payload)
+                return outcome.payload
 
-                    if response.status_code in RETRYABLE_STATUS:
-                        self.pacer.breaker.record_failure()
-                        last_exc = HttpError(url, response.status_code, response.text)
-                        retry_after = self._retry_after(response)
-                        log.debug(
-                            "http.retryable_status",
-                            surface=self.surface,
-                            url=url,
-                            status=response.status_code,
-                            attempt=attempt,
-                            retry_after=retry_after,
-                        )
-                        if retry_after and attempt < self.max_retries:
-                            self.stats["retries"] += 1
-                            await asyncio.sleep(retry_after)
-                            continue
-                    else:
-                        # Hard client error. Retrying will not help and may look
-                        # like an attack; fail immediately without tripping the
-                        # breaker, since the endpoint itself is healthy.
-                        self.stats["failures"] += 1
-                        raise HttpError(url, response.status_code, response.text)
-
+            last_exc = outcome.error
             if attempt < self.max_retries:
+                # A server that told us how long to wait is obeyed verbatim;
+                # everything else backs off exponentially with jitter.
                 self.stats["retries"] += 1
-                backoff = min(30.0, (2**attempt) * 0.5) * (0.6 + random.random() * 0.8)
-                await asyncio.sleep(backoff)
+                await asyncio.sleep(outcome.retry_after or self._backoff(attempt))
 
         self.stats["failures"] += 1
         assert last_exc is not None
         raise last_exc
+
+    def _without_network(
+        self,
+        method: str,
+        url: str,
+        params: dict[str, Any] | None,
+        cache_key: str,
+        ttl: float,
+    ) -> Any:
+        """Return a cached or recorded payload, or `_MISS` to go to the wire."""
+        if method.upper() == "GET":
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                self.stats["cache_hits"] += 1
+                return cached
+
+        if self.offline_dir is not None:
+            payload = self._load_fixture(method, url, params)
+            self.cache.put(cache_key, payload, ttl)
+            return payload
+
+        return _MISS
+
+    async def _attempt(
+        self,
+        client: httpx.AsyncClient,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None,
+        json_body: Any,
+        headers: dict[str, str] | None,
+        expect_json: bool,
+        attempt: int,
+    ) -> _AttemptOutcome:
+        """One paced round trip. Raises on a hard 4xx, reports everything else."""
+        await self.pacer.bucket.acquire()
+        async with self.pacer.semaphore:
+            try:
+                self.stats["requests"] += 1
+                response = await client.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json_body,
+                    headers=headers,
+                )
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                self.pacer.breaker.record_failure()
+                log.debug(
+                    "http.transport_error",
+                    surface=self.surface,
+                    url=url,
+                    attempt=attempt,
+                    error=str(exc),
+                )
+                return _AttemptOutcome(error=exc)
+
+            if response.status_code < 400:
+                self.pacer.breaker.record_success()
+                return _AttemptOutcome(ok=True, payload=self._parse(response, expect_json))
+
+            if response.status_code not in RETRYABLE_STATUS:
+                # Hard client error. Retrying will not help and may look like an
+                # attack; fail immediately without tripping the breaker, since
+                # the endpoint itself is healthy.
+                self.stats["failures"] += 1
+                raise HttpError(url, response.status_code, response.text)
+
+            self.pacer.breaker.record_failure()
+            retry_after = self._retry_after(response)
+            log.debug(
+                "http.retryable_status",
+                surface=self.surface,
+                url=url,
+                status=response.status_code,
+                attempt=attempt,
+                retry_after=retry_after,
+            )
+            return _AttemptOutcome(
+                error=HttpError(url, response.status_code, response.text),
+                retry_after=retry_after,
+            )
+
+    @staticmethod
+    def _backoff(attempt: int) -> float:
+        return min(30.0, (2**attempt) * 0.5) * (0.6 + random.random() * 0.8)
 
     @staticmethod
     def _retry_after(response: httpx.Response) -> float | None:

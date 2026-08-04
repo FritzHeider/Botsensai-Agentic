@@ -199,19 +199,18 @@ class CrossPlatformPropagationLag(Metric):
         "produces almost no lift; genuine propagation shows several unrelated authors."
     )
 
-    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
-        if ctx.launch is None:
-            return None, 0, "no launch record"
-        team = _team_accounts(ctx)
-
-        origin_first: float | None = None
+    @staticmethod
+    def _origin_timestamp(ctx: MetricContext) -> float:
+        """When the token first showed up on a venue the team controls."""
         for p in sorted(ctx.posts, key=lambda x: x.as_of):
             if p.platform in TEAM_PLATFORMS:
-                origin_first = p.as_of.timestamp()
-                break
-        if origin_first is None:
-            origin_first = ctx.launch.created_at.timestamp()
+                return p.as_of.timestamp()
+        assert ctx.launch is not None
+        return ctx.launch.created_at.timestamp()
 
+    @staticmethod
+    def _organic_spread(ctx: MetricContext, team: set[str]) -> tuple[dict[Platform, set[str]], float | None]:
+        """Distinct non-team authors per off-platform venue, and the earliest such post."""
         organic_authors: dict[Platform, set[str]] = defaultdict(set)
         organic_first: float | None = None
         for p in sorted(ctx.posts, key=lambda x: x.as_of):
@@ -225,7 +224,14 @@ class CrossPlatformPropagationLag(Metric):
             organic_authors[p.platform].add(key)
             if organic_first is None:
                 organic_first = p.as_of.timestamp()
+        return organic_authors, organic_first
 
+    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
+        if ctx.launch is None:
+            return None, 0, "no launch record"
+
+        origin_first = self._origin_timestamp(ctx)
+        organic_authors, organic_first = self._organic_spread(ctx, _team_accounts(ctx))
         distinct_authors = sum(len(v) for v in organic_authors.values())
         if organic_first is None or distinct_authors < 2:
             # Not yet escaped. Bearish, but honestly so: report a large lag
