@@ -46,6 +46,7 @@ from botsensai.collectors.browser import BrowserUnavailableError, WebUseDriver, 
 from botsensai.config import Settings
 from botsensai.media.phash import exact_label
 from botsensai.models import (
+    ChannelRead,
     Platform,
     SocialAccount,
     SocialPost,
@@ -1095,16 +1096,40 @@ class TelegramChannelCollector(Collector):
         return False
 
     async def channel_messages(self, channel: str, limit: int = 20) -> list[SocialPost]:
+        """The channel's latest messages. Empty for both "no page" and "no posts"."""
+        return (await self.read_channel(channel, limit))[0]
+
+    async def read_channel(
+        self, channel: str, limit: int = 20
+    ) -> tuple[list[SocialPost], ChannelRead]:
+        """The messages, plus a record of the attempt itself.
+
+        The record is the point. `channel_messages` returns `[]` for a channel
+        that answered with an empty page and for one we never reached, and those
+        two are opposite facts: the first says this handle is not a readable
+        channel, the second says the network had a bad minute. Measured
+        2026-08-04, an unreadable handle is *always* the first shape here —
+        `t.me/s/pisklauren` and a handle nobody has registered both answer HTTP
+        200 with a real page and zero messages — so a transport failure carries
+        no information about the channel at all and must never evict one.
+        """
         channel = channel.strip().lstrip("@").rstrip("/").split("/")[-1]
         if not channel:
-            return []
+            return [], ChannelRead(channel="", fetched=False, error="empty handle")
+        # Lowercased because `t.me` is case-insensitive and the handle arrives
+        # in whichever casing a launch published. `watchlist.normalize_channel`
+        # lowercases too; if these two ever disagree, a channel accumulates its
+        # history under one key and is looked up under another.
+        record = ChannelRead(channel=channel.lower())
         url = f"{TELEGRAM_PREVIEW}/{channel}"
         try:
             html = await self.client.get_text(url, cache_ttl=45.0)
             _require_body(html, url)
         except Exception as exc:
             log.debug("telegram.fetch_failed", channel=channel, error=str(exc))
-            return []
+            record.fetched = False
+            record.error = str(exc)[:200]
+            return [], record
 
         posts: list[SocialPost] = []
         for match in _TG_MESSAGE_RE.finditer(html):
@@ -1136,19 +1161,27 @@ class TelegramChannelCollector(Collector):
             )
             if len(posts) >= limit:
                 break
-        return posts
+        record.messages = len(posts)
+        return posts, record
 
     async def enrich(self, tokens: Sequence[TokenRef]) -> CollectionResult:
         """Read each token's own channel, plus any curated call channels."""
         result = self._empty()
         channels: dict[str, str] = self.config.extra.get("channels", {})
         watchlist: list[str] = self.config.extra.get("call_channels", [])
+        # Every attempt is reported, including the token rooms: the pipeline
+        # writes them to `channel_reads` and `watchlist` drops a handle that has
+        # answered with nothing often enough. Reported rather than written here
+        # because a collector has no store — the pipeline is the only path in.
+        reads: list[ChannelRead] = []
+        result.raw["channel_reads"] = reads
 
         for token in list(tokens)[:8]:
             channel = channels.get(token.key)
             if not channel:
                 continue
-            posts = await self.channel_messages(channel)
+            posts, record = await self.read_channel(channel)
+            reads.append(record)
             if not posts:
                 result.degraded = True
                 continue
@@ -1160,7 +1193,8 @@ class TelegramChannelCollector(Collector):
         # Call channels are token-agnostic: read them once and let the caller
         # match mints out of the message text.
         for channel in watchlist[: self.max_call_channels]:
-            posts = await self.channel_messages(channel)
+            posts, record = await self.read_channel(channel)
+            reads.append(record)
             result.posts.extend(p for p in posts if contains_address(p.text) or p.mentioned_tokens)
 
         return result

@@ -756,3 +756,423 @@ def test_the_ranking_covers_every_channel_read_not_only_the_watchlist(tmp_path):
     db.insert_posts([_post("ownroom", 0, f"call {MINT_A}", post_id="c1")])
     assert collected_channels(db) == ["ownroom"]
     assert [c.channel for c in discover_candidates(db, min_tokens=2)] == []
+
+
+# --------------------------------------------------------------------------- #
+# Reachability (P2-07)
+# --------------------------------------------------------------------------- #
+#
+# P2-04 left one hole, found while accepting it: `t.me/pisklauren` is the
+# published Telegram link of three distinct launches, so it is discovered,
+# seeded, and returns zero messages every single time. `is_useless` could not
+# drop it, because it drops on a bad *price* record and a channel that never
+# yields a message never makes a call. So an unreadable handle held one of six
+# watchlist slots and spent a fetch per sweep, for good.
+#
+# Measured live 2026-08-04 with `/var/tmp/p2_07_probe.py`, and it decides the
+# design: `t.me/s/pisklauren` answers **HTTP 200 with an 11,595-byte page and
+# zero messages** ("Telegram: View @pisklauren"), and a handle nobody has ever
+# registered answers HTTP 200 with 9,897 bytes ("Telegram: Contact @…"). There
+# is no 404 anywhere on this surface. `t.me/s/durov` returns 20 messages and
+# `t.me/s/cryptoliquidbnb` 4. So an unreadable channel is *always* a page that
+# arrived, which is what makes it safe — and necessary — to ignore a failed
+# fetch entirely rather than count it against the channel.
+
+
+def _read(channel: str, offset_seconds: float, messages: int = 0, fetched: bool = True):
+    from botsensai.models import ChannelRead
+
+    return ChannelRead(
+        channel=channel,
+        observed_at=T0 + timedelta(seconds=offset_seconds),
+        messages=messages,
+        fetched=fetched,
+        error=None if fetched else "timeout",
+    )
+
+
+def test_consecutive_empty_reads_accumulate_into_a_streak():
+    from botsensai.watchlist import empty_read_streak
+
+    newest_first = [_read("dead", 300), _read("dead", 200), _read("dead", 100)]
+    assert empty_read_streak(newest_first) == 3
+
+
+def test_one_message_ends_the_streak():
+    """A channel that spoke is readable, whatever it did before that."""
+    from botsensai.watchlist import empty_read_streak
+
+    assert empty_read_streak([_read("live", 300), _read("live", 200, messages=4)]) == 1
+    assert empty_read_streak([_read("live", 300, messages=4), _read("live", 200)]) == 0
+
+
+def test_a_failed_fetch_is_never_evidence_about_the_channel():
+    """The load-bearing distinction of this task.
+
+    Every channel fails together when the surface does — a timeout, an open
+    circuit, a bad minute of network. Counting those would empty the entire
+    watchlist on one bad night, and it would be counting our failure as theirs.
+    Skipping them is safe because an unreadable handle does not fail to fetch:
+    it answers 200 with a page holding nothing (measured, see above).
+    """
+    from botsensai.watchlist import empty_read_streak
+
+    assert empty_read_streak([_read("x", 300, fetched=False)] * 5) == 0
+    # Nor does a failure reset a streak that a real page established.
+    assert empty_read_streak([_read("x", 300), _read("x", 250, fetched=False), _read("x", 200)]) == 2
+
+
+def test_read_history_round_trips_newest_first(tmp_path):
+    db = _db(tmp_path)
+    assert db.record_channel_reads([_read("a", 100), _read("a", 300), _read("b", 200)]) == 3
+    history = db.channel_reads()
+    assert [r.observed_at for r in history["a"]] == [T0 + timedelta(seconds=300), T0 + timedelta(seconds=100)]
+    assert history["b"][0].messages == 0
+    assert history["b"][0].fetched is True
+
+
+def test_re_recording_a_sweep_replaces_its_row_instead_of_stacking(tmp_path):
+    """Keyed on (channel, observed_at) so a streak counts sweeps, not writes.
+
+    Without the key, one sweep written twice reads as two empty reads and a
+    channel is evicted in half the sweeps the threshold promises.
+    """
+    db = _db(tmp_path)
+    db.record_channel_reads([_read("a", 100)])
+    db.record_channel_reads([_read("a", 100)])
+    assert len(db.channel_reads()["a"]) == 1
+
+
+def test_old_reads_expire_so_an_eviction_is_not_permanent(tmp_path):
+    """A dropped channel stops being read, so its streak would stand forever.
+
+    Bounding the history to the same window the ranking uses means a room that
+    went public later earns a fresh handful of attempts instead of being
+    condemned by evidence from a month ago.
+    """
+    from botsensai.watchlist import channel_read_streaks
+
+    db = _db(tmp_path)
+    db.record_channel_reads([_read("dead", -100), _read("dead", -200), _read("dead", -300)])
+    assert channel_read_streaks(db)["dead"] == 3
+    assert channel_read_streaks(db, since=T0) == {}
+
+
+def test_a_channel_we_only_ever_tried_is_still_reported(tmp_path):
+    """`collected_channels` cannot see it: we hold no message from it.
+
+    A report that omitted it would show an evicted channel as one that was never
+    discovered, which is the fact this whole task is about.
+    """
+    from botsensai.watchlist import read_channels
+
+    db = _db(tmp_path)
+    db.record_channel_reads([_read("dead", 100)])
+    assert collected_channels(db) == []
+    assert read_channels(db) == ["dead"]
+
+
+def test_three_empty_reads_drop_a_channel_and_one_does_not(tmp_path):
+    """The acceptance criterion of P2-07, at the level that decides it."""
+    from botsensai.watchlist import drop_reason, is_useless
+
+    db = _db(tmp_path)
+    db.record_channel_reads([_read("dead", 100), _read("dead", 200), _read("dead", 300)])
+    db.record_channel_reads([_read("quiet", 100)])
+
+    ranks = {r.channel: r for r in rank_channels(db, ["dead", "quiet"])}
+    assert ranks["dead"].empty_reads == 3
+    assert ranks["quiet"].empty_reads == 1
+
+    assert is_useless(ranks["dead"])
+    assert drop_reason(ranks["dead"]) == "3 consecutive empty reads"
+    assert not is_useless(ranks["quiet"])
+    assert drop_reason(ranks["quiet"]) is None
+
+    assert seed_call_channels(["dead", "quiet"], ranking=list(ranks.values())) == ["quiet"]
+
+
+def test_an_unreadable_channel_is_dropped_for_that_and_not_for_its_calls():
+    """The two reasons are independent, and only one of them can fire here.
+
+    A channel that never yields a message never makes a call, so its median peak
+    multiple is forever None. The call record cannot express "unreadable" — that
+    is precisely why this reason had to be added rather than reused.
+    """
+    from botsensai.watchlist import drop_reason
+
+    unreadable = ChannelRank("dead", 0, 0, None, None, None, 0, 0, "no calls collected yet", 4)
+    tops = ChannelRank("tops", 5, 5, 900.0, 0.8, 0.0, 0, 5, "", 0)
+    assert drop_reason(unreadable) == "4 consecutive empty reads"
+    assert drop_reason(tops) == "median peak 0.80x over 5 calls"
+    # And the threshold is a caller's number, not a constant of the universe.
+    assert drop_reason(unreadable, max_empty_reads=5) is None
+
+
+def test_the_collector_separates_an_empty_page_from_a_page_that_never_came():
+    """`channel_messages` returns [] for both. The store must not."""
+    import asyncio
+
+    from botsensai.collectors.social import TelegramChannelCollector
+    from botsensai.config import Settings
+
+    collector = TelegramChannelCollector(Settings())
+
+    class FakeClient:
+        def __init__(self, behaviour) -> None:
+            self.behaviour = behaviour
+
+        async def get_text(self, url: str, **kwargs) -> str:
+            if isinstance(self.behaviour, Exception):
+                raise self.behaviour
+            return self.behaviour
+
+    collector._client = FakeClient("<div>Telegram: View @pisklauren</div>")
+    posts, record = asyncio.run(collector.read_channel("PiskLauren"))
+    assert posts == []
+    assert (record.channel, record.messages, record.fetched) == ("pisklauren", 0, True)
+
+    collector._client = FakeClient(TimeoutError("read timed out"))
+    _, record = asyncio.run(collector.read_channel("pisklauren"))
+    assert record.fetched is False
+    assert "timed out" in (record.error or "")
+
+
+def test_the_collector_reports_a_read_for_every_channel_it_tried():
+    """Including the token rooms: the record is per channel, not per surface."""
+    import asyncio
+
+    from botsensai.collectors.social import TelegramChannelCollector
+    from botsensai.config import Settings
+
+    collector = TelegramChannelCollector(Settings())
+    collector.config.extra["channels"] = {KEY_A: "OwnRoom"}
+    collector.config.extra["call_channels"] = ["CallRoom", "callroom"]
+
+    class FakeClient:
+        async def get_text(self, url: str, **kwargs) -> str:
+            return "<div>no messages today</div>"
+
+    collector._client = FakeClient()
+    result = asyncio.run(
+        collector.enrich([TokenRef(chain=Chain.SOLANA, mint=MINT_A, symbol="TEST")])
+    )
+    reads = result.raw["channel_reads"]
+    # Lowercased at the source, because `watchlist.normalize_channel` lowercases
+    # too and a history written under one key cannot be read back under another.
+    assert [r.channel for r in reads] == ["ownroom", "callroom", "callroom"]
+    assert all(r.fetched and r.messages == 0 for r in reads)
+
+
+def _empty_page_pipeline(tmp_path, behaviour="<div>no messages today</div>"):
+    """A sweep whose only Telegram channel answers with a page holding nothing.
+
+    One launch has to be in hand because `sweep_enrich` runs no collector for an
+    empty token list — the watchlist is read as part of enriching real tokens,
+    not on its own.
+    """
+    pipeline, telegram = _pipeline(tmp_path, ["deadroom"])
+
+    class FakeClient:
+        async def get_text(self, url: str, **kwargs) -> str:
+            if isinstance(behaviour, Exception):
+                raise behaviour
+            return behaviour
+
+    telegram._client = FakeClient()
+    return pipeline, telegram
+
+
+def test_a_channel_that_never_answers_leaves_the_watchlist(tmp_path):
+    """P2-07 end to end, through the real sweep path.
+
+    Each `enrich` wires the watchlist and then reads it, which is the order a
+    sweep runs in. One empty read must not evict — the channel is still seeded
+    for the second and third sweeps — and the third must, because at that point
+    the only thing left to learn is the same nothing again.
+    """
+    import asyncio
+
+    pipeline, telegram = _empty_page_pipeline(tmp_path)
+
+    asyncio.run(pipeline.enrich([_launch(MINT_A)]))
+    assert telegram.config.extra["call_channels"] == ["deadroom"]
+    assert pipeline.db.channel_reads()["deadroom"][0].messages == 0
+
+    asyncio.run(pipeline.enrich([_launch(MINT_A)]))
+    assert telegram.config.extra["call_channels"] == ["deadroom"]
+
+    asyncio.run(pipeline.enrich([_launch(MINT_A)]))
+    pipeline._wire_social_handles([])
+    assert telegram.config.extra["call_channels"] == []
+
+
+def test_a_night_of_timeouts_does_not_empty_the_watchlist(tmp_path):
+    """The adversarial path: the surface is down, not the channel.
+
+    Five sweeps of transport failure, which is more than the empty-read
+    threshold, and the channel stays. Anything else would let one bad network
+    minute silently cost the watchlist every entry on it at once.
+    """
+    import asyncio
+
+    pipeline, telegram = _empty_page_pipeline(tmp_path, TimeoutError("read timed out"))
+    for _ in range(5):
+        asyncio.run(pipeline.enrich([_launch(MINT_A)]))
+    pipeline._wire_social_handles([])
+    assert telegram.config.extra["call_channels"] == ["deadroom"]
+    assert all(not r.fetched for r in pipeline.db.channel_reads()["deadroom"])
+
+
+#: One `t.me/s/<channel>` message, in the shape the preview really serves.
+def _tg_message(post: str, text: str, when: str = "2026-08-04T10:00:00+00:00") -> str:
+    return (
+        f'<div class="tgme_widget_message text_not_supported_wrap js-widget_message" '
+        f'data-post="{post}">'
+        f'<div class="tgme_widget_message_text js-message_text">{text}</div>'
+        f'<span class="tgme_widget_message_views">1.2K</span>'
+        f'<time datetime="{when}"></time>'
+        f"</div>"
+    )
+
+
+def test_a_channel_that_answers_is_counted_as_having_answered():
+    """The mirror of the empty case, and the one with the teeth.
+
+    If `messages` were ever recorded as zero for a page that had messages on it,
+    every readable channel on the watchlist would be evicted after three sweeps
+    and the surface would go quiet with no error anywhere.
+    """
+    import asyncio
+
+    from botsensai.collectors.social import TelegramChannelCollector
+    from botsensai.config import Settings
+
+    collector = TelegramChannelCollector(Settings())
+
+    class FakeClient:
+        async def get_text(self, url: str, **kwargs) -> str:
+            return "".join(
+                _tg_message(f"live/{i}", f"call {MINT_A}") for i in range(1, 4)
+            )
+
+    collector._client = FakeClient()
+    posts, record = asyncio.run(collector.read_channel("live"))
+    assert len(posts) == 3
+    assert record.messages == 3
+    assert record.fetched is True
+
+    from botsensai.watchlist import empty_read_streak
+
+    assert empty_read_streak([record]) == 0
+
+
+def test_a_read_with_no_handle_is_not_stored(tmp_path):
+    """`@` and `/` leave nothing to key a history on.
+
+    Storing them would file every mistyped handle in the config under one empty
+    channel, which then accumulates a streak belonging to none of them.
+    """
+    import asyncio
+
+    from botsensai.collectors.social import TelegramChannelCollector
+    from botsensai.config import Settings
+
+    collector = TelegramChannelCollector(Settings())
+    posts, record = asyncio.run(collector.read_channel("@"))
+    assert posts == []
+    assert (record.channel, record.fetched) == ("", False)
+    assert _db(tmp_path).record_channel_reads([record]) == 0
+
+
+def test_history_per_channel_is_capped(tmp_path):
+    """A streak stops at the first message, but the read still has to fit in memory."""
+    db = _db(tmp_path)
+    db.record_channel_reads([_read("chatty", i) for i in range(60)])
+    assert len(db.channel_reads(limit_per_channel=50)["chatty"]) == 50
+    # Newest first, so the cap keeps the reads a streak is actually counted from.
+    assert db.channel_reads(limit_per_channel=2)["chatty"][0].observed_at == T0 + timedelta(
+        seconds=59
+    )
+
+
+def test_the_ranking_expires_an_old_streak_the_same_way_the_calls_expire(tmp_path):
+    """The window has to reach `rank_channels`, not just `channel_read_streaks`.
+
+    Everything downstream of the rank — the drop, the watchlist, the report —
+    reads `empty_reads` off it. If the rank counted the whole history while the
+    calls were bounded to thirty days, an eviction would be permanent in
+    practice: a dropped channel is no longer read, so its streak can never be
+    broken by a fresh message, and a room that went public later would be shut
+    out on evidence from an arbitrarily long time ago.
+    """
+    db = _db(tmp_path)
+    db.record_channel_reads([_read("dead", -100), _read("dead", -200), _read("dead", -300)])
+    assert rank_channels(db, ["dead"])[0].empty_reads == 3
+    assert rank_channels(db, ["dead"], since=T0)[0].empty_reads == 0
+
+
+def test_a_read_stored_under_a_key_that_is_not_a_handle_is_not_a_channel(tmp_path):
+    """`channel_reads` returns whatever key it was written under.
+
+    The collector lowercases, but this table is also written by hand and by
+    probe scripts, and a raw key would reach `rank_channels` as a channel of its
+    own — `Foo` ranked separately from `foo`, and `joinchat` ranked at all.
+    """
+    from botsensai.watchlist import read_channels
+
+    db = _db(tmp_path)
+    db.record_channel_reads(
+        [_read("PiskLauren", 100), _read("joinchat", 100), _read("t.me/callroom", 100)]
+    )
+    assert read_channels(db) == ["callroom", "pisklauren"]
+
+
+def _cli(tmp_path, call_channels, **rows):
+    """Run the real `channels --rank` against a temp store, as a user would.
+
+    `--config` means `load_settings`, not `get_settings`, so this cannot leak a
+    temp `db_path` into the process-wide settings singleton the way a probe that
+    assigns to it does.
+    """
+    import yaml
+    from typer.testing import CliRunner
+
+    from botsensai.cli import app
+    from botsensai.config import DEFAULT_CONFIG_PATH
+
+    db = _db(tmp_path, "cli.db")
+    for channel, reads in rows.items():
+        db.record_channel_reads([_read(channel, 100 * (i + 1)) for i in range(reads)])
+    db.close()
+
+    config = yaml.safe_load(DEFAULT_CONFIG_PATH.read_text())
+    config["db_path"] = str(tmp_path / "cli.db")
+    config["collectors"]["telegram"].setdefault("extra", {})["call_channels"] = call_channels
+    path = tmp_path / "cli.yaml"
+    path.write_text(yaml.safe_dump(config))
+
+    result = CliRunner().invoke(app, ["channels", "--rank", "--config", str(path)])
+    return result, " ".join(result.stdout.split())
+
+
+def test_the_report_names_the_channel_it_dropped_and_still_seeds_the_quiet_one(tmp_path):
+    """The acceptance criterion of P2-07, through the command that states it."""
+    result, out = _cli(tmp_path, ["deadroom", "quietroom"], deadroom=3, quietroom=1)
+
+    assert result.exit_code == 0, result.stdout
+    assert "dropped on evidence: deadroom — 3 consecutive empty reads" in out
+    assert "watchlist (1/6): quietroom" in out
+
+
+def test_a_channel_with_nothing_but_failed_attempts_is_still_in_the_report(tmp_path):
+    """It is in neither the candidate set nor the collected set, by definition.
+
+    No launch links it any more and we hold no message from it, so the two sets
+    the report was built from in P2-04 both miss it — and it is the one channel
+    the report exists to explain. An omission would read as never discovered.
+    """
+    result, out = _cli(tmp_path, [], ghostroom=3)
+
+    assert result.exit_code == 0, result.stdout
+    assert "dropped on evidence: ghostroom — 3 consecutive empty reads" in out

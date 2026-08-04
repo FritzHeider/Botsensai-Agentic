@@ -51,7 +51,7 @@ from botsensai.labeller import (
     collapse_path,
     points_from_snapshots,
 )
-from botsensai.models import Platform, SocialPost, utcnow
+from botsensai.models import ChannelRead, Platform, SocialPost, utcnow
 from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
 
@@ -76,6 +76,11 @@ DEFAULT_MIN_CALLS_TO_JUDGE = 3
 
 #: Median peak multiple at or below which a channel is calling tops.
 DEFAULT_MIN_PEAK_MULTIPLE = 1.0
+
+#: Consecutive reads that arrived and held no messages before a channel is
+#: judged unreadable. One is a channel that happened to be quiet in a window we
+#: cannot see the length of; three sweeps of nothing is the handle, not the day.
+DEFAULT_MAX_EMPTY_READS = 3
 
 #: Where a candidate came from, reported so a human curating the list can see
 #: whether the evidence is a token's own metadata or a third party's post.
@@ -269,6 +274,55 @@ def collected_channels(db: Database, since: datetime | None = None) -> list[str]
 
 
 # --------------------------------------------------------------------------- #
+# Reachability
+# --------------------------------------------------------------------------- #
+
+
+def empty_read_streak(reads: Sequence[ChannelRead]) -> int:
+    """Consecutive most-recent reads that arrived and held nothing.
+
+    `reads` is newest first. A read whose page never arrived is skipped rather
+    than counted or treated as a reset: it is evidence about the network, not
+    about the channel, and counting it would empty the entire watchlist on one
+    bad night — every channel fails together when the surface does.
+
+    Skipping it is safe in the direction that matters because an unreadable
+    handle does not fail to fetch. Measured 2026-08-04, `t.me/s/pisklauren` (the
+    published link of three launches, and unreadable since the day it was
+    discovered) answers HTTP 200 with an 11 KB page and zero messages, and so
+    does a handle nobody has ever registered. There is no 404 to wait for.
+    """
+    streak = 0
+    for read in reads:
+        if not read.fetched:
+            continue
+        if read.messages > 0:
+            break
+        streak += 1
+    return streak
+
+
+def channel_read_streaks(db: Database, since: datetime | None = None) -> dict[str, int]:
+    """Empty-read streak per channel this system has tried to read."""
+    return {
+        channel: empty_read_streak(reads)
+        for channel, reads in db.channel_reads(since=since).items()
+    }
+
+
+def read_channels(db: Database, since: datetime | None = None) -> list[str]:
+    """Every channel this system has *attempted*, readable or not.
+
+    Distinct from `collected_channels`, which lists the channels we hold
+    messages from. The difference between the two sets is exactly the channels
+    this task exists for, and they must stay visible to a curator after they
+    stop being read — a channel that vanished from the report would read as a
+    channel that was never discovered.
+    """
+    return sorted({c for c in (normalize_channel(x) for x in db.channel_reads(since=since)) if c})
+
+
+# --------------------------------------------------------------------------- #
 # Calls
 # --------------------------------------------------------------------------- #
 
@@ -428,6 +482,10 @@ class ChannelRank:
     entry_after_call: int
     already_peaked: int
     note: str
+    #: Consecutive recent reads that arrived and held no messages. A channel can
+    #: have a perfect call record and be unreadable today, so this is its own
+    #: figure rather than a note: it is the one that spends a fetch per sweep.
+    empty_reads: int = 0
 
 
 def rank_channels(
@@ -450,6 +508,7 @@ def rank_channels(
     calls_by_channel: defaultdict[str, list[Call]] = defaultdict(list)
     for call in channel_calls(db, wanted, since=since):
         calls_by_channel[call.channel].append(call)
+    streaks = channel_read_streaks(db, since=since)
 
     ranks: list[ChannelRank] = []
     for channel in wanted:
@@ -461,17 +520,20 @@ def rank_channels(
             )
             if m is not None
         ]
-        ranks.append(_summarize(channel, calls, measurements))
+        ranks.append(_summarize(channel, calls, measurements, streaks.get(channel, 0)))
     ranks.sort(key=_rank_order)
     return ranks
 
 
 def _summarize(
-    channel: str, calls: Sequence[Call], measurements: Sequence[LeadMeasurement]
+    channel: str,
+    calls: Sequence[Call],
+    measurements: Sequence[LeadMeasurement],
+    empty_reads: int = 0,
 ) -> ChannelRank:
     if not measurements:
         note = "no calls collected yet" if not calls else "no price path after any call"
-        return ChannelRank(channel, len(calls), 0, None, None, None, 0, 0, note)
+        return ChannelRank(channel, len(calls), 0, None, None, None, 0, 0, note, empty_reads)
     led = sum(1 for m in measurements if m.peak_multiple > 1.0)
     return ChannelRank(
         channel=channel,
@@ -483,6 +545,7 @@ def _summarize(
         entry_after_call=sum(1 for m in measurements if m.entry_after_call),
         already_peaked=sum(1 for m in measurements if m.already_peaked),
         note="",
+        empty_reads=empty_reads,
     )
 
 
@@ -501,28 +564,50 @@ def _rank_order(rank: ChannelRank) -> tuple[int, float, int, str]:
 # --------------------------------------------------------------------------- #
 
 
+def drop_reason(
+    rank: ChannelRank,
+    min_calls: int = DEFAULT_MIN_CALLS_TO_JUDGE,
+    min_peak_multiple: float = DEFAULT_MIN_PEAK_MULTIPLE,
+    max_empty_reads: int = DEFAULT_MAX_EMPTY_READS,
+) -> str | None:
+    """Why the evidence says to stop reading this channel, or None to keep it.
+
+    Two independent reasons, and a channel needs only one.
+
+    *It calls tops.* Only once it has made enough measured calls to have a
+    record, and only if that record says the price did not go up after it spoke.
+    A channel this system has never managed to measure is never dropped on this
+    — that would be treating our own blindness as its failure, the same mistake
+    as scoring a dead surface bearish. The `is not None` clause is not implied
+    by the count: `min_calls` is a caller's number, and at zero every
+    never-measured channel reaches the comparison with no median to compare.
+
+    *It cannot be read.* A handle several launches published is discovered and
+    seeded whether or not `t.me/s/<handle>` holds anything, so without this an
+    unreadable one holds a watchlist slot and spends a fetch every sweep for
+    good. The call record cannot cover this case: a channel that never yields a
+    message never makes a call, so its median is forever None and the first
+    reason can never fire.
+    """
+    if rank.empty_reads >= max_empty_reads:
+        return f"{rank.empty_reads} consecutive empty reads"
+    if (
+        rank.measured >= min_calls
+        and rank.median_peak_multiple is not None
+        and rank.median_peak_multiple <= min_peak_multiple
+    ):
+        return f"median peak {rank.median_peak_multiple:.2f}x over {rank.measured} calls"
+    return None
+
+
 def is_useless(
     rank: ChannelRank,
     min_calls: int = DEFAULT_MIN_CALLS_TO_JUDGE,
     min_peak_multiple: float = DEFAULT_MIN_PEAK_MULTIPLE,
+    max_empty_reads: int = DEFAULT_MAX_EMPTY_READS,
 ) -> bool:
-    """Whether the evidence positively says this channel is not worth reading.
-
-    Both halves matter. A channel is only dropped once it has made enough
-    measured calls to have a record, and only if that record says the price did
-    not go up after it spoke. A channel this system has never managed to measure
-    is never dropped — that would be treating our own blindness as its failure,
-    which is the same mistake as scoring a dead surface bearish.
-
-    The `is not None` clause is not implied by the count. `min_calls` is a
-    caller's number, and at zero every never-measured channel reaches the
-    comparison with no median to compare.
-    """
-    return (
-        rank.measured >= min_calls
-        and rank.median_peak_multiple is not None
-        and rank.median_peak_multiple <= min_peak_multiple
-    )
+    """Whether the evidence positively says this channel is not worth reading."""
+    return drop_reason(rank, min_calls, min_peak_multiple, max_empty_reads) is not None
 
 
 def seed_call_channels(
@@ -532,6 +617,7 @@ def seed_call_channels(
     limit: int = DEFAULT_WATCHLIST_LIMIT,
     min_calls: int = DEFAULT_MIN_CALLS_TO_JUDGE,
     min_peak_multiple: float = DEFAULT_MIN_PEAK_MULTIPLE,
+    max_empty_reads: int = DEFAULT_MAX_EMPTY_READS,
 ) -> list[str]:
     """The watchlist the collector should read this sweep.
 
@@ -542,7 +628,9 @@ def seed_call_channels(
     measurably called three tops is not a channel a human would still want; the
     whole point of measuring is that the measurement is allowed to win.
     """
-    dropped = {r.channel for r in ranking if is_useless(r, min_calls, min_peak_multiple)}
+    dropped = {
+        r.channel for r in ranking if is_useless(r, min_calls, min_peak_multiple, max_empty_reads)
+    }
     seeded: list[str] = []
     for value in [*curated, *(c.channel for c in candidates)]:
         channel = normalize_channel(value)
@@ -582,6 +670,7 @@ __all__ = [
     "CURATED_SOURCE",
     "DEFAULT_CALL_WINDOW_SECONDS",
     "DEFAULT_HORIZON_SECONDS",
+    "DEFAULT_MAX_EMPTY_READS",
     "DEFAULT_MIN_CALLS_TO_JUDGE",
     "DEFAULT_MIN_PEAK_MULTIPLE",
     "DEFAULT_WATCHLIST_LIMIT",
@@ -593,12 +682,16 @@ __all__ = [
     "LeadMeasurement",
     "build_watchlist",
     "channel_calls",
+    "channel_read_streaks",
     "channels_in_text",
     "collected_channels",
     "discover_candidates",
+    "drop_reason",
+    "empty_read_streak",
     "is_useless",
     "measure_call",
     "normalize_channel",
     "rank_channels",
+    "read_channels",
     "seed_call_channels",
 ]

@@ -475,7 +475,7 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: P1-01._
   _Accept:_ `python -m botsensai.cli channels --rank` exits 0 and prints per-channel median lead time in seconds. ✔ exit 0; `corgiportalonsol` 3 calls / 3 measured / median lead **6432 s** / median peak 6.99x / 100% led, `makepumpga` 1 call / median lead **7415 s** / 1.00x / 0% led, and 5 channels reported unmeasured rather than as zeros. `python -m pytest tests/test_channel_watchlist.py -q` → 52 passed. Live-read the three seeded channels 2026-08-04: `cryptoliquidbnb` 4 messages in 0.97 s, `www_usdolly_rocks` 8 messages in 0.33 s (2 naming tokens), `pisklauren` 0 — a discovered handle can be unreadable, and nothing drops it yet (see P2-07).
 
-- [ ] **P2-07 — Drop unreadable call channels**
+- [x] **P2-07 — Drop unreadable call channels**
   Found while accepting P2-04: `t.me/pisklauren` is the published Telegram link
   of three distinct launches, so it is discovered and seeded, and it returns zero
   messages every time. `is_useless` cannot drop it — it drops on a bad *price*
@@ -484,8 +484,28 @@ a guess. Every task here is worth more than a new metric.
   forever. The fix needs per-channel history, which nothing stores today:
   `collector_runs` is per surface. Add a per-channel read record and drop on
   *persistent* failure only — a transient fetch failure must not evict a channel.
+  Shipped as `models.ChannelRead` + the `channel_reads` table (schema 6) +
+  `Database.record_channel_reads` / `channel_reads`, written by
+  `Pipeline.enrich` from what `TelegramChannelCollector.read_channel` reports,
+  and consumed by `watchlist.empty_read_streak` → `ChannelRank.empty_reads` →
+  `drop_reason`, which `is_useless` now delegates to.
+  A live probe (`/var/tmp/p2_07_probe.py`) decided the design: `t.me/s/` has **no
+  404 anywhere**. An unreadable handle answers HTTP 200 with a real page and zero
+  messages — `pisklauren` 11,595 bytes ("View @pisklauren"), an unregistered
+  handle 9,897 bytes ("Contact @…") — while `durov` returns 20 messages and
+  `cryptoliquidbnb` 4. So a *failed fetch carries no information about a channel*
+  and is skipped rather than counted: counting it would evict the entire
+  watchlist on one bad night, since every channel fails together when the surface
+  does. Streaks are bounded to the same 30-day window as the calls, so an
+  eviction expires and a room that goes public later earns fresh attempts.
+  16 mutation probes against the guards, all red — three were green on the first
+  pass and all three were real: `rank_channels` dropped the expiry window on its
+  way to `channel_read_streaks` (making every eviction permanent), `read_channels`
+  returned raw store keys so `joinchat` and `Foo`-vs-`foo` would rank as channels,
+  and the CLI's ranked set omitted the attempted-but-never-collected channels —
+  the only ones the report exists to explain.
   _Depends on: P2-04._
-  _Accept:_ `python -m botsensai.cli channels --rank` marks a channel with N consecutive empty reads and excludes it from the seeded watchlist; a channel with one empty read is still seeded.
+  _Accept:_ `python -m botsensai.cli channels --rank` marks a channel with N consecutive empty reads and excludes it from the seeded watchlist; a channel with one empty read is still seeded. ✔ Exercised live on the real store: three spaced reads of the seeded watchlist (`/var/tmp/p2_07_live.py`, 60 s apart to clear the 45 s response cache) recorded `cryptoliquidbnb` 4/4/4 messages, `www_usdolly_rocks` 8/8/8, `pisklauren` **0/0/0**; the command then exits 0 with `pisklauren` marked `!` at 3 empty reads, `dropped on evidence: pisklauren — 3 consecutive empty reads`, and `watchlist (2/6): cryptoliquidbnb, www_usdolly_rocks`. `python -m pytest tests/test_channel_watchlist.py -q` → 72 passed (20 new). Full suite 464 passed; 9/9 backpressure gates green, complexity still 10.
 
 - [ ] **P2-06 — Fast-follower and identity-discontinuity metrics**
   The X profile payload carries `fast_followers_count` (X's own count of

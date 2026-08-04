@@ -21,6 +21,7 @@ import orjson
 
 from botsensai.models import (
     Chain,
+    ChannelRead,
     Confidence,
     CurveStage,
     HolderRecord,
@@ -42,7 +43,7 @@ from botsensai.util.logging import get_logger
 
 log = get_logger(__name__)
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 #: Launch columns `social_links` will read. An allow-list rather than a check
 #: for suspicious characters: the caller supplies a column name, and the only
@@ -310,6 +311,22 @@ CREATE TABLE IF NOT EXISTS collector_runs (
     error        TEXT,
     PRIMARY KEY (run_id, surface, started_at)
 );
+
+-- One attempt to read one public channel. `collector_runs` above is per
+-- surface, which is why nothing could answer "has this one watchlist entry
+-- ever produced a message": the Telegram surface reads fine while one handle on
+-- it returns an empty page every sweep, forever. `fetched` separates a page
+-- that arrived and held nothing (evidence about the channel) from a page we
+-- never saw (evidence about the network), because only the first may evict.
+CREATE TABLE IF NOT EXISTS channel_reads (
+    channel     TEXT NOT NULL,
+    observed_at REAL NOT NULL,
+    messages    INTEGER NOT NULL DEFAULT 0,
+    fetched     INTEGER NOT NULL DEFAULT 1,
+    error       TEXT,
+    PRIMARY KEY (channel, observed_at)
+);
+CREATE INDEX IF NOT EXISTS ix_channel_reads_time ON channel_reads(channel, observed_at DESC);
 """
 
 
@@ -1119,6 +1136,59 @@ class Database:
                 "INSERT OR REPLACE INTO collector_runs VALUES (?,?,?,?,?,?,?)",
                 (run_id, surface, _ts(started_at), _ts(finished_at), int(ok), records, error),
             )
+
+    def record_channel_reads(self, reads: Iterable[ChannelRead]) -> int:
+        """Persist what each channel returned this sweep. Returns rows written.
+
+        Keyed on `(channel, observed_at)`, so re-recording a sweep replaces its
+        row rather than inflating a channel's history — a streak counted from
+        duplicated rows would evict a channel in one sweep instead of three.
+        """
+        # A read with no handle is what a caller got for `@` or `/`: there was
+        # never a channel to record, and storing it would file every one of them
+        # together under the same empty key.
+        rows = [
+            (r.channel, _ts(r.observed_at), int(r.messages), int(r.fetched), r.error)
+            for r in reads
+            if r.channel
+        ]
+        if not rows:
+            return 0
+        with self.tx() as conn:
+            conn.executemany("INSERT OR REPLACE INTO channel_reads VALUES (?,?,?,?,?)", rows)
+        return len(rows)
+
+    def channel_reads(
+        self, since: datetime | None = None, limit_per_channel: int = 50
+    ) -> dict[str, list[ChannelRead]]:
+        """Read history per channel, newest first.
+
+        `since` is what lets an eviction expire. A dropped channel stops being
+        read, so its streak would otherwise stand forever and a room that went
+        public later could never come back; bounding the history to the same
+        window the ranking uses means the evidence ages out and the channel
+        earns a handful of fresh attempts.
+        """
+        clause = "" if since is None else " WHERE observed_at >= ?"
+        params: list[Any] = [] if since is None else [_ts(since)]
+        rows = self.conn.execute(
+            f"SELECT * FROM channel_reads{clause} ORDER BY channel, observed_at DESC",  # noqa: S608 - clause is module-internal
+            params,
+        ).fetchall()
+        out: dict[str, list[ChannelRead]] = {}
+        for row in rows:
+            history = out.setdefault(str(row["channel"]), [])
+            if len(history) < limit_per_channel:
+                history.append(
+                    ChannelRead(
+                        channel=str(row["channel"]),
+                        observed_at=_dt(row["observed_at"]) or utcnow(),
+                        messages=int(row["messages"]),
+                        fetched=bool(row["fetched"]),
+                        error=row["error"],
+                    )
+                )
+        return out
 
     def counts(self) -> dict[str, int]:
         tables = [

@@ -38,9 +38,11 @@ from botsensai.watchlist import (
     DEFAULT_WATCHLIST_LIMIT,
     collected_channels,
     discover_candidates,
+    drop_reason,
     is_useless,
     normalize_channel,
     rank_channels,
+    read_channels,
     seed_call_channels,
 )
 
@@ -1045,7 +1047,16 @@ def channels(
             # nothing and answers the question a curator actually has.
             ranking = rank_channels(
                 db,
-                [*curated, *(c.channel for c in candidates), *collected_channels(db, since)],
+                [
+                    *curated,
+                    *(c.channel for c in candidates),
+                    *collected_channels(db, since),
+                    # Channels we tried and got nothing from are not in the
+                    # collected set by definition, and they are the ones this
+                    # report exists to name. Omitting them would let an evicted
+                    # channel disappear silently instead of showing its reason.
+                    *read_channels(db, since),
+                ],
                 horizon_seconds=horizon_hours * 3600.0,
                 since=since,
             )
@@ -1059,9 +1070,9 @@ def channels(
     console.print(
         f"\nwatchlist ({len(seeded)}/{limit}): {', '.join(seeded) or '[yellow]empty[/yellow]'}"
     )
-    dropped = [r.channel for r in ranking if is_useless(r)]
-    if dropped:
-        console.print(f"[yellow]dropped on evidence:[/yellow] {', '.join(dropped)}")
+    dropped = [(r.channel, drop_reason(r)) for r in ranking if is_useless(r)]
+    for channel, reason in dropped:
+        console.print(f"[yellow]dropped on evidence:[/yellow] {channel} — {reason}")
 
 
 def _print_channel_candidates(candidates: Sequence[Any], curated: Sequence[str]) -> None:
@@ -1103,9 +1114,10 @@ def _print_channel_ranking(
     table.add_column("median lead (s)", justify="right")
     table.add_column("median peak (x)", justify="right")
     table.add_column("led", justify="right")
+    table.add_column("empty", justify="right")
     table.add_column("note")
     for entry in ranking:
-        marker = " [green]*[/green]" if entry.channel in seeded else ""
+        marker = _rank_marker(entry, seeded)
         table.add_row(
             f"{entry.channel}{marker}",
             str(entry.calls),
@@ -1113,10 +1125,23 @@ def _print_channel_ranking(
             "—" if entry.median_lead_seconds is None else f"{entry.median_lead_seconds:.0f}",
             "—" if entry.median_peak_multiple is None else f"{entry.median_peak_multiple:.2f}",
             "—" if entry.led_share is None else f"{entry.led_share:.0%}",
+            str(entry.empty_reads) if entry.empty_reads else "—",
             _rank_note(entry),
         )
     console.print(table)
-    console.print("[green]*[/green] on the watchlist")
+    console.print("[green]*[/green] on the watchlist   [yellow]![/yellow] dropped on evidence")
+
+
+def _rank_marker(entry: Any, seeded: set[str]) -> str:
+    """Which of the three states a channel is in, in one character.
+
+    A channel that is neither seeded nor dropped is simply behind better
+    candidates for the six slots, and that is a different fact from having been
+    ruled out — the reason for every `!` is printed under the table.
+    """
+    if entry.channel in seeded:
+        return " [green]*[/green]"
+    return " [yellow]![/yellow]" if is_useless(entry) else ""
 
 
 def _rank_note(entry: Any) -> str:

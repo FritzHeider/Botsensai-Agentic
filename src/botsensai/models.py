@@ -375,6 +375,38 @@ class SocialPost(Base):
         return sum(v or 0 for v in (self.likes, self.replies, self.reposts, self.quotes))
 
 
+class ChannelRead(Base):
+    """One attempt to read one public channel, and what came back.
+
+    `collector_runs` is per *surface*, so it can say the Telegram collector ran
+    and cannot say that one channel on the watchlist has returned nothing for a
+    week. That is the gap this record closes: a handle several launches published
+    is discovered, seeded, and then spends a fetch every sweep forever even
+    though `t.me/s/<handle>` holds no messages at all — measured 2026-08-04,
+    `t.me/s/pisklauren` answers HTTP 200 with an 11 KB "View @pisklauren" page
+    and zero messages, and so does a handle nobody has ever registered.
+
+    `fetched` is the whole discrimination. Both shapes above are a page that
+    *arrived*, which is evidence about the channel; a timeout or an open circuit
+    is evidence about us, and evicting a channel for it would empty the whole
+    watchlist on one bad night.
+
+    Only `observed_at` is carried, and deliberately: this records when we looked,
+    which is the only time it has. There is no separate event time to bound a
+    point-in-time read on, exactly as with `collector_runs`.
+    """
+
+    channel: str = Field(description="Lowercased handle, no @ and no t.me/ prefix")
+    observed_at: datetime = Field(default_factory=utcnow)
+    messages: int = Field(default=0, description="Messages the page held, not messages kept")
+    fetched: bool = Field(
+        default=True, description="The page arrived; False means we never saw one"
+    )
+    error: str | None = None
+
+    _v_read = field_validator("observed_at")(_ensure_utc)
+
+
 class SocialBundle(Base):
     """Everything social collected for one token in one sweep."""
 
@@ -636,6 +668,7 @@ def content_hash(obj: Any) -> str:
 __all__ = [
     "Base",
     "Chain",
+    "ChannelRead",
     "Confidence",
     "ContentPiece",
     "CurveStage",

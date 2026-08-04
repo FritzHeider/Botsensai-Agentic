@@ -430,6 +430,11 @@ class Pipeline:
         combined.posts.extend(await self._follow_offplatform_links(combined.posts, launches))
         await self.media_hasher.hash_posts(combined.posts)
         self.db.insert_posts(combined.posts)
+        # Per channel, not per surface. The Telegram surface reads fine while a
+        # single handle on its watchlist answers with an empty page every sweep,
+        # and until this row existed nothing could tell the two apart, so an
+        # unreadable channel held a watchlist slot and a fetch for good.
+        self.db.record_channel_reads(combined.raw.get("channel_reads") or [])
 
         fast = combined.raw.get("fast_follower_share")
         if isinstance(fast, dict):
