@@ -344,6 +344,17 @@ class Settings(BaseSettings):
         self.collectors["telegram"].requests_per_minute = min(
             self.collectors["telegram"].requests_per_minute, 30
         )
+        # Measured 2026-08-04. TikTok's oembed endpoint took 20 consecutive
+        # requests in 5.2s (~230/min) with no throttling; 60 keeps a fivefold
+        # margin on a burst test. Instagram has no throughput worth budgeting —
+        # anonymous access is a login wall, not a rate limit — so it gets the
+        # smallest number that still lets a session-backed profile work.
+        self.collectors["tiktok"].requests_per_minute = min(
+            self.collectors["tiktok"].requests_per_minute, 60
+        )
+        self.collectors["instagram"].requests_per_minute = min(
+            self.collectors["instagram"].requests_per_minute, 6
+        )
         # api.mainnet-beta.solana.com is documented at roughly 10 req/s and 429s
         # well before that under load (docs/DATA_SOURCES.md). Funding resolution
         # is the only caller and it is a background nicety, so it gets 2/s — far

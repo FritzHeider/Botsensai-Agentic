@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -37,6 +38,7 @@ from typing import Any
 from botsensai.collectors.base import CollectionResult, Collector, CollectorRegistry
 from botsensai.collectors.dexscreener import DexscreenerCollector
 from botsensai.collectors.geckoterminal import GeckoTerminalCollector
+from botsensai.collectors.longtail import InstagramCollector, TikTokCollector, tiktok_links
 from botsensai.collectors.pumpfun import PumpFunCollector
 from botsensai.collectors.social import (
     FourChanBizCollector,
@@ -55,7 +57,9 @@ from botsensai.models import (
     HolderRecord,
     Launch,
     MemoryKind,
+    Platform,
     Score,
+    SocialPost,
     utcnow,
 )
 from botsensai.onchain.funding import (
@@ -259,6 +263,14 @@ class Pipeline:
             RedditCollector(self.settings),
             FourChanBizCollector(self.settings),
             TelegramChannelCollector(self.settings),
+            # Both are near-certain to degrade without a browser session, and
+            # both cost nothing when they do: each checks for the session before
+            # opening a page. They are in the sweep anyway because a surface
+            # that is absent from the sweep never appears in
+            # `degraded_surfaces`, and `cross_platform_propagation_lag` would
+            # then read a blind spot as a confident bearish answer.
+            InstagramCollector(self.settings),
+            TikTokCollector(self.settings),
         ]
 
     async def aclose(self) -> None:
@@ -414,6 +426,7 @@ class Pipeline:
         # Hashes must be attached before the write, not after: `insert_posts`
         # is the only path into the store and a second pass would have to update
         # rows it has no key to find.
+        combined.posts.extend(await self._follow_offplatform_links(combined.posts, launches))
         await self.media_hasher.hash_posts(combined.posts)
         self.db.insert_posts(combined.posts)
 
@@ -421,6 +434,64 @@ class Pipeline:
         if isinstance(fast, dict):
             self._fast_follower_share.update(fast)
         return combined
+
+    #: Ceiling on TikTok links resolved in one sweep. Each is one cheap request
+    #: against an endpoint measured at ~230/min, but a spam wave posting the
+    #: same video under fifty tokens must not own the budget.
+    max_link_resolutions_per_sweep = 12
+
+    async def _follow_offplatform_links(
+        self, posts: Sequence[SocialPost], launches: Sequence[Launch]
+    ) -> list[SocialPost]:
+        """Turn TikTok links found on other platforms into TikTok posts.
+
+        This is where `cross_platform_propagation_lag` actually gets its second
+        platform. TikTok's own search is login-gated and its hashtag feed 403s,
+        but people post TikTok links into the X, Telegram, 4chan and pump.fun
+        rooms this system already reads — and a link carries everything the
+        metric needs, because `oembed` returns the caption and author and the
+        video id decodes to the creation time.
+
+        It sits here rather than inside the collector for the same reason media
+        hashing does: only the pipeline holds every surface's posts at once, and
+        this is the last point before `insert_posts`, which is the only path
+        into the store.
+        """
+        collector = self.collectors.get(TikTokCollector.name)
+        if not isinstance(collector, TikTokCollector) or not collector.config.enabled:
+            return []
+
+        tokens = {launch.token.key: launch.token for launch in launches}
+        wanted: dict[str, set[str]] = defaultdict(set)
+        for post in posts:
+            if post.platform is Platform.TIKTOK or not post.token_key:
+                continue
+            links = tiktok_links(f"{post.text} {post.url or ''}")
+            if links:
+                wanted[post.token_key].update(links)
+
+        resolved: list[SocialPost] = []
+        budget = self.max_link_resolutions_per_sweep
+        for token_key, urls in wanted.items():
+            # One enforcement point, not two. An `if budget <= 0: break` above
+            # this line reads like a guard and is not one — the slice already
+            # empties at zero — and an untested branch that cannot change an
+            # outcome is how a real guard gets mistaken for decoration later.
+            #
+            # Slice to whichever cap binds first. Charging the sweep budget for
+            # the links a token *offers* rather than the ones that will be
+            # requested lets a single link-stuffed post exhaust the sweep having
+            # made six calls, starving every token behind it.
+            batch = sorted(urls)[: min(budget, collector.max_links_per_token)]
+            videos = await collector.resolve_links(batch, tokens.get(token_key))
+            for video in videos:
+                video.token_key = video.token_key or token_key
+            resolved.extend(videos)
+            budget -= len(batch)
+
+        if resolved:
+            log.info("pipeline.offplatform_links", platform="tiktok", posts=len(resolved))
+        return resolved
 
     async def _resolve_funding(self, holders: Sequence[HolderRecord]) -> int:
         """Look up the funders we do not have yet, largest holdings first.

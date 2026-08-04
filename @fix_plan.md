@@ -396,13 +396,55 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: none._
   _Accept:_ `python -m pytest tests/test_phash.py -q` exits 0, asserting that a resized and re-encoded copy of an image hashes within Hamming distance 6, and an unrelated image does not. ✔ 55 passed; alpha.png vs alpha_small.jpg (96px, quality 35) = **2**, alpha vs beta = **34**
 
-- [ ] **P2-03 — Instagram and TikTok collectors**
-  Both via `WebUseDriver`, capturing the JSON their own pages fetch. Public
-  hashtag and search pages only. Expect frequent failure and make degradation
-  the normal path, not an exception. These two feed
-  `cross_platform_propagation_lag`, which is currently near-blind.
+- [x] **P2-03 — Instagram and TikTok collectors** *(done 2026-08-04)*
+  `collectors/longtail.py` adds `InstagramCollector` and `TikTokCollector`, both
+  registered in `ALL_COLLECTORS` and in the default sweep. The task said to
+  expect frequent failure and make degradation normal; the live probes said it
+  more strongly than that, so most of the work is in failing *correctly*.
+
+  MEASURED live, headless anonymous, 2026-08-04 (probes in `/var/tmp/p2_03_probe*.py`):
+  - **Instagram is refused in two disguises.** `/explore/tags/memecoin/`
+    redirects to `/accounts/login/`; `/explore/tags/wif/`, in the same run,
+    redirects to `/popular/wif/` — **HTTP 200 with 15 KB of encyclopedia prose
+    about Wi-Fi** and zero posts. The second is the more dangerous, because it
+    does not look like a failure. `api/v1/tags/web_info/` answers **200 with
+    `text/html`**, 605 KB of login shell.
+  - **TikTok gates everything token-scoped.** `/tag/{tag}` → `api/challenge/detail/`
+    **403** (identical under a real Chrome UA, so not UA sniffing); `/search` is
+    login-gated by TikTok's own `searchVideoForLoggedin` flag; `/explore` pays
+    out **one** 200 of 7 items per fresh browser context then **50 consecutive
+    403s**, and is not token-scoped anyway.
+  - **`oembed` works**: 20/20 200s in 5.2 s (~230/min), bogus id → clean 400.
+    Clamped to 60/min in `Settings`.
+  - **TikTok ids are snowflakes**: `id >> 32` is unix seconds, verified against
+    a video of known age (`6718…5173` → 2019-07-27).
+
+  Three departures from the task text, all forced by the measurements:
+  - **Two dead hashtag pages would have left the metric exactly as blind.** The
+    route that works is *other people's posts*:
+    `Pipeline._follow_offplatform_links` pulls `tiktok.com` links out of the X,
+    Telegram, 4chan and pump.fun-chat text already collected and resolves each
+    through oembed (12 per sweep). The snowflake decode is what makes a bare
+    link into dated evidence.
+  - **Neither collector opens a page without a session.** Ten seconds per token
+    to rediscover a measured wall displaces collection that works, so the
+    anonymous case degrades immediately — but it *does* degrade, by name,
+    because `cross_platform_propagation_lag` scores absence bearishly and a
+    blind surface would manufacture that reading.
+  - **A driver bug had to be fixed to make this reliable.** `PageResult.final_url`
+    was read at `domcontentloaded`, before the page's own JavaScript ran, so
+    Instagram's post-hydration redirect was visible only when it won a race. The
+    same collector saw `/accounts/login/` on one visit and the original path on
+    the next. `_drive_page` now re-reads the URL after the waits.
+
+  25 mutation probes against the guards, all red, including four that were green
+  on the first pass and had to be fixed: a walker depth limit tighter than
+  Instagram's own GraphQL envelope (so one of the two shapes silently parsed to
+  nothing), a redundant budget branch that was decoration rather than a guard,
+  an unreachable-date check nothing exercised, and a `/popular/` check that was
+  passing on a different signal than the one it named.
   _Depends on: P2-01._
-  _Accept:_ `python -m pytest tests/test_social_longtail.py -q` exits 0 against fixtures; `python -m botsensai.cli doctor` still exits 0 when both are unreachable.
+  _Accept:_ `python -m pytest tests/test_social_longtail.py -q` exits 0 against fixtures; `python -m botsensai.cli doctor` still exits 0 when both are unreachable. ✔ **36 passed**; doctor exit 0 both live (9/10 reachable — instagram down, tiktok ok) and with all network blocked (2/10 reachable, exit 0)
 
 - [ ] **P2-04 — Curate the Telegram call-channel watchlist**
   The reader works; what is missing is the list. Seed

@@ -437,13 +437,74 @@ Both encode `$` as `&#036;`. Strip tags without decoding entities and the
 cashtag regex matches nothing at all — every mention-based metric silently reads
 zero on both surfaces while appearing to work.
 
-### TikTok, Instagram, YouTube
+### TikTok — measured 2026-08-04
 
-`https://www.tiktok.com/oembed?url=...` works unauthenticated and returns the
-full caption including hashtags. Everything richer needs either the Research API
-(application and research proposal required) or a signed web request. Instagram
-and YouTube are queued in `@fix_plan.md` phase 2. All go through the browser
-driver against public pages only.
+**One path works and it is the only one.**
+
+```
+https://www.tiktok.com/oembed?url=<video url>     → 200 JSON, full caption
+```
+
+20 consecutive calls returned 200 in **5.2 s (~230/min) with no throttling**, and
+a bogus video id returns a clean **400** rather than a hollow 200. `Settings`
+clamps `collectors.tiktok` to **60/min**, a fifth of what held; that is a margin
+on a burst test, not a limit to widen. The response carries `title` (the full
+caption including hashtags), `author_name`, `author_unique_id` and
+`thumbnail_url`. It carries **no timestamp** — see the snowflake note below.
+
+Everything token-scoped is shut to an anonymous visitor:
+
+| path | result |
+|---|---|
+| `/tag/{tag}` → `api/challenge/detail/` | **403**, so the page never requests an item list at all |
+| `/search?q=…` → `api/prefetch/explore/item_list/` | **403**; the page's own rehydration blob carries a `searchVideoForLoggedin` flag |
+| `/explore` → `api/explore/item_list/` | **one** 200 with 7 items per *fresh browser context*, then **50 consecutive 403s**; 0 payouts on a second visit in the same context |
+
+The 403s are identical under a real Chrome user-agent and under Playwright's
+own, so this is not user-agent sniffing and stealth settings do not change it.
+
+**TikTok video ids are snowflakes: `id >> 32` is unix seconds.** Verified —
+`6718335390845095173` decodes to 2019-07-27, matching that video's real age. A
+post's creation time therefore comes out of its URL with no request, which is
+what makes a propagation lag computable from a link alone. Ids below `2^32` are
+not snowflakes and must be refused rather than shifted into 1970.
+
+Because search is shut, the working route to TikTok evidence is *other people's
+posts*: `Pipeline._follow_offplatform_links` extracts `tiktok.com` links from the
+X, Telegram, 4chan and pump.fun-chat text already collected and resolves each
+through oembed, budgeted at 12 per sweep.
+
+### Instagram — measured 2026-08-04
+
+**Anonymous access is refused, in two disguises, and the second one is the
+dangerous one.**
+
+| URL | signed-out result |
+|---|---|
+| `/explore/tags/memecoin/` | redirects to `/accounts/login/`, 830 bytes of login form, **0** captured JSON |
+| `/explore/tags/wif/` | redirects to `/popular/wif/?utm_source=explore_tag` — **HTTP 200, 15 KB of readable prose about Wi-Fi**, the wireless standard, **0** posts |
+| `api/v1/tags/web_info/?tag_name=…` (with the public `x-ig-app-id`) | **HTTP 200, `content-type: text/html`, 605 KB** — the login shell, not JSON |
+
+Both redirect shapes were live in the same run. The `/popular/` landing is worse
+than the login wall precisely because it does not look like a failure: it is a
+200 carrying plausible content, and anything that ever falls back to rendered
+text would file an encyclopedia entry on wireless networking as social evidence
+for the token $WIF. `collectors.longtail.is_signed_out` knows all three shapes.
+
+One further trap, found by a live run rather than by reading: **`PageResult.final_url`
+used to be read at `domcontentloaded`**, before the app's own JavaScript had run.
+Instagram redirects after hydration, so whether the redirect was visible depended
+on a race — the same collector saw `/accounts/login/` on one visit and the
+original path on the next. `_drive_page` now re-reads the URL after the waits.
+
+Instagram becomes a real data path only with `browser.user_data_dir` pointed at a
+logged-in profile — the same opt-in `XSessionSettings` documents. Without one the
+collector degrades *without opening a page*, because ten seconds per token to
+rediscover a measured wall displaces collection that works.
+
+### YouTube
+
+Queued in `@fix_plan.md` phase 2. Browser driver, public pages only.
 
 ## On-chain
 

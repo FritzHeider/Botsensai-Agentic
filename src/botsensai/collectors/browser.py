@@ -370,6 +370,19 @@ class WebUseDriver:
                 await page.mouse.wheel(0, 4000)
                 await page.wait_for_timeout(scroll_pause_ms)
 
+        # Re-read the URL now that the page has actually run. The first read
+        # happens at `domcontentloaded` so that a page which dies mid-visit
+        # still records where it got to, but a great many redirects — every
+        # login wall on a single-page app among them — are performed by the
+        # app's own JavaScript *after* hydration. Reporting the pre-hydration
+        # URL as `final_url` made a collector that checks for a sign-in
+        # redirect miss it whenever the redirect lost the race with
+        # `domcontentloaded`, which it does intermittently: measured against
+        # Instagram, the same URL reported `/accounts/login/` on one visit and
+        # the original path on the next.
+        with contextlib.suppress(Exception):
+            result.final_url = page.url
+
         if extract_text:
             with contextlib.suppress(Exception):
                 result.text = await page.inner_text("body")
