@@ -551,12 +551,43 @@ a guess. Every task here is worth more than a new metric.
   see DEC-016. Whoever sets the coverage baseline should either complete the
   fixture or record the baseline with these two excluded and say so.
 
-- [ ] **P2-05 — Coverage regression gate**
+- [x] **P2-05 — Coverage regression gate**
   Add a test that runs a synthetic backtest and fails if mean metric coverage
   drops below the current committed baseline. Record the baseline in
   `docs/RESULTS.md`. This stops coverage silently rotting as collectors drift.
+  The gate could not be built as specified until the fixture under it was
+  reproducible, and it was not (DEC-017): `generate_token` seeded its RNG with
+  `hash(archetype)`, and `hash` of a `str` is salted by `PYTHONHASHSEED`, while
+  `_wallet_ages` iterated a *set* of wallet strings and so drew from the RNG in
+  a per-process order. A generator documented as seeded produced different
+  tokens in every process — measured across two hash seeds,
+  `derivative_remix_depth` read **0.0646 and 0.0413** on the same command, a 36%
+  relative swing. Fixed to `ARCHETYPES.index(archetype)` and `dict.fromkeys`;
+  identical coverage now across three hash seeds.
+  The mean alone is not the gate the task description implies. Over 30
+  participating metrics one metric can lose **0.30** of coverage before the mean
+  moves by `MEAN_TOLERANCE` (0.01), so there is also a per-metric floor
+  (`METRIC_TOLERANCE` 0.02) — measured, raising `holder_distribution_health`'s
+  minimum from 8 tradeable holders to 20 drops it 0.9833 → 0.9517 and moves the
+  mean by 0.0010: mean gate green, per-metric gate red and naming the metric.
+  Four metrics read exactly 0.0 in any synthetic run and are excluded from the
+  headline mean and recorded with the note the metric itself emitted, because
+  "0.0 for want of a fixture" and "0.0 because the collector died" are opposite
+  findings that look identical in a coverage table. This closes P2-06's
+  follow-up: the two promoter metrics are recorded as excluded, with the reason
+  and with the real ceiling (599/1248 launches, 48%) beside them, rather than
+  papered over — `BacktestResult.absence_reasons` is new and is what makes that
+  distinction machine-readable instead of editorial.
+  13 mutation probes; 12 red first pass, and the one that went green was a bad
+  probe rather than a hole (holders 8 → 12 is not a degradation — synthetic
+  tokens comfortably carry 12 holders), re-run at 20 and red. The probe run also
+  exposed a trap worth naming: a same-length mutation restored inside one second
+  leaves a **valid `.pyc`** (invalidation is on source mtime-seconds + size), so
+  the mutated module goes on being imported after the restore. It made one probe
+  measure a universe-20 run against a universe-40 baseline. Probe harnesses in
+  this repo must purge `__pycache__` around every mutation.
   _Depends on: P2-01, P2-02._
-  _Accept:_ `python -m pytest tests/test_coverage_gate.py -q` exits 0.
+  _Accept:_ `python -m pytest tests/test_coverage_gate.py -q` exits 0. ✔ **19 passed** in 17.0 s. Baseline recorded at universe 40 / seed 1337 / pinned `created_at` 2026-07-01T12:00:00Z: **2400 evaluations, 30/34 metrics participating, mean coverage 0.8846**. `python scripts/coverage_baseline.py` (no `--write`) exits 0 with `recorded baseline matches`. Full suite **503 passed** (19 new), ruff clean, mypy clean, registry 34, `doctor` 9/10 surfaces reachable, `backtest --synthetic --universe 40` exits 0.
 
 ---
 

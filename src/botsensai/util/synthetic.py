@@ -394,7 +394,10 @@ def _wallet_ages(
             if priors.get(w, 0) > 0
             else rng.uniform(60, 7200)
         )
-        for w in {t.wallet for t in trades}
+        # First-seen order, not set order: iterating a set of wallet strings
+        # draws from `rng` in a PYTHONHASHSEED-dependent order, which changes
+        # every wallet's age and every draw after it from one process to the next.
+        for w in dict.fromkeys(t.wallet for t in trades)
     }
 
 
@@ -682,7 +685,11 @@ def generate_token(
     if archetype not in ARCHETYPES:
         raise ValueError(f"unknown archetype {archetype!r}; expected one of {ARCHETYPES}")
 
-    rng = random.Random(seed * 7919 + hash(archetype) % 10_000)
+    # `hash(archetype)` would be salted by PYTHONHASHSEED, so a "seeded"
+    # generator produced different tokens in every process. The archetype's
+    # position in ARCHETYPES is the same separation between the three streams
+    # without the per-process salt.
+    rng = random.Random(seed * 7919 + ARCHETYPES.index(archetype) * 104_729)
     t0 = created_at or (utcnow() - timedelta(seconds=horizon_seconds))
     mint = _address(rng, "mint")
     deployer = _address(rng, "dev")

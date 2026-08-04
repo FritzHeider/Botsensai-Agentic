@@ -175,6 +175,9 @@ class BacktestResult:
     score_distribution: list[float] = field(default_factory=list)
     veto_counts: dict[str, int] = field(default_factory=dict)
     metric_coverage: dict[str, float] = field(default_factory=dict)
+    # metric_id -> why a value was unusable, for the metrics that produced at
+    # least one unusable value. Present for every metric at 0.0 coverage.
+    absence_reasons: dict[str, str] = field(default_factory=dict)
     weights_version: str = "v0"
     synthetic: bool = False
     notes: list[str] = field(default_factory=list)
@@ -304,6 +307,10 @@ class _RunState:
     scores_seen: list[float] = field(default_factory=list)
     veto_counts: dict[str, int] = field(default_factory=dict)
     metric_hits: dict[str, int] = field(default_factory=dict)
+    # First note seen for an unusable value, per metric. A metric at 0% coverage
+    # is otherwise indistinguishable from one whose collector silently died, and
+    # the note is the only place the difference is written down.
+    absence_reasons: dict[str, str] = field(default_factory=dict)
     evaluated: int = 0
     entered: int = 0
     entry_info: dict[str, tuple[Score, float]] = field(default_factory=dict)
@@ -318,6 +325,8 @@ class _RunState:
         for value in values:
             if value.usable:
                 self.metric_hits[value.metric_id] = self.metric_hits.get(value.metric_id, 0) + 1
+            elif value.metric_id not in self.absence_reasons and value.notes:
+                self.absence_reasons[value.metric_id] = value.notes
             if value.raw is not None:
                 self.peer_values.setdefault(value.metric_id, []).append(value.raw)
         for veto in score.vetoes:
@@ -530,6 +539,7 @@ class Backtester:
             score_distribution=state.scores_seen,
             veto_counts=state.veto_counts,
             metric_coverage=coverage,
+            absence_reasons=dict(sorted(state.absence_reasons.items())),
             weights_version=self.scorer.weights.version,
             synthetic=synthetic,
             notes=self._notes(coverage, state.entered),

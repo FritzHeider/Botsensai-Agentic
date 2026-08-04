@@ -136,7 +136,9 @@ of the feed.
 `docs/ARCHITECTURE.md` has the full design. `docs/DATA_SOURCES.md` has every
 endpoint, field name and rate limit, verified live rather than copied from a
 tutorial — which matters here, because most published guides to the pump.fun API
-now describe endpoints that return 404.
+now describe endpoints that return 404. `docs/RESULTS.md` has what has actually
+been measured, which is currently metric coverage and *not* edge — that section
+says so in those words rather than being absent.
 
 ---
 
