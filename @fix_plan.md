@@ -357,12 +357,44 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: none._
   _Accept:_ `python -m pytest tests/test_x_collector.py -q` exits 0 against recorded fixtures in `tests/fixtures/x/`. ✔ 19 passed
 
-- [ ] **P2-02 — Perceptual image hashing**
-  `derivative_remix_depth` needs `SocialPost.media_hashes` populated and
-  currently gets nothing. Add a pHash implementation (numpy DCT, no new
-  dependency), fetch media with a strict size cap and timeout, and cache by URL.
+- [x] **P2-02 — Perceptual image hashing** *(done 2026-08-04)*
+  `media/phash.py` is the 64-bit DCT hash the task asked for — area-average to
+  32x32, numpy DCT-II, threshold on the median of the 63 non-DC coefficients —
+  and `media/hasher.py` fetches on a budget: thumbnails, a byte cap enforced
+  *while streaming*, a per-post and per-sweep image count, a wall-clock deadline
+  and an LRU cache by URL. Wired into `Pipeline.enrich` before `insert_posts`,
+  because that is the only path into the store and a post row has no key to come
+  back to.
+  Four things this needed that the task text did not anticipate:
+  - **There is no image library on this interpreter** — no PIL, no cv2, no
+    imageio. `media/imagecodec.py` decodes PNG (zlib + all five scanline
+    filters) and JPEG **to its DC coefficients only**, which is the image at
+    exactly 1/8 scale for no inverse DCT at all. See DEC-014.
+  - **X serves progressive JPEGs — all of them.** MEASURED: every image
+    `pbs.twimg.com` returned was SOF2. The first version of this decoder refused
+    progressive and passed its whole test suite while producing *zero* coverage
+    on the surface that matters most. Progressive turns out to be the *cheaper*
+    format here: its DC coefficients are a leading scan of their own, so there
+    are no AC terms to decode and discard.
+  - **`derivative_remix_depth` had to change with it.** It bucketed by hash
+    prefix, which is meaningless for perceptual hashes — near-identical images
+    differ by a few bits in arbitrary positions and so almost never share a
+    prefix. Now single-linkage Hamming clustering at ≤10 bits of 64.
+  - **4chan's native MD5 is not a perceptual hash** and is now stored as
+    `md5:<digest>` while perceptual ones are `p:<digest>`. Unnamespaced, eight
+    re-encodes of one picture read as eight visual ideas — the exact artefact
+    the metric exists to avoid.
+  MEASURED live: 39 of 40 real /biz/ catalog images hashed in 2.7s (the failure
+  was a 404 on a deleted post); unrelated /biz/ images sit 16–44 bits apart,
+  median 32, with 0 of 741 pairs inside the clustering threshold. Real X media
+  hashes after the progressive fix. Decode cost 1.2ms at 96px, 9.2ms at 256px,
+  863ms for a noisy 1200x1200 — which is what the thumbnail preference is for.
+  Known limits, written down rather than smoothed over: GIF and WebP are refused
+  (4chan thumbnails are always JPEG, so this costs little today); arithmetic and
+  lossless JPEG are refused; a progressive file whose first scan is not its DC
+  scan is refused rather than approximated.
   _Depends on: none._
-  _Accept:_ `python -m pytest tests/test_phash.py -q` exits 0, asserting that a resized and re-encoded copy of an image hashes within Hamming distance 6, and an unrelated image does not.
+  _Accept:_ `python -m pytest tests/test_phash.py -q` exits 0, asserting that a resized and re-encoded copy of an image hashes within Hamming distance 6, and an unrelated image does not. ✔ 55 passed; alpha.png vs alpha_small.jpg (96px, quality 35) = **2**, alpha vs beta = **34**
 
 - [ ] **P2-03 — Instagram and TikTok collectors**
   Both via `WebUseDriver`, capturing the JSON their own pages fetch. Public

@@ -14,6 +14,7 @@ from datetime import timedelta
 
 import pytest
 
+from botsensai.media.phash import exact_label, perceptual_label
 from botsensai.metrics import METRIC_CLASSES, build_registry
 from botsensai.metrics.base import MetricContext
 from botsensai.models import Confidence, Direction, TokenRef
@@ -222,6 +223,54 @@ def test_organic_media_production_only_fires_for_real_communities():
     assert (organic_value.raw or 0.0) > (farm_value.raw or 0.0), (
         "unpaid creative labour is the signal a manufactured launch cannot buy"
     )
+
+
+def _remix_metric():
+    return next(m for m in build_registry() if m.id == "derivative_remix_depth")
+
+
+def _ctx_with_hashes(hashes: list[str]):
+    """One post per hash, so the metric sees exactly the population given."""
+    ctx = context_for("organic", age_seconds=3600.0)
+    template = ctx.posts[0]
+    ctx.posts = [
+        template.model_copy(update={"post_id": f"m{i}", "media_hashes": [h]})
+        for i, h in enumerate(hashes)
+    ]
+    return ctx
+
+
+def test_remix_depth_ignores_exact_hashes():
+    """An MD5 answers 'same file', which is not the question this metric asks.
+
+    Eight distinct MD5s of the same picture re-encoded eight times would look
+    like eight visual ideas. Absence is the honest reading, not a maximum.
+    """
+    md5s = [exact_label(f"{i:032x}") for i in range(8)]
+    value = _remix_metric().evaluate(_ctx_with_hashes(md5s))
+    assert value.raw is None
+    assert value.confidence is Confidence.MISSING
+
+
+def test_remix_depth_separates_reposting_from_remixing():
+    """Reposting one image must not move the metric; drifting variants must.
+
+    The reposts differ in their *top* bits, one bit each. Under Hamming they are
+    one image; under any prefix bucketing they are eight distinct ones — which
+    is the reading this metric used to give and the reason the clustering had to
+    change. Flipping low bits instead would let prefix bucketing pass too.
+    """
+    metric = _remix_metric()
+    base = 0x0F1E2D3C4B5A6978
+    reposts = [perceptual_label(f"{base ^ (1 << (63 - i)):016x}") for i in range(8)]
+    lineages = [
+        perceptual_label(f"{(base ^ (0xFFFF << (16 * (i % 4)))) ^ (1 << i):016x}") for i in range(8)
+    ]
+
+    repost_value = metric.compute(_ctx_with_hashes(reposts))[0]
+    remix_value = metric.compute(_ctx_with_hashes(lineages))[0]
+    assert repost_value == 0.0, "one image posted eight times is not a remix population"
+    assert remix_value is not None and remix_value > repost_value
 
 
 # --------------------------------------------------------------------------- #

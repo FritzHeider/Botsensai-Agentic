@@ -379,8 +379,10 @@ GET https://a.4cdn.org/biz/thread/{no}.json   → full thread
 
 One documented rule: no more than one request per second, and use
 `If-Modified-Since`. Tickers surface here before they surface anywhere with a
-moderation team. Every image post carries a native **`md5`**, which makes
-exact cross-surface image identity free rather than requiring a perceptual hash.
+moderation team. Every image post carries a native **`md5`**, which makes exact
+cross-surface image identity free — but exact identity is a different question
+from visual identity, so it is stored under the `md5:` namespace and never
+compared against a perceptual hash. See *Posted media* below.
 
 ### Telegram — the web preview
 
@@ -399,6 +401,35 @@ will be banned for precisely this behaviour.
 
 Call channels front-run retail by minutes, so reading them at the moment they
 post is one of the few genuinely timing-sensitive edges available.
+
+### Posted media — the image endpoints, and what they actually serve
+
+`derivative_remix_depth` needs pixels, not URLs. Two hosts supply them, and both
+publish a small variant that a perceptual hash cannot tell from the original.
+
+```
+https://pbs.twimg.com/media/{id}?format=jpg&name=small   → ~688px, 14-40 KB
+https://pbs.twimg.com/media/{id}?format=jpg&name=orig    → up to 6590x4690 (!)
+https://i.4cdn.org/{board}/{tim}s.jpg                    → 250px thumbnail
+https://i.4cdn.org/{board}/{tim}{ext}                    → the original upload
+```
+
+Measured 2026-08-04:
+
+* **Every image `pbs.twimg.com` served was a progressive JPEG** (SOF2), across
+  every sample taken. A baseline-only decoder reads exactly none of them. This
+  is the single most important fact on this page for anyone touching image code.
+* `name=orig` returned a **6590x4690** image for one NASA post — 31 megapixels.
+  Fetching originals is not a bandwidth question, it is a decode-budget one.
+* The `small` and `orig` variants of the same X media are **not** scaled copies
+  of one another: their perceptual hashes land **4-6 bits apart**. Inside the
+  10-bit clustering threshold, but do not assume cross-variant identity.
+* 4chan thumbnails are **always JPEG** regardless of the original's extension,
+  including for `.png` and `.gif` uploads. 39 of 40 live catalog images hashed
+  in 2.7s; the one failure was a 404 on a deleted post.
+* Unrelated real /biz/ images sit **16-44 bits apart** (median 32), with **0 of
+  741 pairs** inside the clustering threshold — so the threshold does not
+  manufacture clusters out of unrelated imagery.
 
 ### One trap shared by 4chan and Telegram
 

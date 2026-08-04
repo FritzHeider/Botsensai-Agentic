@@ -29,6 +29,7 @@ from botsensai.collectors.social import (
     x_tweet_token,
 )
 from botsensai.config import load_settings
+from botsensai.media.phash import perceptual_values
 from botsensai.models import Platform
 
 # --------------------------------------------------------------------------- #
@@ -171,7 +172,13 @@ def test_fast_follower_share_needs_both_fields():
 
 
 def test_fourchan_post_carries_native_md5():
-    """4chan gives an MD5 per image, so exact cross-surface matching is free."""
+    """4chan gives an MD5 per image, so exact cross-surface matching is free.
+
+    It is stored under the `md5:` namespace and not as a bare digest, because
+    `derivative_remix_depth` now clusters perceptual hashes in Hamming space: an
+    unlabelled MD5 in that column is 128 bits of noise that reads as a distinct
+    visual idea, so every plain re-upload of one image would count as a remix.
+    """
     collector = FourChanBizCollector()
     post = collector._post_to_social(
         {
@@ -186,7 +193,8 @@ def test_fourchan_post_carries_native_md5():
     )
     assert post is not None
     assert post.platform is Platform.FOURCHAN
-    assert post.media_hashes == ["Mx4k4ymW/t8kZXwZbDh8ZQ=="]
+    assert post.media_hashes == ["md5:Mx4k4ymW/t8kZXwZbDh8ZQ=="]
+    assert perceptual_values(post.media_hashes) == []
     assert post.mentioned_tokens == ["BONK"]
     assert post.parent_id == "100"
 

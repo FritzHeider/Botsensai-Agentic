@@ -203,6 +203,34 @@ class MediaSettings(BaseModel):
     thread_template: str = "x_thread.md.j2"
 
 
+class MediaHashSettings(BaseModel):
+    """Budget for turning posted images into perceptual hashes.
+
+    Media is the only kilobyte-to-megabyte traffic in a sweep and the decoder is
+    pure Python, so every field here is a ceiling rather than a preference. The
+    defaults are sized so that a full sweep spends at most a few seconds and a
+    few tens of megabytes on imagery, which is the point at which the signal
+    stops being worth its displacement of on-chain calls.
+    """
+
+    enabled: bool = True
+    requests_per_minute: float = 120.0
+    max_concurrency: int = 4
+    timeout_seconds: float = 8.0
+    #: Enforced while streaming, not from `content-length`.
+    max_bytes: int = 2_000_000
+    #: Refuse to decode beyond this; cost is linear in pixels.
+    max_pixels: int = 4_000_000
+    max_images_per_post: int = 4
+    max_images_per_sweep: int = 60
+    deadline_seconds: float = 30.0
+    cache_entries: int = 4096
+    #: Hash the host's small variant. Perceptual hashes are scale-invariant, and
+    #: an X original measured 6590x4690 on 2026-08-04 — past `max_pixels` and no
+    #: more informative than the 688px variant it also publishes.
+    prefer_thumbnails: bool = True
+
+
 class BacktestSettings(BaseModel):
     start: str | None = None
     end: str | None = None
@@ -265,6 +293,7 @@ class Settings(BaseSettings):
     scoring: ScoringSettings = Field(default_factory=ScoringSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     media: MediaSettings = Field(default_factory=MediaSettings)
+    media_hash: MediaHashSettings = Field(default_factory=MediaHashSettings)
     backtest: BacktestSettings = Field(default_factory=BacktestSettings)
     collectors: dict[str, CollectorSettings] = Field(default_factory=dict)
 
@@ -388,6 +417,7 @@ __all__ = [
     "CollectorSettings",
     "DEFAULT_CONFIG_PATH",
     "ExecutionSettings",
+    "MediaHashSettings",
     "MediaSettings",
     "MemorySettings",
     "REPO_ROOT",

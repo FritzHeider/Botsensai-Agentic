@@ -47,6 +47,7 @@ from botsensai.collectors.social import (
 from botsensai.collectors.x_session import AuthenticatedXCollector
 from botsensai.config import Settings, get_settings
 from botsensai.execution.broker import PaperBroker
+from botsensai.media.hasher import MediaHasher
 from botsensai.memory.store import MemoryStore
 from botsensai.metrics import MetricRegistry, build_registry
 from botsensai.metrics.base import MetricContext
@@ -215,6 +216,11 @@ class Pipeline:
             resolver=FundingSourceResolver(self.settings) if rpc.enabled else None,
         )
 
+        # Media hashing sits in the pipeline rather than in each social collector
+        # so the byte budget, the URL cache and the deadline are shared across
+        # every platform in a sweep instead of being re-spent per surface.
+        self.media_hasher = MediaHasher(self.settings)
+
         self.collectors = CollectorRegistry(self.settings)
         for collector in collectors or self._default_collectors():
             self.collectors.register(collector)
@@ -257,6 +263,7 @@ class Pipeline:
 
     async def aclose(self) -> None:
         await self.collectors.aclose()
+        await self.media_hasher.aclose()
         if self.funding.resolver is not None:
             await self.funding.resolver.aclose()
 
@@ -404,6 +411,10 @@ class Pipeline:
         # key at all — which this did — wrote every post with token_key NULL,
         # and `posts_as_of` filters on that column: 494 posts were stored and
         # none was ever readable by a social metric.
+        # Hashes must be attached before the write, not after: `insert_posts`
+        # is the only path into the store and a second pass would have to update
+        # rows it has no key to find.
+        await self.media_hasher.hash_posts(combined.posts)
         self.db.insert_posts(combined.posts)
 
         fast = combined.raw.get("fast_follower_share")

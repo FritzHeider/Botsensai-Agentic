@@ -44,6 +44,7 @@ from urllib.parse import quote
 from botsensai.collectors.base import CollectionResult, Collector, tag_posts
 from botsensai.collectors.browser import BrowserUnavailableError, WebUseDriver, get_driver
 from botsensai.config import Settings
+from botsensai.media.phash import exact_label
 from botsensai.models import (
     Platform,
     SocialAccount,
@@ -967,7 +968,10 @@ class FourChanBizCollector(Collector):
             media_urls.append(f"{FOURCHAN_CDN}/biz/{post['tim']}{post['ext']}")
             if post.get("md5"):
                 # Native MD5: exact-duplicate detection across surfaces for free.
-                media_hashes.append(str(post["md5"]))
+                # Namespaced, because it is not comparable with a perceptual hash
+                # and `derivative_remix_depth` clusters in Hamming space — an
+                # unlabelled MD5 in that column reads as a unique visual idea.
+                media_hashes.append(exact_label(str(post["md5"])))
 
         return SocialPost(
             platform=Platform.FOURCHAN,

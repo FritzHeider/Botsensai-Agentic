@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from botsensai.media.phash import perceptual_label
 from botsensai.models import (
     Chain,
     CurveStage,
@@ -558,7 +559,7 @@ def _root_post(spec: _Spec, description: str, root_id: str) -> SocialPost:
         author_created_at=spec.t0 - timedelta(days=engagement["author_age_days"]),
         mentioned_tokens=[spec.symbol],
         media_urls=[f"https://example.invalid/{spec.mint[:8]}.png"],
-        media_hashes=[hashlib.sha256(spec.mint.encode()).hexdigest()[:16]],
+        media_hashes=[_synthetic_phash(spec, idea=0, drift=0)],
         source="synthetic",
     )
 
@@ -610,6 +611,20 @@ def _reply_posts(spec: _Spec, root_id: str) -> list[SocialPost]:
     return posts
 
 
+def _synthetic_phash(spec: _Spec, *, idea: int, drift: int) -> str:
+    """A hash that behaves the way a perceptual one does.
+
+    Same visual idea means a handful of bits apart; different idea means about
+    half the bits apart, which is where independent 64-bit values land. Faking
+    this with a plain digest per post would make every synthetic token look
+    maximally remixed, and a metric that always saturates is worse than absent.
+    """
+    value = int(hashlib.sha256(f"{spec.mint}idea{idea}".encode()).hexdigest()[:16], 16)
+    for _ in range(drift):
+        value ^= 1 << spec.rng.randrange(64)
+    return perceptual_label(f"{value:016x}")
+
+
 def _community_posts(spec: _Spec) -> list[SocialPost]:
     """Only the organic archetype generates original media.
 
@@ -634,8 +649,12 @@ def _community_posts(spec: _Spec) -> list[SocialPost]:
                 author_followers=int(rng.lognormvariate(6.5, 1.4)),
                 author_created_at=ts - timedelta(days=rng.uniform(200, 2500)),
                 media_urls=[f"https://example.invalid/remix{i}.png"],
+                # Three visual ideas across seven posts, each redrawn a little:
+                # a real remix population is a handful of lineages with drift,
+                # not seven unrelated pictures. Independent random hashes would
+                # hand `derivative_remix_depth` its maximum for free.
                 media_hashes=[
-                    hashlib.sha256(f"{spec.mint}remix{i}".encode()).hexdigest()[:16]
+                    _synthetic_phash(spec, idea=1 + i % 3, drift=rng.randrange(0, 5))
                 ],
                 mentioned_tokens=[spec.symbol],
                 source="synthetic",
