@@ -446,13 +446,46 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: P2-01._
   _Accept:_ `python -m pytest tests/test_social_longtail.py -q` exits 0 against fixtures; `python -m botsensai.cli doctor` still exits 0 when both are unreachable. ✔ **36 passed**; doctor exit 0 both live (9/10 reachable — instagram down, tiktok ok) and with all network blocked (2/10 reachable, exit 0)
 
-- [ ] **P2-04 — Curate the Telegram call-channel watchlist**
+- [x] **P2-04 — Curate the Telegram call-channel watchlist**
   The reader works; what is missing is the list. Seed
   `collectors.telegram.extra.call_channels` from Dexscreener `links` of type
   `telegram` plus manual curation, then measure each channel's lead time against
   subsequent price action so the useless ones can be dropped.
+  Shipped as `botsensai/watchlist.py` plus `Database.social_links` /
+  `posts_by_platform` / `posts_matching`, wired into
+  `Pipeline._wire_social_handles` (which had been setting `call_channels` to a
+  literal `[]` every sweep) and exposed as `botsensai.cli channels`.
+  Seeding costs no requests: Dexscreener's `info.socials` entry of type
+  `telegram` is already folded into `Launch.telegram`, and the discriminator
+  between a token's own room and a call room is **reuse** — measured on the real
+  store, `t.me/CRYPTOLIQUIDBNB` is the published link of 7 distinct tokens and
+  `t.me/pisklauren` of 3, while every other link in 120 launches belongs to
+  exactly one. Ranking reuses the labeller's `choose_denomination` →
+  `points_from_snapshots` → `collapse_path` rather than reading `market_snapshots`
+  as a path, because a naive `MAX(price)` after a call scores the 6.8-million-x
+  intra-sweep disagreements that `collapse_path` exists to absorb. A channel is
+  dropped only on positive evidence (>=3 measured calls, median peak multiple
+  <=1.0); one that was never measurable is reported unmeasured and kept.
+  21 mutation probes against the guards, all red — four were green on the first
+  pass and were real holes: a `startswith("+")` invite check that `_HANDLE_RE`
+  already refused (decoration, removed), a `median is not None` clause nothing
+  reached until `min_calls=0`, LIKE-wildcard escaping tested with a fragment
+  containing no wildcards, and the collector's own `[:6]` channel budget, which
+  had never been exercised since it was written.
   _Depends on: P1-01._
-  _Accept:_ `python -m botsensai.cli channels --rank` exits 0 and prints per-channel median lead time in seconds.
+  _Accept:_ `python -m botsensai.cli channels --rank` exits 0 and prints per-channel median lead time in seconds. ✔ exit 0; `corgiportalonsol` 3 calls / 3 measured / median lead **6432 s** / median peak 6.99x / 100% led, `makepumpga` 1 call / median lead **7415 s** / 1.00x / 0% led, and 5 channels reported unmeasured rather than as zeros. `python -m pytest tests/test_channel_watchlist.py -q` → 52 passed. Live-read the three seeded channels 2026-08-04: `cryptoliquidbnb` 4 messages in 0.97 s, `www_usdolly_rocks` 8 messages in 0.33 s (2 naming tokens), `pisklauren` 0 — a discovered handle can be unreadable, and nothing drops it yet (see P2-07).
+
+- [ ] **P2-07 — Drop unreadable call channels**
+  Found while accepting P2-04: `t.me/pisklauren` is the published Telegram link
+  of three distinct launches, so it is discovered and seeded, and it returns zero
+  messages every time. `is_useless` cannot drop it — it drops on a bad *price*
+  record, and a channel that never yields a message never makes a call. So an
+  unreadable handle holds one of six watchlist slots and spends a fetch per sweep
+  forever. The fix needs per-channel history, which nothing stores today:
+  `collector_runs` is per surface. Add a per-channel read record and drop on
+  *persistent* failure only — a transient fetch failure must not evict a channel.
+  _Depends on: P2-04._
+  _Accept:_ `python -m botsensai.cli channels --rank` marks a channel with N consecutive empty reads and excludes it from the seeded watchlist; a channel with one empty read is still seeded.
 
 - [ ] **P2-06 — Fast-follower and identity-discontinuity metrics**
   The X profile payload carries `fast_followers_count` (X's own count of

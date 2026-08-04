@@ -44,6 +44,11 @@ log = get_logger(__name__)
 
 SCHEMA_VERSION = 5
 
+#: Launch columns `social_links` will read. An allow-list rather than a check
+#: for suspicious characters: the caller supplies a column name, and the only
+#: safe answer to "is this identifier legal here" is a fixed set.
+_LINK_COLUMNS = frozenset({"website", "twitter", "telegram"})
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -700,6 +705,77 @@ class Database:
             (_ts(start), _ts(end)),
         ).fetchall()
         return [_row_to_launch(r) for r in rows]
+
+    def social_links(self, field: str) -> dict[str, set[str]]:
+        """Published social link -> the launches that published it.
+
+        `field` is one of the launch link columns; anything else is refused
+        rather than interpolated, because this is the one place in the module
+        where a column name reaches SQL from a caller.
+
+        For `telegram` this is the Dexscreener `links` feed under another name:
+        `info.socials` of type `telegram` is folded into `Launch.telegram` at
+        parse time, so the store already holds every link Dexscreener published
+        and reading it back costs no requests.
+        """
+        if field not in _LINK_COLUMNS:
+            raise ValueError(f"not a launch link column: {field!r}")
+        rows = self.conn.execute(
+            f"SELECT {field} AS link, token_key FROM launches "  # noqa: S608 - allow-listed above
+            f"WHERE {field} IS NOT NULL AND {field} != ''"
+        ).fetchall()
+        links: dict[str, set[str]] = {}
+        for row in rows:
+            links.setdefault(str(row["link"]), set()).add(str(row["token_key"]))
+        return links
+
+    def posts_by_platform(
+        self, platform: Platform, since: datetime | None = None, limit: int = 20_000
+    ) -> list[SocialPost]:
+        """Freshest observation of every post on one platform, newest first."""
+        clause = "platform = ?"
+        params: list[Any] = [platform.value]
+        if since is not None:
+            clause += " AND as_of >= ?"
+            params.append(_ts(since))
+        return self._freshest_posts(clause, params, limit)
+
+    def posts_matching(
+        self, fragment: str, since: datetime | None = None, limit: int = 20_000
+    ) -> list[SocialPost]:
+        """Freshest observation of every post whose text contains `fragment`.
+
+        The fragment is matched literally: LIKE's own wildcards are escaped, so
+        a caller searching for `t.me/` gets `t.me/` and not `t<any char>me/`.
+        """
+        escaped = fragment.replace("\\", r"\\").replace("%", r"\%").replace("_", r"\_")
+        clause = r"text LIKE ? ESCAPE '\'"
+        params: list[Any] = [f"%{escaped}%"]
+        if since is not None:
+            clause += " AND as_of >= ?"
+            params.append(_ts(since))
+        return self._freshest_posts(clause, params, limit)
+
+    def _freshest_posts(
+        self, clause: str, params: list[Any], limit: int
+    ) -> list[SocialPost]:
+        """One row per post, the latest observation of it, newest post first.
+
+        Posts are stored once per observation so engagement can be tracked over
+        time. Any caller counting posts rather than reading engagement has to
+        collapse those first, or a channel that was read twenty times looks like
+        twenty calls.
+        """
+        rows = self.conn.execute(
+            f"""SELECT * FROM social_posts p
+                 WHERE {clause}
+                   AND observed_at = (
+                       SELECT MAX(observed_at) FROM social_posts q
+                        WHERE q.platform = p.platform AND q.post_id = p.post_id)
+                 ORDER BY as_of DESC LIMIT ?""",  # noqa: S608 - clause is module-internal
+            [*params, int(limit)],
+        ).fetchall()
+        return [_row_to_post(r) for r in rows]
 
     def snapshots_as_of(
         self, token_key: str, as_of: datetime, lookback_seconds: float | None = None

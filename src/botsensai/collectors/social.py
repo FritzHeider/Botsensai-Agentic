@@ -1079,6 +1079,13 @@ class TelegramChannelCollector(Collector):
     can_discover = False
     can_enrich = True
 
+    #: How many curated call channels one sweep reads. Each is a single
+    #: `t.me/s/<name>` fetch against a 30/min pacing, and the sweep also owes a
+    #: fetch to every token that published a room of its own, so the watchlist
+    #: gets a fixed share rather than the remainder. `botsensai.watchlist`
+    #: ranks candidates so that this cap spends itself on the best six.
+    max_call_channels = 6
+
     async def health_check(self) -> bool:
         if not self.config.enabled:
             return False
@@ -1152,7 +1159,7 @@ class TelegramChannelCollector(Collector):
 
         # Call channels are token-agnostic: read them once and let the caller
         # match mints out of the message text.
-        for channel in watchlist[:6]:
+        for channel in watchlist[: self.max_call_channels]:
             posts = await self.channel_messages(channel)
             result.posts.extend(p for p in posts if contains_address(p.text) or p.mentioned_tokens)
 

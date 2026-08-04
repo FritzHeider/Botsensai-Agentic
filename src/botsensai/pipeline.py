@@ -73,6 +73,7 @@ from botsensai.scoring.composite import CompositeScorer, score_to_size
 from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
 from botsensai.util.text import tokens as text_tokens
+from botsensai.watchlist import build_watchlist, normalize_channel
 
 log = get_logger(__name__)
 
@@ -537,8 +538,27 @@ class Pipeline:
             x_collector.config.extra["handles"] = handles
         telegram = self.collectors.get("telegram")
         if telegram is not None:
-            telegram.config.extra.setdefault("call_channels", [])
             telegram.config.extra["channels"] = channels
+            telegram.config.extra["call_channels"] = self._call_channels(telegram)
+
+    def _call_channels(self, telegram: Collector) -> list[str]:
+        """Rebuild the call-channel watchlist from the store, every sweep.
+
+        The curated list is copied aside on the first pass and read from there
+        afterwards. `call_channels` is both the documented config key and this
+        method's output, so without the copy the list would only ever grow: a
+        channel the ranking dropped would be read back next sweep as if a human
+        had chosen it, and nothing could ever leave the watchlist.
+        """
+        extra = telegram.config.extra
+        curated = extra.setdefault("curated_call_channels", list(extra.get("call_channels", [])))
+        try:
+            return build_watchlist(
+                self.db, curated, limit=TelegramChannelCollector.max_call_channels
+            )
+        except Exception as exc:  # a curation nicety must never fail a sweep
+            log.debug("pipeline.watchlist_failed", error=str(exc))
+            return [c for c in (normalize_channel(x) for x in curated) if c is not None]
 
     # -- step 4: score ------------------------------------------------------ #
 

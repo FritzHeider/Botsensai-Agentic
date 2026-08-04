@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,15 @@ from botsensai.scoring import CompositeScorer, Weights
 from botsensai.store.db import Database
 from botsensai.util.logging import configure_logging
 from botsensai.util.synthetic import generate_cohort
+from botsensai.watchlist import (
+    DEFAULT_WATCHLIST_LIMIT,
+    collected_channels,
+    discover_candidates,
+    is_useless,
+    normalize_channel,
+    rank_channels,
+    seed_call_channels,
+)
 
 app = typer.Typer(
     name="botsensai",
@@ -995,6 +1005,128 @@ def dashboard(
         console.print(f"[red]{len(alarms)} integrity alarm(s):[/red]")
         for flag in alarms:
             console.print(f"  [red]{flag['headline']}[/red] — {flag['detail']}")
+
+
+@app.command()
+def channels(
+    rank: bool = typer.Option(
+        False, "--rank", help="Measure each channel's lead time against subsequent price action."
+    ),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    min_tokens: int = typer.Option(
+        2, help="Distinct tokens that must point at a channel before it counts as a call channel."
+    ),
+    horizon_hours: float = typer.Option(6.0, help="How far past a call to look for the peak."),
+    days: float = typer.Option(30.0, help="Only consider calls this recent."),
+    limit: int = typer.Option(DEFAULT_WATCHLIST_LIMIT, help="Channels the watchlist hands over."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Curate the Telegram call-channel watchlist and rank it by lead time.
+
+    Discovery costs nothing: Dexscreener's `telegram` link is already in the
+    store on every launch, and a channel several unrelated tokens point at is a
+    call room rather than a token's own. `--rank` then measures what each
+    channel's calls were actually worth, which is what lets one be dropped.
+
+    Exits 0 with an empty store on purpose. A channel with nothing measured is
+    reported as unmeasured; it is not reported as bad.
+    """
+    settings = _settings(config, log_level)
+    db = Database(settings.path(settings.db_path))
+    telegram = settings.collector("telegram")
+    curated = [str(c) for c in telegram.extra.get("call_channels", [])]
+    since = utcnow() - timedelta(days=days)
+    try:
+        candidates = discover_candidates(db, min_tokens=min_tokens, since=since)
+        ranking: list[Any] = []
+        if rank:
+            # Rank everything we have heard from, not just what qualifies for
+            # the watchlist. A ranking only ever removes, so the wider set costs
+            # nothing and answers the question a curator actually has.
+            ranking = rank_channels(
+                db,
+                [*curated, *(c.channel for c in candidates), *collected_channels(db, since)],
+                horizon_seconds=horizon_hours * 3600.0,
+                since=since,
+            )
+        seeded = seed_call_channels(curated, candidates, ranking, limit=limit)
+    finally:
+        db.close()
+
+    _print_channel_candidates(candidates, curated)
+    if rank:
+        _print_channel_ranking(ranking, horizon_hours, set(seeded))
+    console.print(
+        f"\nwatchlist ({len(seeded)}/{limit}): {', '.join(seeded) or '[yellow]empty[/yellow]'}"
+    )
+    dropped = [r.channel for r in ranking if is_useless(r)]
+    if dropped:
+        console.print(f"[yellow]dropped on evidence:[/yellow] {', '.join(dropped)}")
+
+
+def _print_channel_candidates(candidates: Sequence[Any], curated: Sequence[str]) -> None:
+    if not candidates:
+        console.print(
+            "[yellow]no call channels discovered[/yellow] — no Telegram link in the store is "
+            "shared by enough tokens yet. Collect more launches, or curate by hand in "
+            "collectors.telegram.extra.call_channels."
+        )
+        return
+    table = Table(title="call-channel candidates")
+    table.add_column("channel")
+    table.add_column("tokens", justify="right")
+    table.add_column("posts", justify="right")
+    table.add_column("evidence")
+    curated_set = {c for c in (normalize_channel(x) for x in curated) if c is not None}
+    for candidate in candidates:
+        marker = " [green](curated)[/green]" if candidate.channel in curated_set else ""
+        table.add_row(
+            f"{candidate.channel}{marker}",
+            str(candidate.tokens),
+            str(candidate.posts),
+            ", ".join(candidate.sources),
+        )
+    console.print(table)
+
+
+def _print_channel_ranking(
+    ranking: Sequence[Any], horizon_hours: float, seeded: set[str]
+) -> None:
+    """Lead time per channel, with the sample size beside it, never without."""
+    if not ranking:
+        console.print("[yellow]nothing to rank[/yellow] — no channel has been read yet.")
+        return
+    table = Table(title=f"lead time to peak, {horizon_hours:g}h horizon")
+    table.add_column("channel")
+    table.add_column("calls", justify="right")
+    table.add_column("measured", justify="right")
+    table.add_column("median lead (s)", justify="right")
+    table.add_column("median peak (x)", justify="right")
+    table.add_column("led", justify="right")
+    table.add_column("note")
+    for entry in ranking:
+        marker = " [green]*[/green]" if entry.channel in seeded else ""
+        table.add_row(
+            f"{entry.channel}{marker}",
+            str(entry.calls),
+            str(entry.measured),
+            "—" if entry.median_lead_seconds is None else f"{entry.median_lead_seconds:.0f}",
+            "—" if entry.median_peak_multiple is None else f"{entry.median_peak_multiple:.2f}",
+            "—" if entry.led_share is None else f"{entry.led_share:.0%}",
+            _rank_note(entry),
+        )
+    console.print(table)
+    console.print("[green]*[/green] on the watchlist")
+
+
+def _rank_note(entry: Any) -> str:
+    """The caveats on a channel's record, which are half of what it means."""
+    parts = [entry.note] if entry.note else []
+    if entry.entry_after_call:
+        parts.append(f"{entry.entry_after_call} priced only after the call")
+    if entry.already_peaked:
+        parts.append(f"{entry.already_peaked} called a top")
+    return "; ".join(parts)
 
 
 @app.command()

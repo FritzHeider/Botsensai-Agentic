@@ -92,6 +92,29 @@ media:
   require_disclosure: true
   max_posts_per_hour: 6
 
+collectors:
+  telegram:
+    extra:
+      # Telegram call channels read once per sweep, token-agnostically, on top
+      # of the room each token publishes for itself. Handles only — a `t.me/`
+      # URL or an `@handle` is accepted and normalized. Private invites
+      # (`t.me/+…`, `joinchat`) cannot be read anonymously and are refused.
+      #
+      # This list is the *manual* half of the curation and it is deliberately
+      # empty: no public call channel has been measured from here yet, and a
+      # plausible-looking name committed without evidence is exactly the kind of
+      # claim this repository is not allowed to make. The automatic half needs
+      # no configuration — `botsensai.watchlist` seeds every sweep from the
+      # Telegram links Dexscreener already published into the store, promoting
+      # any room that several unrelated tokens point at.
+      #
+      # `python -m botsensai.cli channels --rank` prints each channel's median
+      # lead time to the subsequent price peak, with the sample size beside it.
+      # A channel whose median peak multiple is at or below 1.0 across three or
+      # more measured calls is dropped from the watchlist automatically, whether
+      # it was discovered or hand-added here.
+      call_channels: []
+
 backtest:
   train_days: 14
   test_days: 7
