@@ -333,15 +333,29 @@ a guess. Every task here is worth more than a new metric.
   Both live and returning real posts. 4chan supplies native image MD5s;
   Telegram supplies view counts from the `t.me/s/` preview. ✔
 
-- [ ] **P2-01 — X search depth via web-use**
-  `XCollector.search_via_browser` captures one page of GraphQL. Scroll and
-  capture until either 200 posts or 3 minutes, dedupe by post id, and extract
-  per-reply author creation dates (the input to `engager_age_dispersion`).
-  Reply *text* is only available here — no free path carries it — so this is the
-  task that unblocks `reply_template_ratio` on X.
-  Degrade to syndication-only when no browser is available.
+- [x] **P2-01 — X search depth via web-use** *(done 2026-08-04)*
+  `WebUseDriver.harvest_json` drains captured responses *between* scrolls and
+  lets the caller stop, which is the capability `capture_json` lacked: it
+  returns everything only after the last scroll, by which point the cost is
+  already paid. `XCollector.harvest_posts` absorbs each round, dedupes by post
+  id, and stops on the target (200), the deadline, or 2 idle scrolls. Shared by
+  the anonymous path, the session search and the session conversation reader, so
+  all three dedupe identically.
+  Two departures from the task text, both deliberate:
+  - The 3-minute ceiling applies to the session path; anonymous gets 25s.
+    MEASURED live: an anonymous `$CHEEMS` search returns 0 posts in 9.0s
+    because x.com/search serves a logged-out visitor a login wall. See DEC-013.
+  - Dedupe keeps the *richest* parse of a post, not the first. The walker yields
+    both a tweet node and its own `legacy` sub-dict; keeping the wrong one files
+    the post under `unknown` with no creation date, which is a fabricated author,
+    not a lost one.
+  `AuthenticatedXCollector._enrich_budget_seconds` now derives from the search
+  deadline instead of a flat 45s, or the base class would kill enrich mid-sweep
+  the first time a harvest used its ceiling.
+  Depth is only *real* with `x_session` configured; anonymously this remains a
+  login wall, and the plan should not pretend otherwise.
   _Depends on: none._
-  _Accept:_ `python -m pytest tests/test_x_collector.py -q` exits 0 against recorded fixtures in `tests/fixtures/x/`.
+  _Accept:_ `python -m pytest tests/test_x_collector.py -q` exits 0 against recorded fixtures in `tests/fixtures/x/`. ✔ 19 passed
 
 - [ ] **P2-02 — Perceptual image hashing**
   `derivative_remix_depth` needs `SocialPost.media_hashes` populated and

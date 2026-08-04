@@ -317,6 +317,34 @@ Two field-level traps, both verified:
   bought-follower oracle as any public source offers, and it is far better
   evidence than inferring the same thing from an engagement ratio.
 
+**Search is a third path, and it is scrolled rather than fetched.** X's own web
+app pays out one page of `SearchTimeline` GraphQL per scroll — roughly twenty
+posts — which is below the evidence floor of every metric the feed exists to
+serve (`engager_age_dispersion` wants 8 known creation dates,
+`reply_template_ratio` wants 12 replies). `WebUseDriver.harvest_json` therefore
+drains the captured responses *between* scrolls and lets the collector say when
+it has enough, with three independent stops:
+
+```
+posts     200 unique post ids          — the target; the only stop that is success
+time      180s authenticated / 25s anonymous
+idle      2 consecutive scrolls with no new GraphQL
+```
+
+MEASURED 2026-08-04, anonymous, headless: `$CHEEMS` search returned **0 posts in
+9.0s** — X serves a logged-out visitor a login wall, the scrolls after the first
+capture nothing, and the idle stop ends it two scrolls in. That measurement is
+why the anonymous ceiling is 25s and not the full three minutes: spending three
+minutes per token to rediscover the login wall would cost more than the whole
+surface is worth without a session. Depth on this path is only real with
+`x_session` configured (see `docs/X_SESSION.md`).
+
+Dedupe by post id is not optional here. X re-serves the head of the feed on
+nearly every scroll, so concatenating pages counts the same posts repeatedly —
+which inflates every count-based metric and concentrates the apparent author
+distribution onto whoever posted the re-served item, manufacturing the shill
+fingerprint we are trying to detect.
+
 Also verified: some accounts return `{"entries": []}` with HTTP 200. That is
 genuine absence for that handle, not an error, and is treated as such. The
 official X API v2 went pay-per-use in February 2026 with no free tier at

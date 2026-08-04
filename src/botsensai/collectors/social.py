@@ -39,9 +39,10 @@ import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 from botsensai.collectors.base import CollectionResult, Collector, tag_posts
-from botsensai.collectors.browser import BrowserUnavailableError, get_driver
+from botsensai.collectors.browser import BrowserUnavailableError, WebUseDriver, get_driver
 from botsensai.config import Settings
 from botsensai.models import (
     Platform,
@@ -67,6 +68,29 @@ X_TWEET_HOST = "https://cdn.syndication.twimg.com"
 X_TIMELINE_RPM = 0.7
 #: Measured: 40/40 consecutive requests returned 200 with no throttling.
 X_TWEET_RPM = 40.0
+
+#: GraphQL operations worth capturing off the search page. Matched as URL
+#: substrings on captured responses, not as a path, because X renames the query
+#: id in the path on every deploy and never the operation name.
+X_SEARCH_PATTERN = r"(SearchTimeline|TweetDetail|TweetResultByRestId)"
+
+#: Posts one search harvest aims for before it stops scrolling. Set from what
+#: the metrics need rather than a round number: `engager_age_dispersion` needs 8
+#: accounts with known creation dates and `reply_template_ratio` needs 12
+#: replies, and on a live ticker feed only a minority of captured posts carry
+#: either. 200 clears both with room for the ones that carry neither.
+X_SEARCH_POST_TARGET = 200
+#: Ceiling on one authenticated search harvest. Reached only by a feed that
+#: keeps paying out; the idle-scroll stop ends a quiet ticker in seconds.
+X_SEARCH_DEADLINE_SECONDS = 180.0
+#: The anonymous path gets a much smaller ceiling on purpose. x.com/search
+#: serves a login wall to a logged-out visitor, so the scrolls after the first
+#: capture nothing, and spending three minutes discovering that once per token
+#: would cost the sweep more than the whole surface is worth without a session.
+X_PUBLIC_SEARCH_DEADLINE_SECONDS = 25.0
+X_SEARCH_MAX_SCROLLS = 40
+#: Consecutive scrolls that may return no new GraphQL before the harvest ends.
+X_SEARCH_IDLE_SCROLLS = 2
 
 #: These return HTTP 200 with a zero-byte body. Kept as a named constant so the
 #: next person to "helpfully" reintroduce one finds this note first.
@@ -142,6 +166,20 @@ def _iso(value: Any) -> datetime | None:
         # X's v1.1 format: "Fri Jul 24 22:40:18 +0000 2026"
         return datetime.strptime(str(value), "%a %b %d %H:%M:%S %z %Y")
     return None
+
+
+def _author_rank(post: SocialPost) -> int:
+    """How much of an author one parse of a post recovered.
+
+    The structural walker yields both a tweet node and that node's own `legacy`
+    sub-dict, and only the outer one carries the author. Both parse to the same
+    post id, so a dedupe that simply keeps whichever arrived first will
+    sometimes file a post under `unknown` with no creation date — turning a real
+    author distribution into a fabricated one and blinding
+    `engager_age_dispersion` for that post. Rank decides ties instead.
+    """
+    resolved = not (post.author == "unknown" or post.author.startswith("id:"))
+    return int(post.author_created_at is not None) + int(resolved)
 
 
 def _int(value: Any) -> int | None:
@@ -246,6 +284,9 @@ class XCollector(Collector):
     description = "X timelines, engagement velocity and engager metadata via live syndication"
     can_discover = False
     can_enrich = True
+    #: Seconds one search harvest may spend. The session subclass raises this;
+    #: see the constant for why the anonymous path is not given the same budget.
+    search_deadline_seconds = X_PUBLIC_SEARCH_DEADLINE_SECONDS
 
     def __init__(self, settings: Settings | None = None) -> None:
         super().__init__(settings)
@@ -442,7 +483,110 @@ class XCollector(Collector):
 
     # -- browser fallback --------------------------------------------------- #
 
-    async def search_via_browser(self, query: str, limit: int = 40) -> list[SocialPost]:
+    def search_budget(self) -> tuple[int, float]:
+        """How many posts one search aims for, and how long it may spend.
+
+        Both are overridable per surface through `collectors.x.extra` so an
+        operator can trade sweep latency for depth without editing code.
+        """
+        extra = self.config.extra
+        target = int(extra.get("search_post_target", X_SEARCH_POST_TARGET) or 0)
+        deadline = float(
+            extra.get("search_deadline_seconds", self.search_deadline_seconds) or 0.0
+        )
+        return max(1, target), max(0.0, deadline)
+
+    async def harvest_posts(
+        self,
+        driver: WebUseDriver,
+        url: str,
+        pattern: str,
+        *,
+        limit: int | None = None,
+        deadline_seconds: float | None = None,
+        requests_per_minute: float | None = None,
+        wait_ms: int = 5000,
+    ) -> list[SocialPost]:
+        """Scroll an X feed, absorbing its own GraphQL until the budget is spent.
+
+        One page of search GraphQL is roughly twenty posts, which is below the
+        evidence floor of every metric this feed exists to serve — so a single
+        capture reads as "not enough data" on a token that is in fact being
+        discussed heavily. Scrolling is what turns this surface from decorative
+        into usable.
+
+        Dedupe is by post id and is not optional: X re-serves the top of the
+        feed on nearly every scroll, so a naive concatenation counts the same
+        post four or five times. That inflates every count-based metric and,
+        worse, concentrates the apparent author distribution onto whoever posted
+        the item that keeps being re-served — which reads downstream as one
+        account dominating the conversation, a shill fingerprint we would have
+        manufactured ourselves.
+
+        Insertion order is preserved, so the cap keeps the posts the feed ranked
+        first rather than an arbitrary subset.
+        """
+        target, budget = self.search_budget()
+        cap = target if limit is None else max(1, limit)
+        posts: dict[str, SocialPost] = {}
+
+        def absorb(bodies: list[Any]) -> bool:
+            for body in bodies:
+                for node in self._walk_for_tweets(body):
+                    post = self._parse_graphql_tweet(node)
+                    if post is None:
+                        continue
+                    held = posts.get(post.post_id)
+                    if held is None or _author_rank(post) > _author_rank(held):
+                        posts[post.post_id] = post
+            return len(posts) < cap
+
+        await driver.harvest_json(
+            url,
+            pattern,
+            on_batch=absorb,
+            surface=self.name,
+            wait_ms=wait_ms,
+            scroll_pause_ms=1400,
+            max_scrolls=X_SEARCH_MAX_SCROLLS,
+            deadline_seconds=budget if deadline_seconds is None else deadline_seconds,
+            idle_scrolls=X_SEARCH_IDLE_SCROLLS,
+            requests_per_minute=(
+                float(self.config.requests_per_minute)
+                if requests_per_minute is None
+                else requests_per_minute
+            ),
+        )
+        return list(posts.values())[:cap]
+
+    async def harvest_search(
+        self,
+        driver: WebUseDriver,
+        query: str,
+        *,
+        pattern: str = X_SEARCH_PATTERN,
+        limit: int | None = None,
+        deadline_seconds: float | None = None,
+        requests_per_minute: float | None = None,
+    ) -> list[SocialPost]:
+        """Deep search for one query.
+
+        The query is percent-encoded rather than interpolated raw. A ticker is
+        operator-supplied text: an unencoded `#` truncates the URL at the
+        fragment and searches for something else entirely, and an unencoded `&`
+        appends a parameter — both of which return a plausible page of results
+        for the wrong query, which is worse than an error.
+        """
+        return await self.harvest_posts(
+            driver,
+            f"https://x.com/search?q={quote(query, safe='')}&f=live",
+            pattern,
+            limit=limit,
+            deadline_seconds=deadline_seconds,
+            requests_per_minute=requests_per_minute,
+        )
+
+    async def search_via_browser(self, query: str, limit: int | None = None) -> list[SocialPost]:
         """Load the X search page and capture the GraphQL it fetches for itself.
 
         Search is not available on any free unauthenticated path, and reply text
@@ -451,16 +595,11 @@ class XCollector(Collector):
         """
         if self._browser_failed:
             return []
-        driver = get_driver(self.settings.browser)
         try:
-            bodies = await driver.capture_json(
-                f"https://x.com/search?q={query}&f=live",
-                pattern=r"(SearchTimeline|TweetDetail|TweetResultByRestId)",
-                surface=self.name,
-                wait_ms=5000,
-                scrolls=2,
-                requests_per_minute=self.config.requests_per_minute,
-            )
+            # Inside the try: obtaining the driver is itself a step that can
+            # fail, and `enrich` must never raise out of this collector.
+            driver = get_driver(self.settings.browser)
+            return await self.harvest_search(driver, query, limit=limit)
         except BrowserUnavailableError as exc:
             self._browser_failed = True
             log.info("x.browser_unavailable", error=str(exc))
@@ -468,16 +607,6 @@ class XCollector(Collector):
         except Exception as exc:
             log.debug("x.browser_search_failed", query=query, error=str(exc))
             return []
-
-        posts: list[SocialPost] = []
-        for body in bodies:
-            for node in self._walk_for_tweets(body):
-                post = self._parse_graphql_tweet(node)
-                if post is not None:
-                    posts.append(post)
-                if len(posts) >= limit:
-                    return posts
-        return posts
 
     @staticmethod
     def _walk_for_tweets(payload: Any) -> list[dict[str, Any]]:
@@ -613,6 +742,39 @@ class XCollector(Collector):
 
     # -- enrichment --------------------------------------------------------- #
 
+    async def _timeline_leg(self, handle: str, token: TokenRef, result: CollectionResult) -> list[SocialPost]:
+        """The named account's own timeline: the only free source of follower
+        counts and account ages, so its account object is kept even when the
+        posts are later filtered out as off-topic."""
+        posts, account = await self.profile_timeline(handle)
+        if account is None:
+            return posts
+        result.accounts.append(account)
+        if account.fast_follower_share is not None:
+            result.raw.setdefault("fast_follower_share", {})[token.key] = (
+                account.fast_follower_share
+            )
+        return posts
+
+    async def _search_leg(self, symbol: str, result: CollectionResult) -> list[SocialPost]:
+        posts = await self.search_via_browser(f"${symbol}" if symbol.isalnum() else symbol)
+        if self._browser_failed:
+            # Falling back to the syndication timeline is correct; doing it
+            # silently is not. Without the browser there is no reply text and no
+            # search breadth at all, so the social family reads thin — and a thin
+            # reading reported as healthy gets attributed to the token instead of
+            # to the collector.
+            result.degraded = True
+            result.raw["browser"] = "unavailable — syndication timeline only"
+        return posts
+
+    def _about_this_token(self, post: SocialPost, symbol: str) -> bool:
+        if not symbol:
+            return True
+        if symbol.upper() in [t.upper() for t in post.mentioned_tokens]:
+            return True
+        return contains_address(post.text) or symbol.lower() in post.text.lower()
+
     async def enrich(self, tokens: Sequence[TokenRef]) -> CollectionResult:
         result = self._empty()
         handles: dict[str, str] = self.config.extra.get("handles", {})
@@ -623,30 +785,16 @@ class XCollector(Collector):
 
             handle = handles.get(token.key)
             if handle:
-                posts, account = await self.profile_timeline(handle)
-                collected.extend(posts)
-                if account is not None:
-                    result.accounts.append(account)
-                    if account.fast_follower_share is not None:
-                        result.raw.setdefault("fast_follower_share", {})[token.key] = (
-                            account.fast_follower_share
-                        )
-
+                collected.extend(await self._timeline_leg(handle, token, result))
             if symbol and len(symbol) >= 2:
-                collected.extend(
-                    await self.search_via_browser(f"${symbol}" if symbol.isalnum() else symbol)
-                )
+                collected.extend(await self._search_leg(symbol, result))
 
             if not collected:
                 result.degraded = True
                 continue
 
-            for post in collected:
-                mentions = [t.upper() for t in post.mentioned_tokens]
-                if symbol and symbol.upper() not in mentions:
-                    if not contains_address(post.text) and symbol.lower() not in post.text.lower():
-                        continue
-                result.posts.extend(tag_posts([post], token.key))
+            on_topic = [p for p in collected if self._about_this_token(p, symbol)]
+            result.posts.extend(tag_posts(on_topic, token.key))
 
         return result
 
@@ -1105,6 +1253,12 @@ __all__ = [
     "REDDIT_BASE",
     "TELEGRAM_PREVIEW",
     "X_DEAD_ENDPOINTS",
+    "X_PUBLIC_SEARCH_DEADLINE_SECONDS",
+    "X_SEARCH_DEADLINE_SECONDS",
+    "X_SEARCH_IDLE_SCROLLS",
+    "X_SEARCH_MAX_SCROLLS",
+    "X_SEARCH_PATTERN",
+    "X_SEARCH_POST_TARGET",
     "X_TIMELINE_HOST",
     "X_TWEET_HOST",
     "EmptySuccessError",

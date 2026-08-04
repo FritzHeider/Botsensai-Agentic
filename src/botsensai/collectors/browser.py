@@ -136,6 +136,20 @@ def _response_listener(
     return on_response
 
 
+def _drain(captured: list[CapturedResponse]) -> list[Any]:
+    """Take every body captured so far, leaving the buffer empty.
+
+    Draining rather than reading is what makes a harvest incremental: each round
+    sees only what the last scroll produced, so the decision to keep scrolling is
+    made on new evidence instead of on the same bodies counted again. A reader
+    that never empties the buffer cannot tell a feed that is still paying out
+    from one that has stopped.
+    """
+    batch = [c.body for c in captured if c.body is not None]
+    captured.clear()
+    return batch
+
+
 def _route_blocker(blocked: set[str]) -> Callable[[Any], Coroutine[Any, Any, None]]:
     """Build the route handler that aborts the blocked resource types."""
 
@@ -385,6 +399,118 @@ class WebUseDriver:
             **kwargs,
         )
         return result.json_matching(pattern)
+
+    async def harvest_json(
+        self,
+        url: str,
+        pattern: str,
+        *,
+        on_batch: Callable[[list[Any]], bool] | None = None,
+        surface: str = "browser",
+        wait_ms: int = 4000,
+        scroll_pause_ms: int = 1200,
+        max_scrolls: int = 40,
+        deadline_seconds: float = 180.0,
+        idle_scrolls: int = 2,
+        requests_per_minute: float = 30.0,
+    ) -> list[Any]:
+        """Scroll an infinite feed, handing each round's JSON to `on_batch`.
+
+        `capture_json` answers "what did this page fetch on load"; this answers
+        "keep scrolling until I have enough". The difference matters for exactly
+        one reason: an infinite feed pays out a page of results per scroll, and
+        the caller is the only one that knows when it has enough of them.
+        `on_batch` returns False to stop.
+
+        Three independent stops, because each guards a different failure:
+        `on_batch` (we have what we came for), `deadline_seconds` (a feed that
+        keeps paying out forever must not own the sweep), and `idle_scrolls` (a
+        feed that has stopped paying out — exhausted, throttled, or behind a
+        login wall — must not be scrolled at for the rest of the budget). Only
+        the first is success; the other two are worth logging, and are.
+        """
+        await self.start()
+        pacer = Pacer.get(surface, requests_per_minute, self.settings.max_pages)
+        pacer.breaker.check()
+        await pacer.bucket.acquire()
+
+        captured: list[CapturedResponse] = []
+        bodies: list[Any] = []
+        on_response = _response_listener(url, [pattern], captured)
+
+        async with self._page_semaphore:
+            page = await self._context.new_page()
+            page.on("response", lambda r: asyncio.create_task(on_response(r)))
+            if self.settings.block_resources:
+                await page.route("**/*", _route_blocker(set(self.settings.block_resources)))
+            try:
+                await page.goto(url, wait_until="domcontentloaded")
+                if wait_ms:
+                    await page.wait_for_timeout(wait_ms)
+                await self._scroll_and_drain(
+                    page,
+                    captured,
+                    bodies,
+                    on_batch=on_batch,
+                    max_scrolls=max_scrolls,
+                    scroll_pause_ms=scroll_pause_ms,
+                    deadline_seconds=deadline_seconds,
+                    idle_scrolls=idle_scrolls,
+                )
+                pacer.breaker.record_success()
+            except Exception as exc:
+                pacer.breaker.record_failure()
+                log.warning("browser.harvest_failed", url=url, error=str(exc))
+            finally:
+                # Responses in flight during the last pause are still evidence.
+                await asyncio.sleep(0.2)
+                bodies.extend(_drain(captured))
+                with contextlib.suppress(Exception):
+                    await page.close()
+
+        log.debug("browser.harvest", url=url, bodies=len(bodies))
+        return bodies
+
+    async def _scroll_and_drain(
+        self,
+        page: Any,
+        captured: list[CapturedResponse],
+        bodies: list[Any],
+        *,
+        on_batch: Callable[[list[Any]], bool] | None,
+        max_scrolls: int,
+        scroll_pause_ms: int,
+        deadline_seconds: float,
+        idle_scrolls: int,
+    ) -> None:
+        """Drain, ask the caller whether to continue, scroll, repeat.
+
+        The first drain happens before the first scroll, so a budget too small to
+        scroll at all still returns what the page loaded by itself. Returning
+        empty because the clock was tight would be indistinguishable from a token
+        nobody is posting about, and those two must never look alike.
+        """
+        loop = asyncio.get_running_loop()
+        stop_at = loop.time() + max(0.0, deadline_seconds)
+        idle = 0
+
+        # Counts down to the last *scroll*, and the round after it still drains:
+        # `max_scrolls=0` means one capture and no scrolling, not one scroll.
+        for remaining in range(max(0, max_scrolls), -1, -1):
+            batch = _drain(captured)
+            bodies.extend(batch)
+            idle = 0 if batch else idle + 1
+            if on_batch is not None and not on_batch(batch):
+                return
+            if idle >= max(1, idle_scrolls):
+                log.debug("browser.harvest_idle", idle_rounds=idle)
+                return
+            if remaining == 0 or loop.time() >= stop_at:
+                log.debug("browser.harvest_exhausted", bodies=len(bodies), scrolls_left=remaining)
+                return
+            with contextlib.suppress(Exception):
+                await page.mouse.wheel(0, 4000)
+                await page.wait_for_timeout(scroll_pause_ms)
 
     async def evaluate(self, url: str, script: str, *, surface: str = "browser", wait_ms: int = 2000) -> Any:
         """Load a page and run JS in it. Used for reading state the DOM exposes

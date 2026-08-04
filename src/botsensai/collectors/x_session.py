@@ -49,7 +49,12 @@ from typing import Any
 
 from botsensai.collectors.base import CollectionResult, tag_posts
 from botsensai.collectors.browser import BrowserUnavailableError, PageResult, WebUseDriver
-from botsensai.collectors.social import XCollector, _int, _iso
+from botsensai.collectors.social import (
+    X_SEARCH_DEADLINE_SECONDS,
+    XCollector,
+    _int,
+    _iso,
+)
 from botsensai.config import BrowserSettings, Settings
 from botsensai.models import Platform, SocialAccount, SocialPost, TokenRef
 from botsensai.util.logging import get_logger
@@ -68,6 +73,13 @@ OP_USER = r"UserByScreenName"
 OP_VIEWER = r"Viewer"
 
 CAPTURE_ALL = rf"({OP_SEARCH}|{OP_TWEET_DETAIL}|{OP_FAVORITERS}|{OP_RETWEETERS}|{OP_USER})"
+
+#: A thread harvest gets its own, much smaller ceiling than a search. One post's
+#: replies are a bounded set — `reply_template_ratio` speaks at twelve of them —
+#: and the search leg has already spent most of the token's budget by the time
+#: this runs, so letting a thread inherit the three-minute ceiling would double
+#: the worst case that `_enrich_budget_seconds` has to cover.
+CONVERSATION_DEADLINE_SECONDS = 60.0
 
 #: Conservative default. GraphQL limits are per-account, per-endpoint, in
 #: 15-minute windows; historically a few hundred requests per window. Twenty a
@@ -136,6 +148,9 @@ class AuthenticatedXCollector(XCollector):
 
     name = "x"
     description = "X search, reply text and engager metadata via a logged-in browser profile"
+    #: A session is the only case where scrolling search keeps paying out, so it
+    #: gets the full ceiling instead of the anonymous path's login-wall budget.
+    search_deadline_seconds = X_SEARCH_DEADLINE_SECONDS
 
     def __init__(self, settings: Settings | None = None) -> None:
         super().__init__(settings)
@@ -170,7 +185,14 @@ class AuthenticatedXCollector(XCollector):
         tokens = max(1, int(self.session_settings.max_tokens_per_sweep))
         # Worst case per token: search, then the thread, then two engager lists.
         loads_per_token = 4
-        seconds_per_token = 45.0
+        # The search leg is now bounded by its own deadline rather than by a
+        # fixed scroll count, so the budget has to be read from that deadline.
+        # Leaving the old flat 45s here would reintroduce the timeout it was
+        # written to prevent the moment the harvest used its full ceiling: the
+        # base class would kill enrich mid-sweep with nothing stored and nothing
+        # logged, which is the silent-absence failure again, one layer up.
+        _, search_seconds = self.search_budget()
+        seconds_per_token = search_seconds + CONVERSATION_DEADLINE_SECONDS + 2 * 20.0
         pacing = (tokens * loads_per_token) / max(self.rpm, 1.0) * 60.0
         verify = 15.0
         total = verify + tokens * seconds_per_token + pacing
@@ -344,40 +366,30 @@ class AuthenticatedXCollector(XCollector):
 
     # -- collection --------------------------------------------------------- #
 
-    async def search(self, query: str, limit: int = 120, scrolls: int = 4) -> list[SocialPost]:
-        """Live search for a ticker, with reply text where the page loads it."""
+    async def search(self, query: str, limit: int | None = None) -> list[SocialPost]:
+        """Live search for a ticker, with reply text where the page loads it.
+
+        The depth comes from `XCollector.harvest_search`, which is shared with
+        the anonymous path so that both dedupe and both stop on the same three
+        conditions. What differs here is only the budget: a session is the one
+        case where scrolling keeps paying out, so it is given the full ceiling.
+        """
         status = await self.verify_session()
         if not status.authenticated:
             return []
 
         driver = await self.driver()
         try:
-            page = await driver.visit(
-                f"https://x.com/search?q={query}&f=live",
-                surface=self.name,
-                capture_patterns=[CAPTURE_ALL],
-                wait_ms=5000,
-                scrolls=scrolls,
-                scroll_pause_ms=1400,
-                extract_text=False,
+            return await self.harvest_search(
+                driver,
+                query,
+                pattern=CAPTURE_ALL,
+                limit=limit,
                 requests_per_minute=self.rpm,
             )
         except Exception as exc:
             log.warning("x.authenticated_search_failed", query=query, error=str(exc))
             return []
-
-        seen: set[str] = set()
-        posts: list[SocialPost] = []
-        for body in page.json_matching(CAPTURE_ALL):
-            for node in self._walk_for_tweets(body):
-                post = self._parse_graphql_tweet(node)
-                if post is None or post.post_id in seen:
-                    continue
-                seen.add(post.post_id)
-                posts.append(post)
-                if len(posts) >= limit:
-                    return posts
-        return posts
 
     async def conversation(self, post_id: str, author: str = "i") -> list[SocialPost]:
         """Reply text for one post — the thing no free path provides.
@@ -392,36 +404,27 @@ class AuthenticatedXCollector(XCollector):
 
         driver = await self.driver()
         try:
-            page = await driver.visit(
+            harvested = await self.harvest_posts(
+                driver,
                 f"https://x.com/{author}/status/{post_id}",
-                surface=self.name,
-                capture_patterns=[OP_TWEET_DETAIL],
-                wait_ms=4500,
-                scrolls=3,
-                scroll_pause_ms=1200,
-                extract_text=False,
+                OP_TWEET_DETAIL,
+                deadline_seconds=CONVERSATION_DEADLINE_SECONDS,
                 requests_per_minute=self.rpm,
+                wait_ms=4500,
             )
         except Exception as exc:
             log.debug("x.conversation_failed", post_id=post_id, error=str(exc))
             return []
 
         replies: list[SocialPost] = []
-        seen: set[str] = set()
-        for body in page.json_matching(OP_TWEET_DETAIL):
-            for node in self._walk_for_tweets(body):
-                post = self._parse_graphql_tweet(node)
-                if post is None or post.post_id in seen:
-                    continue
-                seen.add(post.post_id)
-                if post.post_id == post_id:
-                    replies.append(post)
-                    continue
-                # Mark it as a reply even when the GraphQL node omits the
-                # in_reply_to field, which it does for nested replies.
-                if post.parent_id is None:
-                    post = post.model_copy(update={"parent_id": post_id})
-                replies.append(post)
+        for post in harvested:
+            # Mark it as a reply even when the GraphQL node omits the
+            # in_reply_to field, which it does for nested replies. The root post
+            # is left alone: it is not a reply to itself, and `ctx.replies`
+            # selects on exactly this field.
+            if post.post_id != post_id and post.parent_id is None:
+                post = post.model_copy(update={"parent_id": post_id})
+            replies.append(post)
         return replies
 
     async def engagers(self, post_id: str, author: str = "i") -> list[SocialAccount]:
