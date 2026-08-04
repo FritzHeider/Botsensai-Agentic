@@ -255,15 +255,61 @@ unglamorous and is the whole ballgame.
   _Depends on: P1-01._
   _Accept:_ `python -m pytest tests/test_wallet_priors.py -q` exits 0 and asserts the count for a wallet is time-restricted. ✔ 15 passed, exit 0. Time restriction is pinned by `test_prior_count_is_restricted_to_trades_before_the_cutoff` (strict `<`) and the knowledge bound by `test_prior_count_excludes_trades_not_yet_observed`. Probed against the producers, not a formatter: restoring `wallet_priors={}` fails `test_live_context_populates_wallet_priors`, and removing the `observed_at` clause from `wallet_prior_counts` fails 2 tests.
 
-- [ ] **P1-05 — Funding-source resolution**
-  `HolderRecord.funded_by` is the input to `funder_graph_dispersion`,
-  `holder_distribution_health` and the deployer-cluster logic, and nothing
-  populates it live. Resolve each holder's first inbound SOL transfer via
-  Helius or RPC `getSignaturesForAddress`, with a persistent cache since the
-  answer never changes. Tag known CEX hot wallets so they are excluded from
-  clustering rather than collapsing every user into one node.
+- [x] **P1-05 — Funding-source resolution**
+  Done 2026-08-04. `onchain/funding.py`: `FundingSourceResolver` (two RPC calls
+  per wallet — oldest signature, then that transaction), `FundingIndex` (the
+  store-backed cache plus the policy on what may be clustered),
+  `wallet_funding` table (`SCHEMA_VERSION` 4 → 5) with
+  `Database.upsert_wallet_funding` / `wallet_funding` / `funder_fanout`. Wired
+  into `Pipeline.enrich` (resolve, largest holdings first) and
+  `Pipeline.build_context` (attach). Before this, every one of the metrics named
+  above ran on `funded_by = None` for **every holder in the store**: the funding
+  graph had no edges at all and the cluster Gini was the address Gini.
+  **Measured on the real corpus** — 162 holder wallets backfilled, 234 calls in
+  241.9 s at 120 req/min with no 429. Of 175 wallets: 77 resolved to a private
+  funder, 5 to an exchange, 101 unresolved (below). Of the 6 stored tokens with
+  ≥6 holders, **4 moved**, and the largest move is the one the task is for:
+  `GXRiEL2Co84NgyyE9bq` went from *25 holders → 25 clusters* to *25 → 20*, so
+  `funder_graph_dispersion` **11.02 → 2.53** and `holder_distribution_health`
+  **0.5608 → 0.3417**. That token also carries one `cex:`-labelled holder whose
+  funder was deliberately **not** used as a cluster key.
+  Four things worth keeping:
+  1. **"Funded" is broader than "sent SOL".** A holder's oldest transaction is
+     often not a transfer but someone paying rent to open its token account and
+     filling it — the wallet's lamport balance never moves. Reading only SOL
+     movements leaves those wallets looking unfunded. Three readings are tried
+     in descending strength (parsed transfer → token-account payer → lamport
+     delta) and the one that answered is recorded in `source`: on the real
+     corpus that is 65 transfer, 9 account-payer, 1 balance-delta. Without the
+     account-payer reading those 9 would have read as no funder.
+  2. **`funded_at` bounds the read; `resolved_at` does not.** Funding is a point
+     lookup on a wallet already in hand and necessarily precedes that wallet's
+     first buy, so the same call at the decision point returns the same answer.
+     Bounding on when *we* asked would delete the feature from every backtest
+     without making it more honest. The event-time bound is enforced and pinned.
+  3. **A shared exchange funder is not a cluster**, and one seed list cannot be
+     trusted to know that. Two mechanisms decide it: `EXCHANGE_WALLETS` (public
+     explorer labels, unverified here) and `Database.funder_fanout` (measured in
+     our own store — a funder behind ≥25 distinct wallets is a dispenser
+     whatever it is labelled). The exchange row stays in the table as a fact and
+     the holder keeps a `cex:<name>` label; only `funded_by` is withheld.
+  4. **A transport failure is never cached as absence.** A chain-answered
+     negative is cached (asking again gets the same answer); an RPC error stops
+     the batch instead, so a dead endpoint cannot be written into the store as
+     "these wallets have no funder". Probed live against a malformed address:
+     `resolve_one` raises, `resolve_missing` writes 0 and does not raise.
+  **Coverage ceiling, reported not papered over:** 101 of 175 holder wallets
+  (58%) are `rpc:history-exceeds-one-page` — more than 1000 signatures, and
+  `getSignaturesForAddress` pages newest-first, so finding their oldest
+  transaction costs a call per page against the scarcest budget in the system.
+  Those are recorded as *unresolved*, not unfunded. The skew is toward fresh
+  wallets, which is the population these metrics care about, but a paid provider
+  with an enhanced-history endpoint is what lifts it (noted in
+  `docs/DATA_SOURCES.md`). It is also why the two 50-holder tokens did not move:
+  `funder_graph_dispersion` links a funder only at degree ≥2 *and* ≥8% of
+  holders, which needs 4 of 50 from one funder.
   _Depends on: P1-01._
-  _Accept:_ `python -m pytest tests/test_funding_graph.py -q` exits 0, including a case where a shared CEX funder does NOT merge two independent holders.
+  _Accept:_ `python -m pytest tests/test_funding_graph.py -q` exits 0, including a case where a shared CEX funder does NOT merge two independent holders. ✔ 22 passed, exit 0; `test_a_shared_cex_funder_does_not_merge_two_independent_holders` is that case, with `test_a_shared_private_funder_does_merge_two_holders` as its control so the assertion cannot pass by clustering nothing. Probed against the producers, not the tests: handing out exchange funders as cluster keys, dropping `funding.apply` from `build_context`, dropping the `funded_at` bound, and caching a transport failure as a resolved answer each turn the suite red.
 
 ---
 

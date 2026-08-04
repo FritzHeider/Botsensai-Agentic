@@ -42,7 +42,7 @@ from botsensai.util.logging import get_logger
 
 log = get_logger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -264,6 +264,25 @@ CREATE TABLE IF NOT EXISTS wallet_profiles (
     updated_at         REAL
 );
 CREATE INDEX IF NOT EXISTS ix_wallets_cluster ON wallet_profiles(cluster_id);
+
+-- Who first sent SOL to a wallet. This is an immutable historical fact — a
+-- wallet has exactly one first funder, and it cannot change — so the cache is
+-- permanent and unversioned rather than a point-in-time series. `funded_at` is
+-- the event time and is what point-in-time reads bound on; `resolved_at` is
+-- only when we looked, and is deliberately NOT a bound (see onchain/funding.py).
+-- `kind` records the classification, so an exchange withdrawal stays a known
+-- fact instead of being erased to "no funder".
+CREATE TABLE IF NOT EXISTS wallet_funding (
+    wallet       TEXT PRIMARY KEY,
+    funder       TEXT,
+    kind         TEXT NOT NULL,
+    exchange     TEXT,
+    funded_at    REAL,
+    signature    TEXT,
+    resolved_at  REAL NOT NULL,
+    source       TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_wallet_funding_funder ON wallet_funding(funder);
 
 CREATE TABLE IF NOT EXISTS deployer_profiles (
     deployer        TEXT PRIMARY KEY,
@@ -946,6 +965,69 @@ class Database:
                 out[row["wallet"]] = float(row["first_seen_at"])
         return out
 
+    # -- funding sources ----------------------------------------------------- #
+
+    def upsert_wallet_funding(self, rows: Iterable[dict[str, Any]]) -> int:
+        """Persist resolved funding sources. Last writer wins, by design.
+
+        Unlike every other table here this one holds no time series: a wallet's
+        first inbound transfer is a single immutable fact, so a re-resolution
+        either agrees with what is stored or corrects a parse we got wrong, and
+        in both cases the newer row is the one to keep.
+        """
+        payload = [
+            (
+                r["wallet"],
+                r.get("funder"),
+                r.get("kind") or "unknown",
+                r.get("exchange"),
+                _ts(r.get("funded_at")),
+                r.get("signature"),
+                _ts(r.get("resolved_at") or utcnow()),
+                r.get("source"),
+            )
+            for r in rows
+            if r.get("wallet")
+        ]
+        if not payload:
+            return 0
+        with self.tx() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO wallet_funding VALUES (?,?,?,?,?,?,?,?)", payload
+            )
+        return len(payload)
+
+    def wallet_funding(self, wallets: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """Cached funding rows for the wallets that have one. Missing keys are absent."""
+        unique = list(dict.fromkeys(w for w in wallets if w))
+        out: dict[str, dict[str, Any]] = {}
+        chunk_size = 400
+        for start in range(0, len(unique), chunk_size):
+            chunk = unique[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT * FROM wallet_funding WHERE wallet IN ({placeholders})",  # noqa: S608
+                chunk,
+            ).fetchall()
+            for row in rows:
+                out[row["wallet"]] = dict(row)
+        return out
+
+    def funder_fanout(self, min_wallets: int = 2) -> dict[str, int]:
+        """Distinct wallets each funder is behind, corpus-wide.
+
+        The seed list of exchange hot wallets can only ever be incomplete. This
+        is the measured half of the same question: a funder that appears behind
+        hundreds of unrelated wallets in our own store is a dispenser, whatever
+        its label, and collapsing its wallets into one cluster would be wrong.
+        """
+        rows = self.conn.execute(
+            "SELECT funder, COUNT(DISTINCT wallet) AS c FROM wallet_funding "
+            "WHERE funder IS NOT NULL GROUP BY funder HAVING c >= ?",
+            (int(min_wallets),),
+        ).fetchall()
+        return {row["funder"]: int(row["c"]) for row in rows}
+
     def record_run(
         self,
         run_id: str,
@@ -973,6 +1055,7 @@ class Database:
             "metric_values",
             "scores",
             "outcomes",
+            "wallet_funding",
         ]
         out: dict[str, int] = {}
         for t in tables:

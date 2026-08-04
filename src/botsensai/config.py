@@ -315,6 +315,13 @@ class Settings(BaseSettings):
         self.collectors["telegram"].requests_per_minute = min(
             self.collectors["telegram"].requests_per_minute, 30
         )
+        # api.mainnet-beta.solana.com is documented at roughly 10 req/s and 429s
+        # well before that under load (docs/DATA_SOURCES.md). Funding resolution
+        # is the only caller and it is a background nicety, so it gets 2/s — far
+        # inside the published limit, and it never queues ahead of a sweep.
+        self.collectors["solana_rpc"].requests_per_minute = min(
+            self.collectors["solana_rpc"].requests_per_minute, 120
+        )
 
         if self.trading_mode is TradingMode.LIVE and not self.i_understand_the_risk:
             raise ValueError(

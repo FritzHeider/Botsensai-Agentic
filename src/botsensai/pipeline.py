@@ -51,10 +51,17 @@ from botsensai.memory.store import MemoryStore
 from botsensai.metrics import MetricRegistry, build_registry
 from botsensai.metrics.base import MetricContext
 from botsensai.models import (
+    HolderRecord,
     Launch,
     MemoryKind,
     Score,
     utcnow,
+)
+from botsensai.onchain.funding import (
+    DEFAULT_RESOLVE_DEADLINE_SECONDS,
+    DEFAULT_RESOLVE_LIMIT,
+    FundingIndex,
+    FundingSourceResolver,
 )
 from botsensai.onchain.wallet_priors import WalletPriorIndex
 from botsensai.scoring.composite import CompositeScorer, score_to_size
@@ -197,6 +204,16 @@ class Pipeline:
         self.scorer = CompositeScorer(self.metrics, None, self.settings)
         self.broker = broker or PaperBroker(self.settings, starting_native=10.0)
         self.wallet_priors = WalletPriorIndex(self.db)
+        # Funding is resolved over RPC, so the resolver is attached only when
+        # that surface is enabled. Without it the index still serves whatever is
+        # already cached, which is what a backtest needs and what an offline run
+        # gets: reads never depend on the network.
+        rpc = self.settings.collector(FundingSourceResolver.surface)
+        self.funding = FundingIndex(
+            self.db,
+            self.settings,
+            resolver=FundingSourceResolver(self.settings) if rpc.enabled else None,
+        )
 
         self.collectors = CollectorRegistry(self.settings)
         for collector in collectors or self._default_collectors():
@@ -240,6 +257,8 @@ class Pipeline:
 
     async def aclose(self) -> None:
         await self.collectors.aclose()
+        if self.funding.resolver is not None:
+            await self.funding.resolver.aclose()
 
     # -- step 1: discover --------------------------------------------------- #
 
@@ -377,6 +396,7 @@ class Pipeline:
         # corpus-wide scan and this runs every sweep.
         if combined.trades:
             self.wallet_priors.refresh_profiles({t.wallet for t in combined.trades})
+        await self._resolve_funding(combined.holders)
         for report in combined.security:
             self.db.insert_security(report)
         # Each post carries the token it was collected for, so this must be a
@@ -390,6 +410,31 @@ class Pipeline:
         if isinstance(fast, dict):
             self._fast_follower_share.update(fast)
         return combined
+
+    async def _resolve_funding(self, holders: Sequence[HolderRecord]) -> int:
+        """Look up the funders we do not have yet, largest holdings first.
+
+        Ordering is the whole budget decision. Two RPC calls per wallet against
+        an endpoint that 429s at ten a second means a sweep can afford a few
+        dozen lookups, and the wallets that decide whether a distribution is one
+        actor or forty are the ones at the top of the holder table, not the
+        dust at the bottom.
+        """
+        if not holders:
+            return 0
+        ranked = sorted(holders, key=lambda h: h.share_of_supply, reverse=True)
+        wallets = list(dict.fromkeys(h.wallet for h in ranked))
+        rpc = self.settings.collector(FundingSourceResolver.surface)
+        written = await self.funding.resolve_missing(
+            wallets,
+            limit=int(rpc.extra.get("max_funding_resolutions", DEFAULT_RESOLVE_LIMIT)),
+            deadline_seconds=float(
+                rpc.extra.get("funding_deadline_seconds", DEFAULT_RESOLVE_DEADLINE_SECONDS)
+            ),
+        )
+        if written:
+            log.info("pipeline.funding_resolved", wallets=written, candidates=len(wallets))
+        return written
 
     def _wire_social_handles(self, launches: Sequence[Launch]) -> None:
         """Map token -> X handle and Telegram channel from launch metadata."""
@@ -446,7 +491,12 @@ class Pipeline:
             launch=launch,
             snapshots=self.db.snapshots_as_of(key, when),
             trades=trades,
-            holders=self.db.holders_as_of(key, when),
+            # Funders are attached here rather than stored on the holder row:
+            # the answer is per wallet, not per (token, wallet, slice), so one
+            # cached lookup serves every token that wallet ever holds. Bounded
+            # on funding event time, and exchange withdrawals are withheld so
+            # unrelated customers of one exchange do not read as one cluster.
+            holders=self.funding.apply(self.db.holders_as_of(key, when), before=when),
             security=self.db.security_as_of(key, when),
             posts=self.db.posts_as_of(key, when),
             deployer_history=(

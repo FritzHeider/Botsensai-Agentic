@@ -395,6 +395,22 @@ is the right answer for sub-slot streaming if latency becomes the binding
 constraint; `transaction.index` within a slot is the field that makes bundle
 contiguity and sniper ordering computable.
 
+**Measured 2026-08-04** against `api.mainnet-beta.solana.com`, resolving funding
+sources for 162 wallets: **234 calls in 241.9 s at 120 req/min (2/s) with no
+429**, i.e. one fifth of the published ceiling holds comfortably. That is the
+figure `Settings` clamps `collectors.solana_rpc` to; it is not a licence to
+widen it, because the same endpoint serves the sweep.
+
+Two calls answer a wallet: `getSignaturesForAddress` for the oldest signature,
+then `getTransaction`. **There is no cheap query for "oldest transaction" on a
+busy address** — `getSignaturesForAddress` pages newest-first, so a wallet with
+more than one 1000-signature page costs a call per page to walk. `onchain/funding.py`
+stops rather than paying that, and records the wallet as *unresolved*, never as
+unfunded. On the current corpus that is **101 of 175 holder wallets (58%)**: the
+resolvable population is skewed toward fresh wallets, which is the population
+these metrics care about, but it is a real coverage ceiling and a paid provider
+with an enhanced-history endpoint is what lifts it.
+
 Four correctness traps that silently corrupt holder analysis:
 
 - **`getTokenAccounts` returns token accounts, not owners.** One wallet holds
