@@ -507,14 +507,49 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: P2-04._
   _Accept:_ `python -m botsensai.cli channels --rank` marks a channel with N consecutive empty reads and excludes it from the seeded watchlist; a channel with one empty read is still seeded. ✔ Exercised live on the real store: three spaced reads of the seeded watchlist (`/var/tmp/p2_07_live.py`, 60 s apart to clear the 45 s response cache) recorded `cryptoliquidbnb` 4/4/4 messages, `www_usdolly_rocks` 8/8/8, `pisklauren` **0/0/0**; the command then exits 0 with `pisklauren` marked `!` at 3 empty reads, `dropped on evidence: pisklauren — 3 consecutive empty reads`, and `watchlist (2/6): cryptoliquidbnb, www_usdolly_rocks`. `python -m pytest tests/test_channel_watchlist.py -q` → 72 passed (20 new). Full suite 464 passed; 9/9 backpressure gates green, complexity still 10.
 
-- [ ] **P2-06 — Fast-follower and identity-discontinuity metrics**
+- [x] **P2-06 — Fast-follower and identity-discontinuity metrics**
   The X profile payload carries `fast_followers_count` (X's own count of
   burst-acquired followers) and enough history to detect a repurposed account —
   a large gap between `user.created_at` and the oldest retrievable post, with a
   low `statuses_count`, means the archive was wiped. Both are stronger evidence
   than the ratio heuristics currently standing in for them.
+  The fast-follower half looked already done and was not: `purchased_follower_signal`
+  existed, but its only input was `Pipeline._fast_follower_share`, a **process-local
+  dict**. Nothing persisted it, so the metric was computable live and MISSING in
+  every backtest — and `SocialAccount`, collected by `XCollector._timeline_leg`
+  and `AuthenticatedXCollector.enrich`, was dropped on the floor because no table
+  existed for it. Both halves therefore needed a store first: `social_accounts`
+  (schema 7) + `Database.insert_accounts` / `accounts_as_of` →
+  `MetricContext.accounts` / `.promoter`, with `token_key` and `role` on the row
+  so an engager fleet is never scored as the token's own account. The session
+  collector now also takes the promoter profile from the public syndication host,
+  which is not a fallback: GraphQL's user object carries no `fast_followers_count`
+  at all, so the authenticated path is the *weaker* source for the one field here.
+  The plan's literal formulation does not work and was replaced (DEC-015). "Gap
+  between `created_at` and the oldest retrievable post" is ~100% for **every
+  account alive**, because the endpoint returns the head of a timeline and stops —
+  measured, `@elonmusk` reads 100% silent over 6,272 days. The second clause is
+  what rescues it: archive **coverage**, `timeline_posts / post_count`. A first
+  implementation using the posting *rate* against the lifetime rate was withdrawn
+  during testing — 40 posts inside an hour is 192x a prolific account's lifetime
+  rate, so anyone posting a thread scored 0.996. Coverage is burst-invariant and
+  `test_identity_discontinuity_is_burst_invariant` keeps it that way. The window
+  is measured in the collector *before* `_about_this_token` filtering and stored
+  on the account row, because dropping an account's off-topic posts has the exact
+  fingerprint of a wiped archive.
+  13 mutation probes against the guards, all red. Three were green on the first
+  pass and all three were real: the silent-prefix term was unexercised because
+  every fixture had `silent_share ≈ 1.0`; the freshest-snapshot pick passed under
+  a plain `promoters[0]` because the fixture happened to list the fresh row first;
+  and the outer `observed_at <= ?` in `accounts_as_of` was genuinely redundant
+  beside the bounded subquery, so it was removed rather than tested.
   _Depends on: P2-01._
-  _Accept:_ `python -m pytest tests/test_metrics.py -q -k "fast_follower or discontinuity"` exits 0.
+  _Accept:_ `python -m pytest tests/test_metrics.py -q -k "fast_follower or discontinuity"` exits 0. ✔ **14 passed, 30 deselected**. Full suite **484 passed** (23 new), ruff clean, mypy clean, registry **34** metrics. Live-measured 2026-08-04: `@elonmusk` 365,918 bytes → 40 posts, `post_count` 106,633, joined 2009-06-02; through the real store and metric that is raw **0.000375** → normalized **0.9425** (clean), while the same 40-post window against a 45-post five-year-old account is raw **0.888706** → normalized **0.0133** — identical 100% silent prefixes, so coverage is doing all the work. `@SPIDORKMEME`, published as a real launch's X link, answers **2,227 bytes** with no user object: a published link is not an account, and 4 of the 4 newest handle-shaped links resolved to nothing. Ceiling on the store: **599/1248 launches (48%)** publish a handle-shaped X link.
+  _Follow-up for P2-05:_ both promoter metrics report **0% coverage in a synthetic
+  backtest**, because `generate_token` produces posts but no accounts. That is a
+  fixture gap, not a metric gap, and it was deliberately not papered over —
+  see DEC-016. Whoever sets the coverage baseline should either complete the
+  fixture or record the baseline with these two excluded and say so.
 
 - [ ] **P2-05 — Coverage regression gate**
   Add a test that runs a synthetic backtest and fails if mean metric coverage

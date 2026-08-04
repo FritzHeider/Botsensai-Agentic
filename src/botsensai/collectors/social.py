@@ -751,7 +751,23 @@ class XCollector(Collector):
         posts, account = await self.profile_timeline(handle)
         if account is None:
             return posts
-        result.accounts.append(account)
+        # Tagged here rather than at the store: this is the only place that
+        # knows the account came from the token's own published link, which is
+        # what makes it the promoter rather than one more engager. The timeline
+        # window is measured here for the same reason — `posts` is the whole
+        # profile timeline, and the caller is about to drop the off-topic half.
+        stamps = sorted(p.as_of for p in posts)
+        result.accounts.append(
+            account.model_copy(
+                update={
+                    "token_key": token.key,
+                    "role": "promoter",
+                    "timeline_posts": len(stamps),
+                    "timeline_oldest_at": stamps[0] if stamps else None,
+                    "timeline_newest_at": stamps[-1] if stamps else None,
+                }
+            )
+        )
         if account.fast_follower_share is not None:
             result.raw.setdefault("fast_follower_share", {})[token.key] = (
                 account.fast_follower_share

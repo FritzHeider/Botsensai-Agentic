@@ -28,7 +28,7 @@ backtester built to disprove rather than to confirm.
 ```
 collectors/     surfaces → normalized records        (rate-limited, degradable)
 store/          records → SQLite, point-in-time      (as_of AND observed_at)
-metrics/        context → 32 signals                  (pure functions)
+metrics/        context → 34 signals                  (pure functions)
 scoring/        signals → one decision                (weights, vetoes, regime)
 execution/      decision → fills                      (curve impact, fees, failure)
 backtest/       history → an honest verdict           (walk-forward, CI, baselines)
@@ -54,7 +54,7 @@ screen        free, local      ~12 survivors — age, liquidity floor,
 enrich        expensive        trades, holders, security, social —
                                spent in rank order until budget runs out
    ↓
-score         free             32 metrics → composite + vetoes
+score         free             34 metrics → composite + vetoes
    ↓
 decide        risk-gated       convex sizing, hard limits, paper fills
    ↓
@@ -90,13 +90,24 @@ The same discipline applies elsewhere:
 - Cross-sectional peer normalization accumulates *during* the replay, so a
   metric is only ever ranked against tokens the system had already seen.
 
+There is one record type where the two timestamps genuinely collapse, and it is
+worth naming so it is not read as a missing bound. A **profile snapshot**
+(`social_accounts`) has no event time distinct from its observation: what an
+account's follower count *was* is knowable only by having looked, so the instant
+we looked is the instant the fact is about. `accounts_as_of` therefore bounds on
+`observed_at` alone — and that single bound is load-bearing, because it is all
+that stands between a backtest and a promoter profile read next week. The
+account's own `created_at` is a property of the account rather than of the
+reading, and bounding on it would hide every account older than the token, which
+is all of them.
+
 `tests/test_pipeline_integrity.py` asserts each of these directly.
 
 ---
 
 ## Metrics
 
-32 signals across six families. The organizing principle is **cost to fake**, and
+34 signals across six families. The organizing principle is **cost to fake**, and
 weights follow it: on-chain topology and team credibility carry the most, and
 narrative the least, because a narrative is free to construct and a funding graph
 is not.
@@ -104,7 +115,7 @@ is not.
 | family | n | question |
 |---|---|---|
 | `onchain_topology` | 7 | How many *independent actors* are behind the holder set? |
-| `social_authenticity` | 8 | Was this attention produced by people? |
+| `social_authenticity` | 10 | Was this attention produced by people? |
 | `community_production` | 5 | Is anyone doing unpaid work for this token? |
 | `narrative` | 5 | Is the idea new, wanted, and findable? |
 | `team_credibility` | 3 | What has the deployer done, and what are they doing now? |
@@ -129,8 +140,8 @@ Two contracts every metric obeys:
 ## Scoring
 
 Weights are allocated at the **family** level first and distributed within
-families second. Eight social-authenticity metrics that all fire on the same
-reply farm are one observation, not eight; family-level budgeting caps how much
+families second. Ten social-authenticity metrics that all fire on the same
+reply farm are one observation, not ten; family-level budgeting caps how much
 any single phenomenon can move the total.
 
 Missing metrics are dropped and the remaining weights renormalized **within their

@@ -121,7 +121,7 @@ screen        free, local       ~12 survivors — age, liquidity floor, launch e
    ↓
 enrich        expensive         trades, holders, security, social — in rank order until the budget runs out
    ↓
-score         free              33 metrics → composite + hard veto gates
+score         free              34 metrics → composite + hard veto gates
    ↓
 decide        risk-gated        convex sizing, enforced limits, modelled fills
    ↓

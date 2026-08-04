@@ -34,6 +34,7 @@ from botsensai.models import (
     Score,
     SecurityReport,
     Side,
+    SocialAccount,
     SocialPost,
     TokenRef,
     Trade,
@@ -43,7 +44,7 @@ from botsensai.util.logging import get_logger
 
 log = get_logger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 #: Launch columns `social_links` will read. An allow-list rather than a check
 #: for suspicious characters: the caller supplies a column name, and the only
@@ -327,6 +328,29 @@ CREATE TABLE IF NOT EXISTS channel_reads (
     PRIMARY KEY (channel, observed_at)
 );
 CREATE INDEX IF NOT EXISTS ix_channel_reads_time ON channel_reads(channel, observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS social_accounts (
+    platform         TEXT NOT NULL,
+    handle           TEXT NOT NULL,
+    token_key        TEXT,
+    role             TEXT NOT NULL DEFAULT 'engager',
+    account_id       TEXT,
+    created_at       REAL,
+    followers        INTEGER,
+    following        INTEGER,
+    post_count       INTEGER,
+    verified         INTEGER,
+    verified_type    TEXT,
+    bio              TEXT,
+    fast_followers   INTEGER,
+    normal_followers INTEGER,
+    timeline_posts   INTEGER,
+    timeline_oldest_at REAL,
+    timeline_newest_at REAL,
+    observed_at      REAL NOT NULL,
+    PRIMARY KEY (platform, handle, token_key, observed_at)
+);
+CREATE INDEX IF NOT EXISTS ix_accounts_token_time ON social_accounts(token_key, observed_at);
 """
 
 
@@ -647,6 +671,49 @@ class Database:
             )
         return len(rows)
 
+    def insert_accounts(self, accounts: Iterable[SocialAccount]) -> int:
+        """Store profile snapshots, tagged with the token they were collected for.
+
+        An account with no `token_key` is refused rather than written, and that
+        is not tidiness. `accounts_as_of` filters on the column, so an untagged
+        row is unreadable by every metric — and because `token_key` is part of
+        the primary key and SQLite treats NULLs as distinct, untagged rows do
+        not even deduplicate against each other. Writing them would grow the
+        table forever with data nothing can read.
+        """
+        rows = [
+            (
+                a.platform.value,
+                a.handle.lower(),
+                a.token_key,
+                a.role,
+                a.account_id,
+                _ts(a.created_at),
+                a.followers,
+                a.following,
+                a.post_count,
+                None if a.verified is None else int(a.verified),
+                a.verified_type,
+                a.bio,
+                a.fast_followers,
+                a.normal_followers,
+                a.timeline_posts,
+                _ts(a.timeline_oldest_at),
+                _ts(a.timeline_newest_at),
+                _ts(a.observed_at),
+            )
+            for a in accounts
+            if a.token_key and a.handle
+        ]
+        if not rows:
+            return 0
+        with self.tx() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO social_accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                rows,
+            )
+        return len(rows)
+
     def insert_metric_values(self, values: Iterable[MetricValue]) -> int:
         rows = [
             (
@@ -883,6 +950,36 @@ class Database:
             [*params, t],
         ).fetchall()
         return [_row_to_post(r) for r in rows]
+
+    def accounts_as_of(self, token_key: str, as_of: datetime) -> list[SocialAccount]:
+        """Freshest profile snapshot per account that was already collected at `as_of`.
+
+        Only `observed_at` is bounded, and unlike everywhere else in this file
+        that is not a missing second bound. A profile snapshot has no event time
+        distinct from its observation: `followers` is what the account had when
+        we looked, so the instant we looked *is* the instant the fact is about.
+        The account's own `created_at` is a property of the account, not of the
+        reading, and bounding on it would hide every account older than the
+        token — which is all of them.
+        """
+        t = _ts(as_of)
+        # The bound lives in the subquery and only there. An outer
+        # `observed_at <= ?` alongside it reads like a second safeguard and is
+        # not one: the row has to equal a MAX that is itself bounded by `t`, so
+        # the outer clause can never exclude anything the subquery admitted. A
+        # guard that cannot fire is worse than no guard, because it draws the
+        # eye away from the clause actually doing the work.
+        rows = self.conn.execute(
+            """SELECT * FROM social_accounts a
+               WHERE token_key = ?
+                 AND observed_at = (
+                   SELECT MAX(observed_at) FROM social_accounts b
+                   WHERE b.platform = a.platform AND b.handle = a.handle
+                     AND b.token_key = a.token_key AND b.observed_at <= ?)
+               ORDER BY observed_at""",
+            (token_key, t),
+        ).fetchall()
+        return [_row_to_account(r) for r in rows]
 
     def metric_values_as_of(self, token_key: str, as_of: datetime) -> list[MetricValue]:
         t = _ts(as_of)
@@ -1619,6 +1716,29 @@ def _row_to_post(row: sqlite3.Row) -> SocialPost:
         author_created_at=_dt(row["author_created_at"]),
         mentioned_tokens=_unjson(row["mentioned_tokens"]),
         source=row["source"] or "unknown",
+    )
+
+
+def _row_to_account(row: sqlite3.Row) -> SocialAccount:
+    return SocialAccount(
+        platform=Platform(row["platform"]),
+        handle=row["handle"],
+        token_key=row["token_key"],
+        role=row["role"] or "engager",
+        account_id=row["account_id"],
+        created_at=_dt(row["created_at"]),
+        followers=row["followers"],
+        following=row["following"],
+        post_count=row["post_count"],
+        verified=None if row["verified"] is None else bool(row["verified"]),
+        verified_type=row["verified_type"],
+        bio=row["bio"],
+        fast_followers=row["fast_followers"],
+        normal_followers=row["normal_followers"],
+        timeline_posts=row["timeline_posts"],
+        timeline_oldest_at=_dt(row["timeline_oldest_at"]),
+        timeline_newest_at=_dt(row["timeline_newest_at"]),
+        observed_at=_dt(row["observed_at"]),  # type: ignore[arg-type]
     )
 
 

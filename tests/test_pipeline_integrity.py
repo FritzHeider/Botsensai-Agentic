@@ -101,6 +101,103 @@ def test_database_as_of_reads_respect_observed_at():
     assert "backfill" not in sources, "a record observed after the decision leaked into it"
 
 
+def test_account_snapshots_respect_observed_at():
+    """A profile read after the decision must be invisible to it.
+
+    Profiles are the one record type where the two timestamps collapse: what an
+    account's follower count *was* is only knowable by having looked, so the
+    observation time is the only bound there is. That makes it the only thing
+    standing between a backtest and a promoter profile from next week.
+    """
+    from botsensai.models import Platform, SocialAccount
+
+    db = Database(":memory:")
+    token = generate_token("organic", seed=5)
+    db.upsert_launch(token.launch)
+    decision_time = token.launch.created_at + timedelta(seconds=600)
+
+    base = {
+        "platform": Platform.X,
+        "handle": "TokenTeam",
+        "token_key": token.token.key,
+        "role": "promoter",
+        "created_at": token.launch.created_at - timedelta(days=900),
+    }
+    db.insert_accounts(
+        [
+            SocialAccount(**base, followers=100, observed_at=decision_time - timedelta(minutes=5)),
+            SocialAccount(**base, followers=50_000, observed_at=decision_time + timedelta(hours=2)),
+        ]
+    )
+
+    visible = db.accounts_as_of(token.token.key, decision_time)
+    assert [a.followers for a in visible] == [100], (
+        "the later reading of the same profile leaked into an earlier decision"
+    )
+    # And the later reading is not lost, merely not yet visible.
+    assert [a.followers for a in db.accounts_as_of(token.token.key, decision_time + timedelta(days=1))] == [
+        50_000
+    ]
+
+
+def test_account_handles_are_stored_case_folded():
+    """`@TokenTeam` and `@tokenteam` are one account. Two rows would rank as two
+    promoters, and `MetricContext.promoter` would pick between them by clock."""
+    from botsensai.models import Platform, SocialAccount
+
+    db = Database(":memory:")
+    token = generate_token("organic", seed=5)
+    db.upsert_launch(token.launch)
+    when = token.launch.created_at + timedelta(seconds=60)
+
+    db.insert_accounts(
+        [
+            SocialAccount(
+                platform=Platform.X, handle=spelling, token_key=token.token.key,
+                role="promoter", followers=n, observed_at=when,
+            )
+            for spelling, n in (("TokenTeam", 1), ("tokenteam", 2))
+        ]
+    )
+    stored = db.accounts_as_of(token.token.key, when + timedelta(seconds=1))
+    assert len(stored) == 1, f"one account stored under two spellings: {stored}"
+    assert stored[0].handle == "tokenteam"
+
+
+def test_untagged_accounts_are_refused_rather_than_written():
+    """`accounts_as_of` filters on `token_key`, so an untagged row is stored
+    complete and unreadable — and because SQLite treats NULLs in a primary key
+    as distinct, it does not even deduplicate against itself."""
+    from botsensai.models import Platform, SocialAccount
+
+    db = Database(":memory:")
+    account = SocialAccount(platform=Platform.X, handle="drifter", followers=10)
+    assert db.insert_accounts([account, account]) == 0
+    assert db.conn.execute("SELECT COUNT(*) FROM social_accounts").fetchone()[0] == 0
+
+
+def test_account_snapshots_do_not_cross_tokens():
+    """One handle promoting two launches is two rows, not one overwritten row."""
+    from botsensai.models import Platform, SocialAccount
+
+    db = Database(":memory:")
+    first = generate_token("organic", seed=5)
+    second = generate_token("organic", seed=6)
+    when = first.launch.created_at + timedelta(seconds=60)
+    db.insert_accounts(
+        [
+            SocialAccount(
+                platform=Platform.X, handle="serialpromoter", token_key=t.token.key,
+                role="promoter", followers=n, observed_at=when,
+            )
+            for t, n in ((first, 11), (second, 22))
+        ]
+    )
+    read = when + timedelta(seconds=1)
+    assert [a.followers for a in db.accounts_as_of(first.token.key, read)] == [11]
+    assert [a.followers for a in db.accounts_as_of(second.token.key, read)] == [22]
+
+
 def test_deployer_history_is_time_restricted():
     """Scoring a deployer on outcomes that had not happened yet is the classic leak."""
     db = Database(":memory:")

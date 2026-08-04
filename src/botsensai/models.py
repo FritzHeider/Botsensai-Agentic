@@ -300,6 +300,20 @@ class SecurityReport(Base):
 class SocialAccount(Base):
     platform: Platform
     handle: str
+    token_key: str | None = Field(
+        default=None,
+        description="Which token this account was collected for. Same reachability "
+        "rule as SocialPost.token_key: accounts_as_of filters on this column, so an "
+        "untagged account is stored complete and invisible to every metric.",
+    )
+    role: str = Field(
+        default="engager",
+        description="Why this account was collected. 'promoter' is the token's own "
+        "named account, taken from the launch metadata; 'engager' is somebody who "
+        "engaged with a post about it. The two answer different questions and must "
+        "not be pooled — identity_discontinuity asks about the promoter's history, "
+        "and the largest engager fleet is not it.",
+    )
     account_id: str | None = None
     created_at: datetime | None = None
     followers: int | None = None
@@ -316,6 +330,17 @@ class SocialAccount(Base):
     # offers, and far better evidence than inferring it from engagement ratios.
     fast_followers: int | None = None
     normal_followers: int | None = None
+
+    # What the profile timeline actually returned when we read it, recorded
+    # before any topic filtering. `identity_discontinuity` compares this window
+    # against `post_count` over the account's whole life, and it has to be the
+    # unfiltered window: dropping the account's off-topic posts would shorten
+    # the span and move the oldest stamp forward, which is the same shape as a
+    # wiped archive. The distinction is only available at collection time, so it
+    # is recorded here rather than recomputed from stored posts.
+    timeline_posts: int | None = None
+    timeline_oldest_at: datetime | None = None
+    timeline_newest_at: datetime | None = None
 
     @property
     def fast_follower_share(self) -> float | None:

@@ -316,6 +316,21 @@ Two field-level traps, both verified:
   exactly what a purchased package produces. It is about as close to a direct
   bought-follower oracle as any public source offers, and it is far better
   evidence than inferring the same thing from an engagement ratio.
+- **A dead handle answers 200, like everything else on this stack.** MEASURED
+  2026-08-04: `@elonmusk` returns 365,918 bytes with 40 posts, `post_count`
+  106,633 and a 2009 join date; `@SPIDORKMEME`, published as the X link of a
+  real launch in the store, returns **2,227 bytes** — a valid page with
+  `__NEXT_DATA__` present, no user object and no posts. So a token publishing an
+  X link is not a token with an X account, and the parse must return `None`
+  rather than an empty account. Of the four newest launches in the store with
+  handle-shaped links, four resolved to nothing.
+- **`statuses_count` is the account's lifetime post total** and is the second
+  half of `identity_discontinuity`. The endpoint returns only the head of a
+  timeline (40 posts), so "gap since the oldest post we can see" is ~100% for
+  every account alive; what separates a wiped archive from an ordinary retrieval
+  limit is how much of `statuses_count` those 40 posts *account for*. 40 of
+  106,633 is a normal glimpse of a real archive; 40 of 45 is the whole life of a
+  five-year-old account.
 
 **Search is a third path, and it is scrolled rather than fetched.** X's own web
 app pays out one page of `SearchTimeline` GraphQL per scroll — roughly twenty
@@ -578,5 +593,5 @@ from one wallet last Tuesday; whether anyone unconnected to the team has made a
 single original meme about it; or how much of the position you are contemplating
 could actually be sold.
 
-Those are the questions the 32 metrics answer, and they are answered by
+Those are the questions the 34 metrics answer, and they are answered by
 recombining these feeds rather than by finding a feed that reports them.

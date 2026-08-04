@@ -511,12 +511,28 @@ class AuthenticatedXCollector(XCollector):
 
         result = self._empty()
         result.raw["session"] = status.explain()
+        handles: dict[str, str] = self.config.extra.get("handles", {})
 
         for token in list(tokens)[: self.session_settings.max_tokens_per_sweep]:
             symbol = (token.symbol or "").strip()
             if not symbol or len(symbol) < 2:
                 continue
             query = f"${symbol}" if symbol.isalnum() else symbol
+
+            # The promoter profile still comes from the public syndication host
+            # even here, and that is not a fallback. GraphQL's user object has
+            # no `fast_followers_count` at all (see `_user_fields`), so the
+            # authenticated path is the *weaker* source for the one field this
+            # collector exists to get. It is a different host with its own
+            # limit — the client paces it at under one request per minute — so
+            # it displaces nothing in the session budget.
+            # Its posts are deliberately dropped: `search` below is a strictly
+            # richer source for this token on this path, and the profile is
+            # being read for the profile. The account object it appends to
+            # `result` is the whole point of the call.
+            handle = handles.get(token.key)
+            if handle:
+                await self._timeline_leg(handle, token, result)
 
             posts = await self.search(query)
             if not posts:
@@ -533,7 +549,10 @@ class AuthenticatedXCollector(XCollector):
 
             if top.engagement >= self.session_settings.engager_threshold:
                 accounts = await self.engagers(top.post_id, top.author)
-                result.accounts.extend(accounts)
+                result.accounts.extend(
+                    a.model_copy(update={"token_key": token.key, "role": "engager"})
+                    for a in accounts
+                )
                 fleet = [a for a in accounts if a.fast_follower_share is not None]
                 if fleet:
                     result.raw.setdefault("fast_follower_share", {})[token.key] = max(

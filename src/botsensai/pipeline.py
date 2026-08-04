@@ -430,6 +430,11 @@ class Pipeline:
         combined.posts.extend(await self._follow_offplatform_links(combined.posts, launches))
         await self.media_hasher.hash_posts(combined.posts)
         self.db.insert_posts(combined.posts)
+        # Profile snapshots, which until now were collected and dropped. They
+        # are the only source for the promoter's join date and lifetime post
+        # count, and keeping them in a process-local dict meant every metric
+        # built on them was live-only and MISSING in every backtest.
+        self.db.insert_accounts(combined.accounts)
         # Per channel, not per surface. The Telegram surface reads fine while a
         # single handle on its watchlist answers with an empty page every sweep,
         # and until this row existed nothing could tell the two apart, so an
@@ -606,6 +611,7 @@ class Pipeline:
             holders=self.funding.apply(self.db.holders_as_of(key, when), before=when),
             security=self.db.security_as_of(key, when),
             posts=self.db.posts_as_of(key, when),
+            accounts=self.db.accounts_as_of(key, when),
             deployer_history=(
                 self.db.deployer_history(launch.deployer, before=launch.created_at)
                 if launch.deployer

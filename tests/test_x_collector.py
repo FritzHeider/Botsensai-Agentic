@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -542,3 +542,86 @@ def test_a_zero_or_negative_scroll_budget_still_captures_the_load(bad):
 
     assert bodies == [{"page": 0}]
     assert page.scrolls == 0
+
+
+# --------------------------------------------------------------------------- #
+# the promoter profile (P2-06)
+# --------------------------------------------------------------------------- #
+
+
+def test_timeline_leg_records_the_window_before_the_topic_filter_runs():
+    """`identity_discontinuity` reads the window recorded here, not `ctx.posts`.
+
+    `XCollector.enrich` keeps only the timeline posts that mention this token,
+    which for a real account is a small minority of them. If the account's
+    window were recounted downstream from the surviving posts, an ordinary
+    account that also talks about other things would show a short, recent
+    window over a long silent prefix — the exact fingerprint of a wiped
+    archive. So the whole timeline is measured here, before anything is
+    dropped, and this pins that it is the whole timeline.
+    """
+    from botsensai.models import Platform, SocialAccount, SocialPost
+
+    collector = XCollector(Settings())
+    token = TokenRef(chain=Chain.SOLANA, mint="M" * 32, symbol="WIF")
+    now = datetime(2026, 8, 4, 12, 0, tzinfo=UTC)
+
+    # Twelve posts across twelve days; only one of them mentions the token.
+    timeline = [
+        SocialPost(
+            platform=Platform.X,
+            post_id=f"t{i}",
+            author="tokenteam",
+            as_of=now - timedelta(days=11 - i),
+            text=("$WIF launch" if i == 11 else f"unrelated thought number {i}"),
+            source="x:syndication-timeline",
+        )
+        for i in range(12)
+    ]
+    account = SocialAccount(platform=Platform.X, handle="tokenteam", post_count=3000)
+
+    async def fake_profile_timeline(handle, limit=40):
+        assert handle == "tokenteam"
+        return timeline, account
+
+    collector.profile_timeline = fake_profile_timeline  # type: ignore[method-assign]
+
+    result = collector._empty()
+    posts = asyncio.run(collector._timeline_leg("tokenteam", token, result))
+
+    assert len(posts) == 12
+    stored = result.accounts[0]
+    assert stored.token_key == token.key, "an untagged account is refused by the store"
+    assert stored.role == "promoter"
+    assert stored.timeline_posts == 12, "the window must count every post, not the on-topic one"
+    assert stored.timeline_oldest_at == now - timedelta(days=11)
+    assert stored.timeline_newest_at == now
+
+    # And the caller does drop eleven of the twelve, which is why the count above
+    # has to be taken before this happens.
+    on_topic = [p for p in posts if collector._about_this_token(p, "WIF")]
+    assert len(on_topic) == 1
+
+
+def test_timeline_leg_reports_an_empty_timeline_as_empty_not_absent():
+    """Zero retrievable posts is a fact about the account and is recorded as 0.
+
+    The metric's evidence floor then refuses it, which is the correct outcome —
+    but it must reach the metric as a measured zero rather than as a NULL that
+    reads the same as never having looked.
+    """
+    from botsensai.models import Platform, SocialAccount
+
+    collector = XCollector(Settings())
+    token = TokenRef(chain=Chain.SOLANA, mint="M" * 32, symbol="WIF")
+
+    async def fake_profile_timeline(handle, limit=40):
+        return [], SocialAccount(platform=Platform.X, handle="silent")
+
+    collector.profile_timeline = fake_profile_timeline  # type: ignore[method-assign]
+    result = collector._empty()
+    asyncio.run(collector._timeline_leg("silent", token, result))
+
+    stored = result.accounts[0]
+    assert stored.timeline_posts == 0
+    assert stored.timeline_oldest_at is None and stored.timeline_newest_at is None

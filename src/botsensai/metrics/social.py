@@ -495,6 +495,7 @@ __all__ = [
     "EngagementDepthRatio",
     "EngagerAgeDispersion",
     "FollowerEngagementCoherence",
+    "IdentityDiscontinuity",
     "MentionAuthorDiversity",
     "ReplyRhythmNaturalness",
     "ReplyTemplateRatio",
@@ -543,8 +544,121 @@ class PurchasedFollowerSignal(Metric):
     )
 
     def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
+        # The stored profile snapshot first, the sweep's raw payload second.
+        # Only the stored one exists in a backtest: `extra` is populated from a
+        # live collector result and is empty in replay, so reading it alone made
+        # this metric permanently MISSING for every historical decision — the
+        # exact failure the store was added to fix.
+        promoter = ctx.promoter
+        if promoter is not None and promoter.fast_follower_share is not None:
+            share = promoter.fast_follower_share
+            return (
+                clamp(share),
+                1,
+                f"@{promoter.handle}: {share:.1%} of followers classified fast-acquired",
+            )
+
         shares: dict[str, float] = ctx.extra.get("fast_follower_share", {})
         value = shares.get(ctx.token.key)
         if value is None:
             return None, 0, "fast-follower data requires an authenticated X session"
         return clamp(float(value)), 1, f"{value:.1%} of followers classified fast-acquired"
+
+
+#: An account younger than this has no history to be discontinuous with — every
+#: post it ever made is inside the window we can retrieve, so the comparison the
+#: metric makes is between a number and itself.
+MIN_ACCOUNT_AGE_DAYS = 30.0
+
+class IdentityDiscontinuity(Metric):
+    """Whether the promoting account's history was wiped before this launch.
+
+    The cheapest way to fake an established promoter is to buy an aged account
+    and delete its past: the handle then shows a 2013 join date, which is what
+    a human skims for, over an archive that starts last Tuesday. Account age on
+    its own therefore reads *backwards* on exactly the accounts worth catching,
+    and account age is what every other tool displays.
+
+    The naive form of this test — is there a gap between `created_at` and the
+    oldest post we can retrieve — fires on every account alive, because the
+    timeline endpoint returns the head of the timeline and nothing else, so a
+    2013 account always shows an eleven-year gap to its fortieth-most-recent
+    post. That is a 100% false-positive rate wearing a signal's clothes.
+
+    The second term is what makes the first one mean something: how much of the
+    account's *claimed* history the retrieved window represents, `timeline_posts`
+    over `post_count`. Forty posts out of nine thousand is a normal glimpse of a
+    real archive. Forty out of forty-five is the whole life of a five-year-old
+    account, and an account with five years and forty-five posts either had its
+    archive deleted or never had one. Both terms are multiplied, so a prolific
+    account scores near zero however long its unreachable prefix.
+
+    An earlier version compared the *rate* in the retrieved window against the
+    lifetime rate instead. It was withdrawn during testing: forty posts inside
+    one hour reads as 192x the lifetime rate on a genuinely prolific account, so
+    any account having a busy afternoon scored as wiped. Coverage of the archive
+    is burst-invariant, which is the property the metric needs.
+    """
+
+    id = "identity_discontinuity"
+    name = "Identity discontinuity"
+    family = "social_authenticity"
+    thesis = (
+        "How much of the promoting account's life is unaccounted for: a long silent "
+        "prefix, combined with a retrieved window that accounts for most of the posts "
+        "the profile claims to have ever made, implies the archive was wiped and the "
+        "aged handle repurposed. Account age alone reads backwards on exactly these."
+    )
+    direction = Direction.HIGHER_IS_BEARISH
+    sources = ("x",)
+    earliest_seconds = 120.0
+    min_evidence = 3
+    default_midpoint = 0.35
+    default_steepness = 8.0
+    gameability = (
+        "The evasion is to leave the purchased account's archive in place rather than "
+        "wiping it, which costs the operator the thing they bought the account for — "
+        "a clean history that does not contradict the new persona — and leaves the old "
+        "posts findable. The alternative is to pad `post_count` back up, which cannot "
+        "be typed into the profile: it counts posts that were actually made, so the "
+        "operator has to run the account for real, at volume, before the campaign. "
+        "The metric's real weakness is availability rather than manipulability: it "
+        "needs the profile payload, so it is absent on tokens whose X handle never "
+        "resolved, and absence is reported as absence rather than as a clean account."
+    )
+
+    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
+        promoter = ctx.promoter
+        if promoter is None:
+            return None, 0, "no profile snapshot for the token's named account"
+        if promoter.created_at is None or promoter.post_count is None:
+            return None, 0, f"@{promoter.handle}: profile carries no join date or post count"
+
+        age_days = (ctx.as_of - promoter.created_at).total_seconds() / 86400.0
+        if age_days < MIN_ACCOUNT_AGE_DAYS:
+            return None, 0, f"@{promoter.handle}: account is {age_days:.1f} days old, nothing to wipe"
+
+        # The unfiltered timeline window recorded at collection time, not a
+        # recount of `ctx.posts`. Those have been filtered to the ones about
+        # this token, and an account's off-topic posts being dropped looks
+        # exactly like the archive gap this metric exists to detect.
+        count = promoter.timeline_posts or 0
+        oldest = promoter.timeline_oldest_at
+        if count < self.min_evidence or oldest is None:
+            return None, count, f"@{promoter.handle}: {count} retrievable posts on the timeline"
+
+        # Share of the account's life with nothing retrievable in it.
+        silent_share = clamp((oldest - promoter.created_at).total_seconds() / (age_days * 86400.0))
+        # Share of the account's claimed output that the retrieved window covers.
+        # `post_count` can be 0 on an account whose posts were all deleted, which
+        # is the strongest form of the thing being measured — so the floor of 1
+        # sends it to full coverage rather than to a division error or a pass.
+        coverage = clamp(count / max(promoter.post_count, 1))
+
+        raw = silent_share * coverage
+        return (
+            raw,
+            count,
+            f"@{promoter.handle}: {silent_share:.0%} of {age_days:.0f}d silent, "
+            f"{count} retrieved of {promoter.post_count} lifetime posts",
+        )

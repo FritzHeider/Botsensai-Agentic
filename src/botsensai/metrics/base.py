@@ -33,6 +33,7 @@ from botsensai.models import (
     MetricValue,
     Platform,
     SecurityReport,
+    SocialAccount,
     SocialPost,
     TokenRef,
     Trade,
@@ -61,6 +62,8 @@ class MetricContext:
     holders: list[HolderRecord] = field(default_factory=list)
     security: SecurityReport | None = None
     posts: list[SocialPost] = field(default_factory=list)
+    #: Profile snapshots for this token's social accounts, as they read at `as_of`.
+    accounts: list[SocialAccount] = field(default_factory=list)
 
     #: Peer tokens launched in the same window, for cross-sectional normalization.
     peer_values: dict[str, list[float]] = field(default_factory=dict)
@@ -82,6 +85,18 @@ class MetricContext:
         if self.launch is None:
             return 0.0
         return max(0.0, (self.as_of - self.launch.created_at).total_seconds())
+
+    @property
+    def promoter(self) -> SocialAccount | None:
+        """The token's own named account, never an engager.
+
+        Freshest snapshot wins, because a promoter observed twice in a sweep is
+        the same account read twice and the later reading is the current one.
+        """
+        promoters = [a for a in self.accounts if a.role == "promoter"]
+        if not promoters:
+            return None
+        return max(promoters, key=lambda a: a.observed_at)
 
     @property
     def latest(self) -> MarketSnapshot | None:
