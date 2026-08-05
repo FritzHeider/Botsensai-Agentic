@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -51,6 +51,14 @@ from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
 
 log = get_logger(__name__)
+
+#: Fewest trades a bootstrap interval may be computed from. Below it,
+#: `bootstrap_expectancy_ci` returns `(0.0, 0.0)` as a sentinel meaning *no
+#: interval*, which is a different finding from an interval that happens to
+#: span zero: the first says there is not enough data to say anything, the
+#: second says there is data and it shows no edge. Callers must tell them
+#: apart, so the threshold is named here rather than buried as a literal.
+BOOTSTRAP_MIN_TRADES = 5
 
 
 @dataclass
@@ -282,7 +290,7 @@ class BacktestResult:
         import random as _random
 
         pnl = [t.pnl_native for t in self.trades]
-        if len(pnl) < 5:
+        if len(pnl) < BOOTSTRAP_MIN_TRADES:
             return (0.0, 0.0)
         rng = _random.Random(seed)
         means: list[float] = []
@@ -409,8 +417,19 @@ class Backtester:
         return tapes
 
     @staticmethod
-    def tapes_from_synthetic(tokens: Iterable[Any]) -> list[TokenTape]:
-        """Wrap `SyntheticToken` objects as tapes."""
+    def tapes_from_synthetic(
+        tokens: Iterable[Any], *, outcomes: Mapping[str, Outcome] | None = None
+    ) -> list[TokenTape]:
+        """Wrap `SyntheticToken` objects as tapes.
+
+        `outcomes` is keyed on `TokenRef.key` and is what makes a synthetic
+        universe usable by anything that has to *fit* rather than only replay:
+        the walk-forward harness drops any train tape without a label, so
+        without it every train fold is empty and every fold silently runs on
+        default weights. It stays optional and empty by default because a plain
+        replay must not be handed outcome data it would then be scored against.
+        """
+        labels = outcomes or {}
         out: list[TokenTape] = []
         for t in tokens:
             out.append(
@@ -422,6 +441,7 @@ class Backtester:
                     posts=sorted(t.posts, key=lambda p: p.as_of),
                     security=t.security,
                     wallet_priors=t.wallet_priors,
+                    outcome=labels.get(t.launch.token.key),
                 )
             )
         return out

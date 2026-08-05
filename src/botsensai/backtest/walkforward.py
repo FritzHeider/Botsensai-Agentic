@@ -42,7 +42,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from botsensai.backtest.engine import BacktestResult, Backtester, TokenTape, TradeRecord
+from botsensai.backtest.engine import (
+    BOOTSTRAP_MIN_TRADES,
+    Backtester,
+    BacktestResult,
+    TokenTape,
+    TradeRecord,
+)
 from botsensai.config import BacktestSettings, Settings, get_settings
 from botsensai.labeller import LabelPolicy
 from botsensai.metrics import MetricRegistry, build_registry
@@ -78,7 +84,17 @@ class Fold:
     train_cutoff: datetime
 
     def holds_train(self, created_at: datetime) -> bool:
-        return self.train_start <= created_at < self.train_end and created_at < self.train_cutoff
+        """Inside the rolling window on the left, before the purge on the right.
+
+        There is deliberately no `< train_end` term. `plan_folds` builds
+        `train_cutoff` as `test_start - purge` with `train_end == test_start`
+        and a non-negative purge, so the cutoff is at or before `train_end`
+        always and a `train_end` test could never be the deciding condition —
+        it would read as the boundary doing the work while the purge did it.
+        The invariant that makes that true is enforced where it can actually be
+        violated: `plan_folds` refuses a negative embargo or label horizon.
+        """
+        return self.train_start <= created_at < self.train_cutoff
 
     def holds_test(self, created_at: datetime) -> bool:
         return self.test_start <= created_at < self.test_end
@@ -116,6 +132,17 @@ def plan_folds(
         raise ValueError(
             f"train_days and test_days must be positive, got "
             f"{backtest.train_days} and {backtest.test_days}"
+        )
+    if backtest.embargo_hours < 0 or label_horizon_hours < 0:
+        # A negative purge does not merely widen the train set, it moves the
+        # cutoff *past* `train_end` and into the test window — the harness would
+        # fit on the very tokens it is about to be graded on, and report the
+        # result as out-of-sample. Refused rather than clamped: a negative
+        # embargo is always a mistake, and silently reading it as zero would
+        # hide the mistake behind a number that looks fine.
+        raise ValueError(
+            f"embargo_hours and label_horizon_hours must be non-negative, got "
+            f"{backtest.embargo_hours} and {label_horizon_hours}"
         )
     train = timedelta(days=backtest.train_days)
     test = timedelta(days=backtest.test_days)
@@ -302,16 +329,33 @@ class WalkForwardReport:
         return dict(sorted(out.items()))
 
     def summary(self) -> dict[str, Any]:
-        """Pooled headline with the sample size and interval attached."""
+        """Pooled headline with the sample size and interval attached.
+
+        The interval and its *absence* are reported as different things. Below
+        `BOOTSTRAP_MIN_TRADES` out-of-sample trades `bootstrap_expectancy_ci`
+        returns the `(0.0, 0.0)` sentinel, and reading that as an interval makes
+        every under-sampled run print "not distinguishable from no edge" — which
+        sounds like a measured verdict on the strategy and is really a statement
+        that nothing was measured at all.
+        """
         pooled = self.pooled()
         out = pooled.summary()
-        low, high = pooled.bootstrap_expectancy_ci()
+        n_trades = len(pooled.trades)
         out["folds"] = len(self.folds)
         out["fitted_folds"] = self.fitted_folds
-        out["expectancy_ci_95"] = [low, high]
         out["out_of_sample"] = True
         out["settings"] = dict(self.settings_used)
         out["fold_table"] = [f.summary() for f in self.folds]
+        if n_trades < BOOTSTRAP_MIN_TRADES:
+            out["expectancy_ci_95"] = None
+            out["warning_ci"] = (
+                f"{n_trades} out-of-sample trades is below the {BOOTSTRAP_MIN_TRADES} needed "
+                "to bootstrap an interval at all — this run has no confidence interval, "
+                "which is not the same as a narrow one"
+            )
+            return out
+        low, high = pooled.bootstrap_expectancy_ci()
+        out["expectancy_ci_95"] = [low, high]
         if low <= 0 <= high:
             out["warning_ci"] = (
                 "the 95% interval on expectancy spans zero — this walk-forward result "

@@ -593,13 +593,48 @@ a guess. Every task here is worth more than a new metric.
 
 ## Phase 3 — Backtest properly
 
-- [ ] **P3-01 — Walk-forward harness**
-  `BacktestSettings` describes train/test/step/embargo and nothing consumes it.
-  Implement rolling walk-forward: fit weights on the train window, evaluate on
-  the test window, step forward, with the embargo enforced so a token spanning
-  the boundary cannot appear in both.
+- [x] **P3-01 — Walk-forward harness**
+  Done 2026-08-05. `backtest/walkforward.py`: `plan_folds` / `split_tapes` /
+  `WalkForward` / `WalkForwardReport`. Fit on a trailing train window, score the
+  next test window with those weights alone, step, repeat; only test windows are
+  reported.
+  **The assertion this task names is nearly free, and that is the finding.**
+  Fold membership is decided by `launch.created_at`, so a fold's train and test
+  ranges are disjoint *by construction* — "no token in both" cannot fail unless
+  the window arithmetic is broken outright. The reachable leak is that a token
+  launched near `train_end` has no label until its outcome horizon elapses, and
+  that instant lands inside the test window. So the embargo is a **purge on the
+  train side**, `admissible iff created_at + label_horizon + embargo <=
+  test_start`, and `label_horizon` is `LabelPolicy.min_age_hours` (the instant
+  the label becomes knowable) and deliberately not `Outcome.labeled_at` (the
+  wall-clock moment the batch labeller happened to run, which for a corpus
+  labelled in one pass would purge every fold to empty for a reason unrelated to
+  information).
+  Three things the probe round changed rather than confirmed. (1)
+  `WalkForwardReport.summary` reported the `(0.0, 0.0)` that
+  `bootstrap_expectancy_ci` returns below 5 trades as though it were an
+  interval, so every under-sampled run printed "not distinguishable from no
+  edge" — a verdict on the strategy, where the truth was that nothing was
+  measured. The threshold is now named (`BOOTSTRAP_MIN_TRADES`) and absence is
+  reported as absence. (2) `Fold.holds_train` carried a `< train_end` term that
+  could never fire, since `train_cutoff = test_start - purge` is at or before
+  `train_end` for any non-negative purge; it is removed, and the invariant is
+  enforced where it can actually be violated — `plan_folds` now refuses a
+  negative embargo, which is the one setting that pushes the cutoff *into* the
+  test window and would fit on the tokens about to be graded while still
+  labelling the result out-of-sample. (3) Dropping the `train_start` term left
+  all nineteen other tests green: `train_days` would have stopped meaning
+  anything and the harness would have gone expanding while `fold_table` printed
+  a rolling window. `test_the_train_window_rolls_rather_than_expands` closes it.
+  `Backtester.tapes_from_synthetic` takes an optional `outcomes` mapping;
+  without it every train fold is empty and every fold silently runs on default
+  weights, since `split_tapes` drops unlabelled train tapes (an unlabelled tape
+  does not enter a fit as missing — `TrainingExample.from_values` reads
+  `... or 0.0` and it enters as a confident zero).
+  15 mutation probes, 15 red. Library-only so far: no CLI command yet, which
+  P3-02's `ablate` and P3-03's `--baselines` are the natural place for.
   _Depends on: P1-03._
-  _Accept:_ `python -m pytest tests/test_walkforward.py -q` exits 0, including an assertion that no token key appears in both a train and its own test fold.
+  _Accept:_ `python -m pytest tests/test_walkforward.py -q` exits 0, including an assertion that no token key appears in both a train and its own test fold. ✔ **22 passed** in 5.5 s. Pinned fixture: universe 24 / seed 1337 / `created_at` 2026-07-01T12:00:00Z / one launch an hour → 2 folds, train 10 and 6 tokens, test 6 each, 0/2 fitted (24 tokens cannot reach `MIN_SAMPLES_TO_FIT` 200, and the report says so rather than passing `v0-default` off as a fit). Full suite **525 passed** (22 new), ruff clean, mypy clean over 59 files, `scripts/backpressure.py` 9/9 green with complexity 10, registry 34, `doctor` 9/10 surfaces, `backtest --synthetic --universe 40` exits 0 (7 trades, expectancy +0.007801, CI [+0.003356, +0.011626]).
 
 - [ ] **P3-02 — Ablation report**
   Wire `scoring.fit.ablation` to a CLI command that drops each metric in turn
