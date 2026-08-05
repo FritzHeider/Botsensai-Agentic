@@ -30,6 +30,7 @@ from botsensai.models import (
     Launch,
     Launchpad,
     MarketSnapshot,
+    Outcome,
     Platform,
     SecurityReport,
     Side,
@@ -766,4 +767,67 @@ def generate_cohort(
     return out
 
 
-__all__ = ["ARCHETYPES", "SyntheticToken", "generate_cohort", "generate_token"]
+def synthetic_outcome(token: SyntheticToken, label_horizon_hours: float = 24.0) -> Outcome:
+    """A label read off the token's own generated price path.
+
+    Fixture-only, and deliberately not called "label": it is *not* the labeller.
+    `labeller.py` reconstructs a path from separately collected observations,
+    collapses source disagreements and refuses to claim a multiple when t0 is
+    unknown; this reads the path the generator already wrote. It exists so the
+    harnesses that need labelled tapes — walk-forward, and the ablation and
+    baseline reports built on it — can be exercised without a real corpus.
+
+    Nothing that reports a number about the real world may use it. The
+    `BacktestResult.synthetic` flag is what keeps that visible downstream.
+
+    `labeled_at` is set to the instant the label becomes *knowable*
+    (`created_at + label_horizon_hours`) rather than to wall-clock, so a tape
+    built from this is reproducible and so an embargo computed against it means
+    something.
+    """
+    prices = [s.price_native for s in token.snapshots if s.price_native and s.price_native > 0]
+    created = token.launch.created_at
+    outcome = Outcome(
+        token=token.token,
+        labeled_at=created + timedelta(hours=label_horizon_hours),
+    )
+    if not prices:
+        # No path, no claim. The multiples stay None, which is exactly the
+        # shape the walk-forward's train filter has to drop.
+        return outcome
+
+    t0 = prices[0]
+    peak = max(prices)
+    final = prices[-1]
+    # The single tick top is not an exit. Taking the price at the 90th
+    # percentile of the path gives a realizable figure that is strictly at or
+    # below the peak, derived from the same path rather than from a fudge
+    # factor applied to it.
+    ordered = sorted(prices)
+    realizable = ordered[min(len(ordered) - 1, int(len(ordered) * 0.9))]
+
+    span = (token.snapshots[-1].as_of - token.snapshots[0].as_of).total_seconds()
+    caps = [s.market_cap_usd for s in token.snapshots if s.market_cap_usd]
+    liquidity = [s.liquidity_usd for s in token.snapshots if s.liquidity_usd is not None]
+
+    outcome.max_multiple_from_t0 = peak / t0
+    outcome.max_realizable_multiple = realizable / t0
+    outcome.rugged = bool(
+        liquidity and liquidity[-1] < 500.0 and max(liquidity) > 4 * max(liquidity[-1], 1.0)
+    )
+    outcome.graduated = any(
+        (s.bonding_curve_progress or 0.0) >= 0.999 for s in token.snapshots
+    )
+    outcome.survived_1h = span >= 3600.0 and final >= 0.5 * t0
+    outcome.peak_market_cap_usd = max(caps) if caps else None
+    outcome.final_market_cap_usd = caps[-1] if caps else None
+    return outcome
+
+
+__all__ = [
+    "ARCHETYPES",
+    "SyntheticToken",
+    "generate_cohort",
+    "generate_token",
+    "synthetic_outcome",
+]
