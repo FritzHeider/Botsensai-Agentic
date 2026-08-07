@@ -41,6 +41,18 @@ log = get_logger(__name__)
 #: refuses rather than producing a number.
 MIN_SAMPLES_TO_FIT = 200
 
+#: A decile of nineteen observations is one observation. Below this many samples
+#: `top_decile_lift` returns 0.0 — and since the objective is
+#: `0.4 * rank + 0.6 * lift`, that silently deletes sixty percent of it rather
+#: than failing. Named so a caller with a small holdout can say which of the two
+#: terms its numbers actually came from.
+TOP_DECILE_MIN_SAMPLES = 20
+
+#: Float dust below which a delta is not treated as a sign. `_objective` is
+#: deterministic given fixed weights, so a real negative delta is real; this only
+#: keeps `-1e-17` from being announced as a liability.
+LIABILITY_TOLERANCE = 1e-9
+
 
 @dataclass
 class TrainingExample:
@@ -154,7 +166,7 @@ def top_decile_lift(scores: Sequence[float], labels: Sequence[float]) -> float:
     ever trades its highest-scoring candidates, so performance in the tail is
     the whole question and average-case correlation can be misleading.
     """
-    if len(scores) < 20 or len(scores) != len(labels):
+    if len(scores) < TOP_DECILE_MIN_SAMPLES or len(scores) != len(labels):
         return 0.0
     paired = sorted(zip(scores, labels, strict=True), key=lambda p: p[0], reverse=True)
     k = max(1, len(paired) // 10)
@@ -373,41 +385,216 @@ class WeightFitter:
         return dict(sorted(out.items(), key=lambda kv: kv[1], reverse=True))
 
 
+@dataclass(frozen=True)
+class AblationRow:
+    """One metric's contribution, with the sample size that produced it.
+
+    `coverage` is not decoration. A delta of zero has two completely different
+    meanings — *this metric was scored on every token and moved nothing* and
+    *this metric never produced a value at all* — and without the count beside
+    it the second is indistinguishable from the first. Reporting an unmeasured
+    metric as a neutral one is the same mistake as returning `0.0` from a metric
+    to mean "no data".
+    """
+
+    metric_id: str
+    family: str
+    #: Holdout examples that carried a value for this metric.
+    coverage: int
+    #: Objective with every metric, minus the objective with this one dropped.
+    #: Positive means the metric earns its place; negative means removing it
+    #: made the model better.
+    delta: float
+
+    @property
+    def measured(self) -> bool:
+        return self.coverage > 0
+
+    @property
+    def liability(self) -> bool:
+        """Removal improved the objective — and it was actually scored."""
+        return self.measured and self.delta < -LIABILITY_TOLERANCE
+
+    @property
+    def inert(self) -> bool:
+        """Scored on real tokens and worth nothing. Not the same as unmeasured."""
+        return self.measured and abs(self.delta) <= LIABILITY_TOLERANCE
+
+    @property
+    def state(self) -> str:
+        if not self.measured:
+            return "not measured"
+        if self.liability:
+            return "liability"
+        if self.inert:
+            return "inert"
+        return "contributes"
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "metric_id": self.metric_id,
+            "family": self.family,
+            "coverage": self.coverage,
+            "delta": round(self.delta, 5),
+            "state": self.state,
+        }
+
+
+@dataclass
+class AblationReport:
+    """Every registered metric's contribution, measured out of sample."""
+
+    rows: list[AblationRow]
+    baseline_objective: float
+    n_examples: int
+    n_train: int
+    n_holdout: int
+    fitted: bool
+    weights_version: str
+    #: Token keys on each side of the split. Exposed so a caller can prove the
+    #: deltas were measured on tokens the fit never saw, rather than take it on
+    #: faith from a docstring.
+    train_keys: tuple[str, ...] = ()
+    holdout_keys: tuple[str, ...] = ()
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def liabilities(self) -> list[AblationRow]:
+        return [r for r in self.rows if r.liability]
+
+    @property
+    def unmeasured(self) -> list[AblationRow]:
+        return [r for r in self.rows if not r.measured]
+
+    @property
+    def inert(self) -> list[AblationRow]:
+        return [r for r in self.rows if r.inert]
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "n_examples": self.n_examples,
+            "n_train": self.n_train,
+            "n_holdout": self.n_holdout,
+            "fitted": self.fitted,
+            "weights_version": self.weights_version,
+            "baseline_objective": round(self.baseline_objective, 5),
+            "metrics": len(self.rows),
+            "measured": len(self.rows) - len(self.unmeasured),
+            "liabilities": [r.metric_id for r in self.liabilities],
+            "warnings": self.warnings,
+        }
+
+
+def _strip(examples: Sequence[TrainingExample], metric_id: str) -> list[TrainingExample]:
+    return [
+        TrainingExample(
+            token_key=e.token_key,
+            as_of=e.as_of,
+            values={k: v for k, v in e.values.items() if k != metric_id},
+            label=e.label,
+            weight=e.weight,
+        )
+        for e in examples
+    ]
+
+
+def _ablation_warnings(report: AblationReport) -> list[str]:
+    """The caveats that decide how much of the table means anything."""
+    notes: list[str] = []
+    if report.n_holdout < TOP_DECILE_MIN_SAMPLES:
+        notes.append(
+            f"only {report.n_holdout} holdout examples, below the {TOP_DECILE_MIN_SAMPLES} "
+            "a decile needs: top_decile_lift is 0.0 for every candidate, so 60% of the "
+            "objective is dead and every delta below is the rank term alone"
+        )
+    if report.unmeasured:
+        names = ", ".join(r.metric_id for r in report.unmeasured)
+        notes.append(
+            f"{len(report.unmeasured)} of {len(report.rows)} metrics produced no value on "
+            f"any holdout token, so their 0.00000 means NOT MEASURED, not no effect — "
+            f"nothing here judges them: {names}"
+        )
+    if not report.fitted:
+        notes.append(
+            "weights were not fitted, so these deltas describe each metric's contribution "
+            "under the default hand-set weighting, not under a model"
+        )
+    return notes
+
+
 def ablation(
     examples: Sequence[TrainingExample],
     registry: MetricRegistry | None = None,
     seed: int = 1337,
-) -> dict[str, float]:
-    """Drop each metric in turn and measure how much the objective falls.
+    *,
+    holdout_fraction: float = 0.25,
+) -> AblationReport:
+    """Drop each metric in turn and measure how much the holdout objective falls.
 
     A metric whose removal does not move the objective is not earning its place,
     and one whose removal *improves* it is actively harmful. Running this
     routinely is what stops the suite from accumulating dead weight.
+
+    The split is the point. Weights are fitted on the train half and every delta
+    is then measured on a holdout the fit never saw, because an in-sample
+    ablation rewards a metric for the noise it helped memorize — the metric that
+    looks most valuable is the one the fit leaned on hardest to overfit. (The
+    fitter runs its own inner split of the train half for its own diagnostics;
+    that is a different, smaller holdout and it is not this one.)
+
+    Every registered metric gets a row whether or not it was ever scored, and a
+    row that was never scored says so rather than reporting a zero delta that
+    reads as a verdict.
     """
     reg = registry or build_registry()
     fitter = WeightFitter(reg, seed=seed)
-    baseline_weights = Weights()
-    baseline = fitter._objective(examples, baseline_weights)
+    family_of = {m.id: m.family for m in reg}
 
-    out: dict[str, float] = {}
-    for metric in reg:
-        stripped = [
-            TrainingExample(
-                token_key=e.token_key,
-                as_of=e.as_of,
-                values={k: v for k, v in e.values.items() if k != metric.id},
-                label=e.label,
-                weight=e.weight,
-            )
-            for e in examples
-        ]
-        value = fitter._objective(stripped, baseline_weights)
-        out[metric.id] = round(baseline - value, 5)
-    return dict(sorted(out.items(), key=lambda kv: kv[1], reverse=True))
+    shuffled = list(examples)
+    random.Random(seed).shuffle(shuffled)
+    split = int(len(shuffled) * (1.0 - holdout_fraction))
+    train, holdout = shuffled[:split], shuffled[split:]
+
+    fit = fitter.fit(train)
+    baseline = fitter._objective(holdout, fit.weights)
+
+    rows = [
+        AblationRow(
+            metric_id=metric.id,
+            family=family_of.get(metric.id, "unknown"),
+            coverage=sum(1 for e in holdout if metric.id in e.values),
+            delta=baseline - fitter._objective(_strip(holdout, metric.id), fit.weights),
+        )
+        for metric in reg
+    ]
+    # Measured rows first, best contribution at the top. Unmeasured rows sink to
+    # the bottom rather than sorting in among the genuine zeros, where they would
+    # read as the marginal metrics rather than as the unjudged ones.
+    rows.sort(key=lambda r: (r.measured, r.delta), reverse=True)
+
+    report = AblationReport(
+        rows=rows,
+        baseline_objective=baseline,
+        n_examples=len(shuffled),
+        n_train=len(train),
+        n_holdout=len(holdout),
+        fitted=fit.fitted,
+        weights_version=fit.weights.version,
+        train_keys=tuple(e.token_key for e in train),
+        holdout_keys=tuple(e.token_key for e in holdout),
+        warnings=list(fit.warnings),
+    )
+    report.warnings.extend(_ablation_warnings(report))
+    log.info("ablation.done", **report.summary())
+    return report
 
 
 __all__ = [
+    "LIABILITY_TOLERANCE",
     "MIN_SAMPLES_TO_FIT",
+    "TOP_DECILE_MIN_SAMPLES",
+    "AblationReport",
+    "AblationRow",
     "FitReport",
     "TrainingExample",
     "WeightFitter",

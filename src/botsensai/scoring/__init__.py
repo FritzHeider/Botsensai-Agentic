@@ -8,6 +8,8 @@ from botsensai.scoring.composite import (
     score_to_size,
 )
 from botsensai.scoring.fit import (
+    AblationReport,
+    AblationRow,
     FitReport,
     TrainingExample,
     WeightFitter,
@@ -17,6 +19,8 @@ from botsensai.scoring.fit import (
 )
 
 __all__ = [
+    "AblationReport",
+    "AblationRow",
     "CompositeScorer",
     "FitReport",
     "TrainingExample",
