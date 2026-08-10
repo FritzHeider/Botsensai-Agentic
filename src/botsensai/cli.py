@@ -23,6 +23,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from botsensai.backtest.baselines import BaselineComparison, evaluate_baselines, run_baselines
 from botsensai.backtest.engine import Backtester
 from botsensai.backtest.walkforward import WalkForward
 from botsensai.config import Settings, TradingMode, get_settings, load_settings
@@ -583,6 +584,9 @@ def backtest(
     ),
     universe: int = typer.Option(60, help="Synthetic universe size when running synthetic."),
     capital: float = typer.Option(10.0, help="Starting capital in native units (SOL)."),
+    baselines: bool = typer.Option(
+        False, "--baselines", help="Compare composite strategy against null-hypothesis baselines."
+    ),
     out: str = typer.Option(None, help="Write the full result to this JSON path."),
     log_level: str = typer.Option("WARNING", help="Log level."),
 ) -> None:
@@ -607,12 +611,23 @@ def backtest(
     result = tester.run(tapes, starting_native=capital, synthetic=synthetic)
     summary = result.summary()
 
-    _print_backtest_table(summary)
+    comparison = None
+    if baselines:
+        b_results = run_baselines(
+            tapes, settings=settings, starting_native=capital, synthetic=synthetic
+        )
+        comparison = evaluate_baselines(result, b_results)
+        _print_baselines_table(comparison)
+    else:
+        _print_backtest_table(summary)
+
     _print_backtest_caveats(result, summary)
 
     if out:
         Path(out).write_text(
-            json.dumps(_backtest_payload(result, summary), indent=2, default=str),
+            json.dumps(
+                _backtest_payload(result, summary, comparison=comparison), indent=2, default=str
+            ),
             encoding="utf-8",
         )
         console.print(f"\nwrote {out}")
@@ -805,6 +820,51 @@ def _print_backtest_table(summary: dict[str, Any]) -> None:
     console.print(table)
 
 
+def _print_baselines_table(comparison: BaselineComparison) -> None:
+    table = Table(title="baseline comparison (null-hypothesis testing)")
+    table.add_column("strategy", style="bold", no_wrap=True)
+    table.add_column("entered", justify="right")
+    table.add_column("trades", justify="right")
+    table.add_column("win rate", justify="right")
+    table.add_column("total pnl", justify="right")
+    table.add_column("expectancy", justify="right")
+    table.add_column("profit factor", justify="right")
+
+    comp_s = comparison.composite.summary()
+    table.add_row(
+        "composite (signal)",
+        str(comp_s.get("entered", 0)),
+        str(comp_s.get("trades", 0)),
+        f"{comp_s.get('win_rate', 0.0):.1%}",
+        f"{comp_s.get('total_pnl_native', 0.0):+.4f}",
+        f"{comp_s.get('expectancy_native', 0.0):+.6f}",
+        str(comp_s.get("profit_factor", "0.0")),
+    )
+
+    for mode, b_res in comparison.baselines.items():
+        b_s = b_res.summary()
+        table.add_row(
+            f"baseline: {mode}",
+            str(b_s.get("entered", 0)),
+            str(b_s.get("trades", 0)),
+            f"{b_s.get('win_rate', 0.0):.1%}",
+            f"{b_s.get('total_pnl_native', 0.0):+.4f}",
+            f"{b_s.get('expectancy_native', 0.0):+.6f}",
+            str(b_s.get("profit_factor", "0.0")),
+        )
+
+    console.print(table)
+    if not comparison.has_edge:
+        console.print(
+            "\n[bold yellow]warning: the composite strategy does not beat all three "
+            "null-hypothesis baselines — it has no edge[/bold yellow]"
+        )
+    else:
+        console.print(
+            "\n[bold green]composite strategy beat all three null-hypothesis baselines[/bold green]"
+        )
+
+
 def _print_backtest_caveats(result: Any, summary: dict[str, Any]) -> None:
     """Everything that qualifies the headline: the CI, the warnings, the vetoes."""
     low, high = result.bootstrap_expectancy_ci()
@@ -828,8 +888,10 @@ def _print_backtest_caveats(result: Any, summary: dict[str, Any]) -> None:
         console.print(f"\nvetoes triggered: {result.veto_counts}")
 
 
-def _backtest_payload(result: Any, summary: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _backtest_payload(
+    result: Any, summary: dict[str, Any], comparison: BaselineComparison | None = None
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "summary": summary,
         "veto_counts": result.veto_counts,
         "metric_coverage": result.metric_coverage,
@@ -846,6 +908,9 @@ def _backtest_payload(result: Any, summary: dict[str, Any]) -> dict[str, Any]:
             for t in result.trades
         ],
     }
+    if comparison is not None:
+        payload["baselines"] = comparison.summary()
+    return payload
 
 
 # --------------------------------------------------------------------------- #

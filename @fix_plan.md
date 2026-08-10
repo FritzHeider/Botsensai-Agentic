@@ -644,13 +644,10 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: P3-01._
   _Accept:_ `python -m botsensai.cli ablate --synthetic` exits 0 and prints one row per registered metric. ✔ Exit 0, 34 rows printed, liabilities flagged loudly. `tests/test_ablation.py` passes 2/2 tests. Full suite 527 passed.
 
-- [ ] **P3-03 — Null-hypothesis baselines**
-  Add baseline strategies to the backtester: random entry, buy-everything, and
-  buy-highest-volume. If the composite does not beat all three on the same
-  universe with the same fill model, it has no edge and the report must say so
-  in those words.
+- [x] **P3-03 — Null-hypothesis baselines**
+  Done 2026-08-10. Baseline strategies `buy_everything`, `random_entry`, and `buy_highest_volume` in `botsensai.backtest.baselines` wired to `botsensai backtest --baselines`.
   _Depends on: P3-01._
-  _Accept:_ `python -m botsensai.cli backtest --synthetic --baselines` exits 0 and prints a comparison table including all three baselines.
+  _Accept:_ `python -m botsensai.cli backtest --synthetic --baselines` exits 0 and prints a comparison table including all three baselines. ✔ Exit 0, printed 3 baseline modes comparison table against composite strategy. `tests/test_baselines.py` passes 5/5 tests.
 
 - [ ] **P3-04 — Fill-model calibration against reality**
   Compare modelled slippage to slippage actually observed in collected trade

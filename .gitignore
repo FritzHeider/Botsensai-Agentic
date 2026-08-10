@@ -26,3 +26,4 @@ botsensai-x-profile/
 # tracked copy is a binary that changes on every check and means nothing.
 .coverage
 .coverage.*
+.worktrees/

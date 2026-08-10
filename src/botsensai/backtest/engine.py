@@ -372,10 +372,11 @@ class Backtester:
         weights: Weights | None = None,
         decision_interval_seconds: float = 60.0,
         max_decision_age_seconds: float = 3600.0,
+        scorer: CompositeScorer | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.registry = registry or build_registry()
-        self.scorer = CompositeScorer(self.registry, weights, self.settings)
+        self.scorer = scorer or CompositeScorer(self.registry, weights, self.settings)
         self.decision_interval = decision_interval_seconds
         self.max_decision_age = max_decision_age_seconds
 
@@ -527,7 +528,10 @@ class Backtester:
                 self._record_closed(tape, key, state, broker)
 
             ctx = self._context(tape, when, tapes, state, regime.value(when))
-            values = self.registry.evaluate_all(ctx)
+            if getattr(self.scorer, "skip_metric_evaluation", False):
+                values = []
+            else:
+                values = self.registry.evaluate_all(ctx)
             score = self.scorer.score(ctx, values)
             state.evaluated += 1
             state.accumulate(values, score)
