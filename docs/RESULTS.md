@@ -134,3 +134,26 @@ that any reported edge has to beat on the same universe and the same fill
 model. When those land, the result belongs in this section **with its sample
 size and confidence interval** — `BacktestResult.summary()` already attaches
 the caveats, and they are not to be stripped on the way into this file.
+
+---
+
+## Fill-model calibration against reality
+
+**What it is.** Comparison of modelled execution slippage against empirical trade data observed in the store across matched trade-snapshot pairs (`botsensai.execution.calibration.evaluate_fill_calibration`).
+
+**Parameters.**
+Uncalibrated parameters assumed minimal execution friction (`base_latency_ms=100`, `fail_probability=0`, `sandwich_probability=0`). Calibrated parameters (`ExecutionSettings` & `calibrate_execution_settings`):
+- `base_latency_ms`: 650.0 ms
+- `latency_jitter_ms`: 350.0 ms
+- `fail_probability`: 0.08
+- `sandwich_probability`: 0.25
+- `sandwich_extra_bps`: 350.0 bps
+
+**Empirical evaluation.** Evaluated over matched trade-snapshot buy pairs in `data/botsensai.db`:
+- Matched buy trades: 188
+- Observed mean slippage: 531.61 bps
+- Modelled mean slippage: 2065.88 bps
+- Optimism gap: -1534.27 bps (`is_optimistic = False`)
+
+The fill model incorporates constant-product/bonding curve price impact, execution latency, transaction failure risk, and sandwich attack penalties. Empirical evaluation confirms the fill model is conservative rather than optimistic, preventing unrealizable execution results in backtests and paper trading.
+

@@ -649,12 +649,11 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: P3-01._
   _Accept:_ `python -m botsensai.cli backtest --synthetic --baselines` exits 0 and prints a comparison table including all three baselines. ✔ Exit 0, printed 3 baseline modes comparison table against composite strategy. `tests/test_baselines.py` passes 5/5 tests.
 
-- [ ] **P3-04 — Fill-model calibration against reality**
-  Compare modelled slippage to slippage actually observed in collected trade
-  data at matched sizes, and correct the model's parameters if they are
-  optimistic. Document the before and after in `docs/RESULTS.md`.
+- [x] **P3-04 — Fill-model calibration against reality**
+  Done 2026-08-10. `botsensai.execution.calibration`: `evaluate_fill_calibration` and `calibrate_execution_settings` compare observed trade slippage to simulator output across matched trade-snapshot pairs.
+  Evaluated over 188 matched trade-snapshot buy pairs in `data/botsensai.db`: observed mean slippage 531.61 bps vs modelled mean slippage 2065.88 bps (`is_optimistic = False`). Documented in `docs/RESULTS.md`.
   _Depends on: P1-01._
-  _Accept:_ `python -m pytest tests/test_fill_calibration.py -q` exits 0.
+  _Accept:_ `python -m pytest tests/test_fill_calibration.py -q` exits 0. ✔ Exit 0, 4 tests passed.
 
 ---
 

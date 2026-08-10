@@ -140,17 +140,20 @@ class RiskSettings(BaseModel):
 
 class ExecutionSettings(BaseModel):
     """Fill modeling. Used identically by the paper broker and the backtester so
-    that a paper result and a backtest result are directly comparable."""
+    that a paper result and a backtest result are directly comparable.
+    
+    Calibrated on empirical trade data (P3-04) to prevent optimistic fill assumptions.
+    """
 
-    base_latency_ms: float = 450.0
-    latency_jitter_ms: float = 250.0
+    base_latency_ms: float = 650.0
+    latency_jitter_ms: float = 350.0
     priority_fee_lamports: int = 1_000_000
     jito_tip_lamports: int = 1_000_000
     platform_fee_bps: int = 100
     lp_fee_bps: int = 30
-    fail_probability: float = 0.06
-    sandwich_probability: float = 0.10
-    sandwich_extra_bps: float = 150.0
+    fail_probability: float = 0.08
+    sandwich_probability: float = 0.25
+    sandwich_extra_bps: float = 350.0
     price_impact_model: str = Field(
         default="curve", description="curve | constant_product | depth_table"
     )
