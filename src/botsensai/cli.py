@@ -24,6 +24,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from botsensai.backtest.engine import Backtester
+from botsensai.backtest.walkforward import WalkForward
 from botsensai.config import Settings, TradingMode, get_settings, load_settings
 from botsensai.media import ContentGenerator
 from botsensai.memory.store import MemoryStore
@@ -31,9 +32,10 @@ from botsensai.metrics import build_registry, metric_catalogue
 from botsensai.models import MemoryKind, utcnow
 from botsensai.pipeline import Pipeline
 from botsensai.scoring import CompositeScorer, Weights
+from botsensai.scoring.fit import AblationReport, TrainingExample, ablation
 from botsensai.store.db import Database
 from botsensai.util.logging import configure_logging
-from botsensai.util.synthetic import generate_cohort
+from botsensai.util.synthetic import generate_cohort, synthetic_outcome
 from botsensai.watchlist import (
     DEFAULT_WATCHLIST_LIMIT,
     collected_channels,
@@ -614,6 +616,142 @@ def backtest(
             encoding="utf-8",
         )
         console.print(f"\nwrote {out}")
+
+
+# --------------------------------------------------------------------------- #
+# ablate
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+def ablate(
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    days: float = typer.Option(30.0, help="How far back to look for labelled outcomes in days."),
+    synthetic: bool = typer.Option(
+        False, "--synthetic", help="Force a synthetic run instead of using the store."
+    ),
+    universe: int = typer.Option(60, help="Synthetic universe size when running synthetic."),
+    holdout_fraction: float = typer.Option(
+        0.25, help="Fraction of examples reserved for holdout evaluation."
+    ),
+    seed: int = typer.Option(1337, help="RNG seed for fitting and splitting."),
+    out: str = typer.Option(None, help="Write the full ablation report to this JSON path."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Drop each metric in turn and measure how much the holdout objective falls.
+
+    Metrics whose removal improves the objective are liabilities — they are
+    actively harmful and flagged loudly in the report.
+    """
+    settings = _settings(config, log_level)
+    _banner(settings)
+
+    registry = build_registry()
+    examples, is_synth = _ablate_examples(
+        settings, registry, days=days, synthetic=synthetic, universe=universe, seed=seed
+    )
+
+    report = ablation(examples, registry=registry, seed=seed, holdout_fraction=holdout_fraction)
+
+    _print_ablation_table(report)
+    _print_ablation_summary(report, is_synthetic=is_synth)
+
+    if out:
+        payload = {
+            "summary": report.summary(),
+            "synthetic": is_synth,
+            "rows": [r.describe() for r in report.rows],
+            "liabilities": [r.metric_id for r in report.liabilities],
+        }
+        Path(out).write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        console.print(f"\nwrote {out}")
+
+
+def _ablate_examples(
+    settings: Settings,
+    registry: Any,
+    *,
+    days: float,
+    synthetic: bool,
+    universe: int,
+    seed: int,
+) -> tuple[list[TrainingExample], bool]:
+    """Load training examples from DB or generate synthetic ones."""
+    if not synthetic:
+        db = Database(settings.path(settings.db_path))
+        end = utcnow()
+        start = end - timedelta(days=days)
+        tapes = Backtester.tapes_from_database(db, start, end)
+        labelled = [t for t in tapes if t.outcome is not None]
+        wf = WalkForward(settings, registry)
+        examples = wf.training_examples(labelled)
+        if len(examples) >= 10:
+            return examples, False
+        console.print(
+            f"[yellow]store holds only {len(examples)} labelled training examples in the last "
+            f"{days} days — falling back to a synthetic run.[/yellow]"
+        )
+
+    cohort = generate_cohort(n=universe, seed=seed)
+    outcomes = {t.launch.token.key: synthetic_outcome(t) for t in cohort}
+    tapes = Backtester.tapes_from_synthetic(cohort, outcomes=outcomes)
+    wf = WalkForward(settings, registry)
+    return wf.training_examples(tapes), True
+
+
+def _print_ablation_table(report: AblationReport) -> None:
+    table = Table(title=f"metric ablation report ({len(report.rows)} metrics)")
+    table.add_column("family", style="cyan")
+    table.add_column("metric", style="bold")
+    table.add_column("state")
+    table.add_column("coverage", justify="right")
+    table.add_column("objective delta", justify="right")
+
+    for r in report.rows:
+        if r.liability:
+            state_fmt = "[red bold]LIABILITY[/red bold]"
+            delta_fmt = f"[red]{r.delta:+.5f}[/red]"
+        elif r.inert:
+            state_fmt = "[yellow]inert[/yellow]"
+            delta_fmt = f"[yellow]{r.delta:+.5f}[/yellow]"
+        elif not r.measured:
+            state_fmt = "[dim]not measured[/dim]"
+            delta_fmt = "[dim]N/A[/dim]"
+        else:
+            state_fmt = "[green]contributes[/green]"
+            delta_fmt = f"[green]{r.delta:+.5f}[/green]"
+
+        cov_fmt = f"{r.coverage}/{report.n_holdout}" if r.measured else "0"
+        table.add_row(r.family, r.metric_id, state_fmt, cov_fmt, delta_fmt)
+
+    console.print(table)
+
+
+def _print_ablation_summary(report: AblationReport, *, is_synthetic: bool) -> None:
+    if is_synthetic:
+        console.print(
+            "\n[yellow bold]SYNTHETIC RUN:[/yellow bold] "
+            "Evaluated against synthetic price paths and posts. "
+            "Proves execution, not predictive edge."
+        )
+
+    if report.liabilities:
+        console.print(
+            f"\n[red bold]⚠️  LIABILITY WARNING: {len(report.liabilities)} metric(s) "
+            f"actively degrade the holdout objective![/red bold]"
+        )
+        for r in report.liabilities:
+            console.print(
+                f"  • [red]{r.metric_id}[/red] ({r.family}): "
+                f"removal improves objective by [bold]{abs(r.delta):.5f}[/bold]"
+            )
+    else:
+        console.print("\n[green]No liability metrics identified.[/green]")
+
+    if report.warnings:
+        console.print("\n[bold]Caveats:[/bold]")
+        for w in report.warnings:
+            console.print(f"  • [yellow]{w}[/yellow]")
 
 
 def _backtest_tapes(

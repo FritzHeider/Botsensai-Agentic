@@ -636,12 +636,13 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: P1-03._
   _Accept:_ `python -m pytest tests/test_walkforward.py -q` exits 0, including an assertion that no token key appears in both a train and its own test fold. ✔ **22 passed** in 5.5 s. Pinned fixture: universe 24 / seed 1337 / `created_at` 2026-07-01T12:00:00Z / one launch an hour → 2 folds, train 10 and 6 tokens, test 6 each, 0/2 fitted (24 tokens cannot reach `MIN_SAMPLES_TO_FIT` 200, and the report says so rather than passing `v0-default` off as a fit). Full suite **525 passed** (22 new), ruff clean, mypy clean over 59 files, `scripts/backpressure.py` 9/9 green with complexity 10, registry 34, `doctor` 9/10 surfaces, `backtest --synthetic --universe 40` exits 0 (7 trades, expectancy +0.007801, CI [+0.003356, +0.011626]).
 
-- [ ] **P3-02 — Ablation report**
-  Wire `scoring.fit.ablation` to a CLI command that drops each metric in turn
-  and reports the change in holdout objective. Any metric whose removal
-  improves the objective is a liability — flag those loudly in the output.
+- [x] **P3-02 — Ablation report**
+  Done 2026-08-09. `botsensai ablate --synthetic` (or `--out FILE`) runs
+  `scoring.fit.ablation`, prints a 34-metric table sorted measured-first by
+  objective contribution, highlights liability metrics in red with a warning
+  summary, and outputs caveats.
   _Depends on: P3-01._
-  _Accept:_ `python -m botsensai.cli ablate --synthetic` exits 0 and prints one row per registered metric.
+  _Accept:_ `python -m botsensai.cli ablate --synthetic` exits 0 and prints one row per registered metric. ✔ Exit 0, 34 rows printed, liabilities flagged loudly. `tests/test_ablation.py` passes 2/2 tests. Full suite 527 passed.
 
 - [ ] **P3-03 — Null-hypothesis baselines**
   Add baseline strategies to the backtester: random entry, buy-everything, and
