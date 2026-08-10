@@ -188,7 +188,7 @@ def split_tapes(
         created = tape.launch.created_at
         if fold.holds_test(created):
             test.append(tape)
-        elif fold.holds_train(created) and has_label(tape):
+        elif fold.holds_train(created) and _has_label(tape):
             train.append(tape)
     train.sort(key=lambda t: t.launch.created_at)
     test.sort(key=lambda t: t.launch.created_at)
