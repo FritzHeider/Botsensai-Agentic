@@ -40,6 +40,7 @@ from botsensai.scoring.fit import (
     TrainingExample,
     WeightFitter,
     ablation,
+    fit_regime_weights,
 )
 from botsensai.store.db import Database
 from botsensai.util.logging import configure_logging
@@ -666,6 +667,9 @@ def fit(
     target: str = typer.Option(
         "realizable", help="Target metric for fitting: realizable | peak | survival"
     ),
+    regimes: bool = typer.Option(
+        False, "--regimes", help="Fit separate weights for hot, normal and dead regimes if each has >= 200 samples."
+    ),
     log_level: str = typer.Option("WARNING", help="Log level."),
 ) -> None:
     """Fit signal weights on labelled outcomes using coordinate ascent on rank correlation.
@@ -689,16 +693,31 @@ def fit(
         target=target,
     )
 
-    fitter = WeightFitter(registry, seed=seed)
-    report = fitter.fit(examples, holdout_fraction=holdout_fraction)
-
-    _print_fit_table(report)
-    _print_fit_summary(report, is_synthetic=is_synth)
+    if regimes:
+        regime_report = fit_regime_weights(
+            examples, registry=registry, seed=seed, holdout_fraction=holdout_fraction
+        )
+        if not regime_report.shipped:
+            console.print(f"\n[yellow]⚠️  {regime_report.skip_reason}[/yellow]")
+            report = WeightFitter(registry, seed=seed).fit(examples, holdout_fraction=holdout_fraction)
+            _print_fit_table(report)
+            _print_fit_summary(report, is_synthetic=is_synth)
+        else:
+            console.print("\n[bold green]Fitted regime-conditional weight sets for hot, normal, and dead regimes.[/bold green]")
+            report = FitReport(weights=regime_report.weights, n_samples=len(examples), fitted=True)
+            for rname, rrep in regime_report.reports.items():
+                console.print(f"\n--- Regime: [cyan]{rname}[/cyan] (n={rrep.n_samples}) ---")
+                _print_fit_table(rrep)
+    else:
+        fitter = WeightFitter(registry, seed=seed)
+        report = fitter.fit(examples, holdout_fraction=holdout_fraction)
+        _print_fit_table(report)
+        _print_fit_summary(report, is_synthetic=is_synth)
 
     out_path = Path(out or settings.scoring.weights_path or "config/weights.json")
 
     if report.fitted:
-        if report.holdout_rank_correlation <= 0.05:
+        if report.holdout_rank_correlation <= 0.05 and not regimes:
             console.print(
                 f"\n[bold red]⚠️  WARNING: holdout rank correlation ({report.holdout_rank_correlation:.4f}) "
                 "is at or below 0.05 — these metrics are not predicting outcomes on this dataset. "

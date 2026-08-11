@@ -53,7 +53,7 @@ from botsensai.config import BacktestSettings, Settings, get_settings
 from botsensai.labeller import LabelPolicy
 from botsensai.metrics import MetricRegistry, build_registry
 from botsensai.models import utcnow
-from botsensai.scoring.composite import Weights
+from botsensai.scoring.composite import CompositeScorer, Weights
 from botsensai.scoring.fit import MIN_SAMPLES_TO_FIT, FitReport, TrainingExample, WeightFitter
 from botsensai.util.logging import get_logger
 
@@ -441,9 +441,17 @@ class WalkForward:
             outcome = tape.outcome
             if outcome is None:  # pragma: no cover - split_tapes already filtered
                 continue
+            regime = CompositeScorer.classify_regime(
+                ctx.extra.get("market_regime", {}), self.settings.scoring
+            )
             examples.append(
                 TrainingExample.from_values(
-                    tape.token.key, when, values, outcome, target=self.fit_target
+                    tape.token.key,
+                    when,
+                    values,
+                    outcome,
+                    target=self.fit_target,
+                    regime=regime,
                 )
             )
         return examples

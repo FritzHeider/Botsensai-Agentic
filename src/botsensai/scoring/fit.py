@@ -41,6 +41,9 @@ log = get_logger(__name__)
 #: refuses rather than producing a number.
 MIN_SAMPLES_TO_FIT = 200
 
+#: Required minimum labelled samples PER REGIME to fit separate weights for hot, normal, and dead.
+MIN_SAMPLES_PER_REGIME = 200
+
 #: A decile of nineteen observations is one observation. Below this many samples
 #: `top_decile_lift` returns 0.0 — and since the objective is
 #: `0.4 * rank + 0.6 * lift`, that silently deletes sixty percent of it rather
@@ -63,6 +66,7 @@ class TrainingExample:
     values: dict[str, float]
     label: float
     weight: float = 1.0
+    regime: str = "unknown"
 
     @classmethod
     def from_values(
@@ -72,6 +76,7 @@ class TrainingExample:
         values: Sequence[MetricValue],
         outcome: Outcome,
         target: str = "realizable",
+        regime: str = "unknown",
     ) -> TrainingExample:
         """Build an example, choosing the target carefully.
 
@@ -100,6 +105,7 @@ class TrainingExample:
             as_of=as_of,
             values={v.metric_id: float(v.normalized) for v in values if v.normalized is not None},
             label=label,
+            regime=regime,
         )
 
 
@@ -589,16 +595,106 @@ def ablation(
     return report
 
 
+@dataclass
+class RegimeFitReport:
+    """Report for regime-conditional weight fitting across market regimes."""
+
+    weights: Weights
+    sample_counts: dict[str, int]
+    shipped: bool
+    skip_reason: str | None = None
+    reports: dict[str, FitReport] = field(default_factory=dict)
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "shipped": self.shipped,
+            "sample_counts": self.sample_counts,
+            "skip_reason": self.skip_reason,
+            "reports": {k: v.summary() for k, v in self.reports.items()},
+        }
+
+
+def fit_regime_weights(
+    examples: Sequence[TrainingExample],
+    registry: MetricRegistry | None = None,
+    seed: int = 1337,
+    *,
+    holdout_fraction: float = 0.25,
+    min_samples_per_regime: int = MIN_SAMPLES_PER_REGIME,
+) -> RegimeFitReport:
+    """Fit separate weightings for hot, normal, and dead regimes if each regime has enough samples.
+
+    Only ships regime-conditional weights if each regime ('hot', 'normal', 'dead') has at least
+    min_samples_per_regime labelled samples of its own; otherwise records why it was skipped
+    and returns global weights with shipped=False.
+    """
+    reg = registry or build_registry()
+    fitter = WeightFitter(reg, seed=seed)
+    global_fit = fitter.fit(examples, holdout_fraction=holdout_fraction)
+
+    by_regime: dict[str, list[TrainingExample]] = {"hot": [], "normal": [], "dead": []}
+    for e in examples:
+        if e.regime in by_regime:
+            by_regime[e.regime].append(e)
+
+    sample_counts = {k: len(v) for k, v in by_regime.items()}
+    insufficient = [k for k, count in sample_counts.items() if count < min_samples_per_regime]
+
+    if insufficient:
+        counts_str = ", ".join(f"{k}={sample_counts[k]}" for k in sorted(sample_counts))
+        skip_reason = (
+            f"Insufficient samples for regime-conditional fitting: {counts_str} "
+            f"(minimum {min_samples_per_regime} required per regime). "
+            "Skipping regime-specific weight shipping and falling back to global weights."
+        )
+        log.info("fit_regime_weights.skipped", reason=skip_reason)
+        return RegimeFitReport(
+            weights=global_fit.weights,
+            sample_counts=sample_counts,
+            shipped=False,
+            skip_reason=skip_reason,
+        )
+
+    regime_reports: dict[str, FitReport] = {}
+    parent_weights = Weights(
+        version=global_fit.weights.version,
+        families=dict(global_fit.weights.families),
+        metrics=dict(global_fit.weights.metrics),
+        fitted_on=global_fit.weights.fitted_on,
+        sample_size=global_fit.weights.sample_size,
+    )
+    for regime_name in ("hot", "normal", "dead"):
+        rfitter = WeightFitter(reg, seed=seed)
+        rfit = rfitter.fit(
+            by_regime[regime_name],
+            holdout_fraction=holdout_fraction,
+            version=f"{global_fit.weights.version}-{regime_name}",
+        )
+        regime_reports[regime_name] = rfit
+        parent_weights.regimes[regime_name] = rfit.weights
+
+    log.info("fit_regime_weights.shipped", sample_counts=sample_counts)
+    return RegimeFitReport(
+        weights=parent_weights,
+        sample_counts=sample_counts,
+        shipped=True,
+        reports=regime_reports,
+    )
+
+
 __all__ = [
     "LIABILITY_TOLERANCE",
+    "MIN_SAMPLES_PER_REGIME",
     "MIN_SAMPLES_TO_FIT",
     "TOP_DECILE_MIN_SAMPLES",
     "AblationReport",
     "AblationRow",
     "FitReport",
+    "RegimeFitReport",
     "TrainingExample",
     "WeightFitter",
     "ablation",
+    "fit_regime_weights",
     "spearman",
     "top_decile_lift",
 ]

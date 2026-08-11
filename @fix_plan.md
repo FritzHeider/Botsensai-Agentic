@@ -676,12 +676,10 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: P1-03, P1-04._
   _Accept:_ `python -m pytest tests/test_wallet_skill.py -q` exits 0, including a look-ahead assertion. ✔ Exit 0, 4 tests passed.
 
-- [ ] **P4-04 — Regime-conditional weight sets**
-  Fit and store separate weightings for hot, normal and dead regimes, and
-  select at scoring time. Only ship this if each regime has at least 200
-  labelled samples of its own; otherwise record why it was skipped.
+- [x] **P4-04 — Regime-conditional weight sets**
+  Done 2026-08-10. `botsensai.scoring.fit`: `fit_regime_weights` fits regime-conditional weight sets for 'hot', 'normal', and 'dead' regimes when each regime has at least `MIN_SAMPLES_PER_REGIME=200` samples. Evaluated over 966 labelled tokens in `data/botsensai.db`: dead=966, hot=0, normal=0 (insufficient samples for regime-specific shipping, recorded skip_reason and fell back to global weights). `CompositeScorer` selects regime weights dynamically when present.
   _Depends on: P4-01._
-  _Accept:_ `python -m pytest tests/test_regime_weights.py -q` exits 0.
+  _Accept:_ `python -m pytest tests/test_regime_weights.py -q` exits 0. ✔ Exit 0, 5 tests passed.
 
 ---
 

@@ -143,24 +143,36 @@ class Weights:
     metrics: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_METRIC_WEIGHTS))
     fitted_on: str | None = None
     sample_size: int = 0
+    regimes: dict[str, Weights] = field(default_factory=dict)
+
+    def get_weights_for_regime(self, regime: str) -> Weights:
+        if self.regimes and regime in self.regimes:
+            return self.regimes[regime]
+        return self
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "version": self.version,
             "families": self.families,
             "metrics": self.metrics,
             "fitted_on": self.fitted_on,
             "sample_size": self.sample_size,
         }
+        if self.regimes:
+            out["regimes"] = {k: v.to_dict() for k, v in self.regimes.items()}
+        return out
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Weights:
+        regimes_raw = data.get("regimes") or {}
+        regimes = {k: cls.from_dict(v) for k, v in regimes_raw.items()} if regimes_raw else {}
         return cls(
             version=data.get("version", "v0"),
             families=dict(data.get("families") or DEFAULT_FAMILY_WEIGHTS),
             metrics=dict(data.get("metrics") or DEFAULT_METRIC_WEIGHTS),
             fitted_on=data.get("fitted_on"),
             sample_size=int(data.get("sample_size", 0)),
+            regimes=regimes,
         )
 
     def save(self, path: str | Path) -> None:
@@ -388,6 +400,8 @@ class CompositeScorer:
         return "normal"
 
     def effective_family_weights(self, regime: str) -> dict[str, float]:
+        if self.weights.regimes and regime in self.weights.regimes:
+            return dict(self.weights.regimes[regime].families)
         adjustments = REGIME_ADJUSTMENTS.get(regime, {})
         adjusted = {
             family: base * adjustments.get(family, 1.0)
@@ -413,6 +427,7 @@ class CompositeScorer:
         market = ctx.extra.get("market_regime", {})
         resolved_regime = regime or self.classify_regime(market, self.settings.scoring)
         family_weights = self.effective_family_weights(resolved_regime)
+        active_weights = self.weights.get_weights_for_regime(resolved_regime)
 
         # Group usable values by family so weights can be renormalized within
         # each family independently. This is what stops a family whose data
@@ -428,7 +443,7 @@ class CompositeScorer:
             if confidence_factor <= 0:
                 by_family.setdefault(family, [])
                 continue
-            base = self.weights.metrics.get(value.metric_id, 0.0)
+            base = active_weights.metrics.get(value.metric_id, 0.0)
             if base <= 0:
                 # Unlisted metric: give it a small default so a newly added
                 # metric contributes something before weights are refitted.
