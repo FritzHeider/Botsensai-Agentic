@@ -1660,7 +1660,53 @@ def recap(
         console.print(f"\nwrote {path}")
 
 
+@app.command(name="track-record")
+def track_record(
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    days: float = typer.Option(2.0, help="Window of history to evaluate in days."),
+    synthetic: bool = typer.Option(
+        False, "--synthetic", help="Force a synthetic run instead of using the store."
+    ),
+    universe: int = typer.Option(60, help="Synthetic universe size when running synthetic."),
+    capital: float = typer.Option(10.0, help="Starting capital in native units (SOL)."),
+    out: str = typer.Option(
+        "docs/TRACK_RECORD.md", "--out", help="Path to write the track record markdown file."
+    ),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Run paper-trading evaluation and publish a rolling performance track record."""
+    settings = _settings(config, log_level)
+    _banner(settings)
+
+    from botsensai.execution.track_record import build_track_record
+
+    result, markdown = build_track_record(
+        settings, days=days, synthetic=synthetic, universe=universe, capital=capital
+    )
+
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(markdown, encoding="utf-8")
+
+    summary = result.summary()
+    low_ci, high_ci = result.bootstrap_expectancy_ci()
+
+    table = Table(title="paper-trading track record summary")
+    table.add_column("metric")
+    table.add_column("value", justify="right")
+    table.add_row("evaluated tokens", str(result.evaluated))
+    table.add_row("entered positions", str(result.entered))
+    table.add_row("completed trades", str(len(result.trades)))
+    table.add_row("win rate", f"{summary.get('win_rate', 0.0):.2%}")
+    table.add_row("total return", f"{summary.get('total_return', 0.0):+.2%}")
+    table.add_row("expectancy", f"{summary.get('expectancy_native', 0.0):+.6f} SOL/trade")
+    table.add_row("bootstrap 95% CI", f"[{low_ci:+.6f}, {high_ci:+.6f}] SOL/trade")
+    console.print(table)
+    console.print(f"\nwrote track record to [green]{out}[/green]")
+
+
 def main() -> None:
+
     app()
 
 

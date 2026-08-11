@@ -13,6 +13,10 @@ from botsensai.execution.calibration import (
     evaluate_fill_calibration,
 )
 from botsensai.execution.fills import CurveState, FillContext, FillSimulator
+from botsensai.execution.track_record import (
+    build_track_record,
+    generate_track_record_markdown,
+)
 
 __all__ = [
     "AccountState",
@@ -24,7 +28,10 @@ __all__ = [
     "PaperBroker",
     "RiskManager",
     "build_broker",
+    "build_track_record",
     "calibrate_execution_settings",
     "evaluate_fill_calibration",
+    "generate_track_record_markdown",
 ]
+
 
