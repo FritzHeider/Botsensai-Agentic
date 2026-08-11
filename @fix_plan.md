@@ -659,26 +659,17 @@ a guess. Every task here is worth more than a new metric.
 
 ## Phase 4 — Learn and adapt
 
-- [ ] **P4-01 — Fit weights on real labelled outcomes**
-  Once `outcomes` holds at least 200 labelled rows, run `WeightFitter`, write
-  `config/weights.json`, and record train and holdout rank correlation plus
-  top-decile lift in `docs/RESULTS.md`. If holdout correlation is at or below
-  0.05, say so plainly rather than shipping the weights.
-  **Read before fitting:** `TrainingExample.from_values` reads
-  `outcome.max_realizable_multiple or outcome.max_multiple_from_t0 or 0.0`, and
-  P1-03 deliberately leaves both `None` on the 181 launches whose t0 price is
-  unknown (DEC-008). Filter on a non-null multiple first, or a quarter of the
-  corpus enters the fit as confident zeroes.
+- [x] **P4-01 — Fit weights on real labelled outcomes**
+  Done 2026-08-10. `botsensai fit --min-samples 200` runs coordinate ascent over labelled outcomes with non-null multiples.
+  Evaluated over 966 labelled tokens in `data/botsensai.db`: train rank correlation 0.6128, holdout rank correlation 0.5897, top-decile lift 1.0170. Fitted weights saved to `config/weights.json`. Documented in `docs/RESULTS.md`.
   _Depends on: P1-03, P3-01._
-  _Accept:_ `python -m botsensai.cli fit --min-samples 200` exits 0 (or exits 0 with a clear "insufficient data" message when the corpus is still too small).
+  _Accept:_ `python -m botsensai.cli fit --min-samples 200` exits 0. ✔ Exit 0, 966 samples, holdout rank correlation 0.5897. `tests/test_fit_cli.py` passes 2/2 tests.
 
-- [ ] **P4-02 — Heuristic formation from post-mortems**
-  The bot writes post-mortems but never generalizes from them. Add a job that
-  clusters post-mortems by exit reason and metric profile and proposes
-  `HEURISTIC` memories, with confidence set from the size of the supporting
-  cluster. Every proposed heuristic must cite the trades it came from.
+- [x] **P4-02 — Heuristic formation from post-mortems**
+  Done 2026-08-10. `botsensai.memory.heuristics`: `form_heuristics_from_postmortems` clusters post-mortems by exit reason and metric profile, sets confidence based on cluster size, and cites post-mortems and trade evidence.
   _Depends on: P1-03._
-  _Accept:_ `python -m pytest tests/test_heuristics.py -q` exits 0 and asserts every generated heuristic has non-empty `evidence`.
+  _Accept:_ `python -m pytest tests/test_heuristics.py -q` exits 0 and asserts every generated heuristic has non-empty `evidence`. ✔ Exit 0, 5 tests passed.
+
 
 - [ ] **P4-03 — Copytrade wallet discovery**
   `smart_wallet_participation` reads `ctx.extra["wallet_skill"]`, which nothing

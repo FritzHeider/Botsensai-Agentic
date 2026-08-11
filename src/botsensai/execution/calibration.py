@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from botsensai.config import ExecutionSettings
 from botsensai.execution.fills import CurveState, FillContext, FillSimulator
-from botsensai.models import Chain, CurveStage, MarketSnapshot, Order, Side, TokenRef
+from botsensai.models import Chain, CurveStage, MarketSnapshot, Order, Side, TokenRef, utcnow
 from botsensai.store.db import Database, _dt
 
 
@@ -84,9 +84,10 @@ def evaluate_fill_calibration(
         token = TokenRef(chain=Chain.SOLANA, mint=token_mint)
         stage = _parse_curve_stage(stage_str)
 
+        as_of_dt = _dt(t_as_of) or utcnow()
         snap = MarketSnapshot(
             token=token,
-            as_of=_dt(t_as_of),
+            as_of=as_of_dt,
             price_native=snap_price,
             liquidity_usd=liq_usd,
             bonding_curve_progress=progress,
@@ -96,7 +97,7 @@ def evaluate_fill_calibration(
         ctx = FillContext(snapshot=snap, curve=curve, recent_volatility=0.4)
         order = Order(
             token=token,
-            as_of=_dt(t_as_of),
+            as_of=as_of_dt,
             side=Side.BUY,
             size_native=amt_native,
             max_slippage_bps=50_000,

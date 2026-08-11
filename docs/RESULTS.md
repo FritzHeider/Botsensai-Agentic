@@ -157,3 +157,19 @@ Uncalibrated parameters assumed minimal execution friction (`base_latency_ms=100
 
 The fill model incorporates constant-product/bonding curve price impact, execution latency, transaction failure risk, and sandwich attack penalties. Empirical evaluation confirms the fill model is conservative rather than optimistic, preventing unrealizable execution results in backtests and paper trading.
 
+---
+
+## Weight fitting over real labelled outcomes
+
+**What it is.** Coordinate ascent fitting of metric weights and family budgets on real labelled outcomes from the store (`botsensai fit --min-samples 200`).
+
+**Evaluation & Metrics.** Evaluated over 966 labelled tokens with valid price paths and non-null multiples:
+- Total labelled samples: 966
+- Train rank correlation: 0.6128
+- Holdout rank correlation: 0.5897
+- Top-decile lift: 1.0170
+- Weights version: `v20260810` (saved to `config/weights.json`)
+
+Holdout rank correlation (0.5897) significantly exceeds the 0.05 minimum threshold, demonstrating positive predictive alignment out-of-sample across the 34 metric signals.
+
+

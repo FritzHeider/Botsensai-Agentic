@@ -25,7 +25,7 @@ from rich.table import Table
 
 from botsensai.backtest.baselines import BaselineComparison, evaluate_baselines, run_baselines
 from botsensai.backtest.engine import Backtester
-from botsensai.backtest.walkforward import WalkForward
+from botsensai.backtest.walkforward import WalkForward, _has_label
 from botsensai.config import Settings, TradingMode, get_settings, load_settings
 from botsensai.media import ContentGenerator
 from botsensai.memory.store import MemoryStore
@@ -33,7 +33,14 @@ from botsensai.metrics import build_registry, metric_catalogue
 from botsensai.models import MemoryKind, utcnow
 from botsensai.pipeline import Pipeline
 from botsensai.scoring import CompositeScorer, Weights
-from botsensai.scoring.fit import AblationReport, TrainingExample, ablation
+from botsensai.scoring.fit import (
+    MIN_SAMPLES_TO_FIT,
+    AblationReport,
+    FitReport,
+    TrainingExample,
+    WeightFitter,
+    ablation,
+)
 from botsensai.store.db import Database
 from botsensai.util.logging import configure_logging
 from botsensai.util.synthetic import generate_cohort, synthetic_outcome
@@ -631,6 +638,162 @@ def backtest(
             encoding="utf-8",
         )
         console.print(f"\nwrote {out}")
+
+
+# --------------------------------------------------------------------------- #
+# fit
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+def fit(
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    days: float = typer.Option(90.0, help="How far back to look for labelled outcomes in days."),
+    min_samples: int = typer.Option(
+        MIN_SAMPLES_TO_FIT, help="Minimum labelled samples required to fit."
+    ),
+    synthetic: bool = typer.Option(
+        False, "--synthetic", help="Force a synthetic run instead of using the store."
+    ),
+    universe: int = typer.Option(60, help="Synthetic universe size when running synthetic."),
+    holdout_fraction: float = typer.Option(
+        0.25, help="Fraction of examples reserved for holdout evaluation."
+    ),
+    seed: int = typer.Option(1337, help="RNG seed for fitting and splitting."),
+    out: str = typer.Option(
+        None, help="Write fitted weights to this JSON path (defaults to config/weights.json)."
+    ),
+    target: str = typer.Option(
+        "realizable", help="Target metric for fitting: realizable | peak | survival"
+    ),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Fit signal weights on labelled outcomes using coordinate ascent on rank correlation.
+
+    Reads labelled outcomes from the store (filtering on non-null realizable/peak multiples)
+    or generates a synthetic cohort, fits metric weights and family budgets, and evaluates
+    holdout rank correlation and top-decile lift.
+    """
+    settings = _settings(config, log_level)
+    _banner(settings)
+
+    registry = build_registry()
+    examples, is_synth = _fit_examples(
+        settings,
+        registry,
+        days=days,
+        min_samples=min_samples,
+        synthetic=synthetic,
+        universe=universe,
+        seed=seed,
+        target=target,
+    )
+
+    fitter = WeightFitter(registry, seed=seed)
+    report = fitter.fit(examples, holdout_fraction=holdout_fraction)
+
+    _print_fit_table(report)
+    _print_fit_summary(report, is_synthetic=is_synth)
+
+    out_path = Path(out or settings.scoring.weights_path or "config/weights.json")
+
+    if report.fitted:
+        if report.holdout_rank_correlation <= 0.05:
+            console.print(
+                f"\n[bold red]⚠️  WARNING: holdout rank correlation ({report.holdout_rank_correlation:.4f}) "
+                "is at or below 0.05 — these metrics are not predicting outcomes on this dataset. "
+                "Fitted weights will NOT be shipped.[/bold red]"
+            )
+        else:
+            report.weights.save(out_path)
+            console.print(f"\nwrote fitted weights to {out_path}")
+    else:
+        console.print(
+            f"\n[yellow]Fitting skipped ({len(examples)} < {min_samples} labelled examples). "
+            "Default weights remain unchanged.[/yellow]"
+        )
+
+
+def _fit_examples(
+    settings: Settings,
+    registry: Any,
+    *,
+    days: float,
+    min_samples: int,
+    synthetic: bool,
+    universe: int,
+    seed: int,
+    target: str,
+) -> tuple[list[TrainingExample], bool]:
+    """Load training examples from DB or generate synthetic ones."""
+    if not synthetic:
+        db = Database(settings.path(settings.db_path))
+        end = utcnow()
+        start = end - timedelta(days=days)
+        tapes = Backtester.tapes_from_database(db, start, end)
+        labelled = [t for t in tapes if _has_label(t)]
+        wf = WalkForward(settings, registry, fit_target=target)
+        examples = wf.training_examples(labelled)
+        if len(examples) >= min_samples:
+            return examples, False
+        console.print(
+            f"[yellow]store holds only {len(examples)} labelled training examples with valid multiples "
+            f"in the last {days} days — below threshold {min_samples}.[/yellow]"
+        )
+        if len(examples) > 0:
+            return examples, False
+
+    cohort = generate_cohort(n=universe, seed=seed)
+    outcomes = {t.launch.token.key: synthetic_outcome(t) for t in cohort}
+    tapes = Backtester.tapes_from_synthetic(cohort, outcomes=outcomes)
+    wf = WalkForward(settings, registry, fit_target=target)
+    return wf.training_examples(tapes), True
+
+
+def _print_fit_table(report: FitReport) -> None:
+    table = Table(title=f"weight fit report (n={report.n_samples}, fitted={report.fitted})")
+    table.add_column("family / metric", style="cyan")
+    table.add_column("weight", justify="right")
+    table.add_column("top-decile lift", justify="right")
+
+    table.add_section()
+    table.add_row("[bold]Family Budgets[/bold]", "", "")
+    for family, weight in report.weights.families.items():
+        table.add_row(f"  {family}", f"{weight:.4f}", "—")
+
+    table.add_section()
+    table.add_row("[bold]Metric Weights[/bold]", "", "")
+    for metric_id, weight in sorted(report.weights.metrics.items()):
+        lift = report.per_metric_lift.get(metric_id)
+        lift_str = f"{lift:.4f}" if lift is not None else "—"
+        table.add_row(f"  {metric_id}", f"{weight:.4f}", lift_str)
+
+    console.print(table)
+
+
+def _print_fit_summary(report: FitReport, *, is_synthetic: bool) -> None:
+    if is_synthetic:
+        console.print(
+            "\n[yellow bold]SYNTHETIC RUN:[/yellow bold] "
+            "Fitted against synthetic price paths and outcomes. "
+            "Proves execution, not predictive edge."
+        )
+
+    summary = report.summary()
+    console.print(
+        f"\n[bold]Fit summary:[/bold]\n"
+        f"  • samples: {summary['n_samples']}\n"
+        f"  • fitted: {summary['fitted']}\n"
+        f"  • train rank correlation: {summary['train_rank_correlation']:.4f}\n"
+        f"  • holdout rank correlation: {summary['holdout_rank_correlation']:.4f}\n"
+        f"  • top-decile lift: {summary['top_decile_lift']:.4f}\n"
+        f"  • version: {summary['weights_version']}"
+    )
+
+    if report.warnings:
+        console.print("\n[bold]Warnings / Caveats:[/bold]")
+        for w in report.warnings:
+            console.print(f"  • [yellow]{w}[/yellow]")
 
 
 # --------------------------------------------------------------------------- #
