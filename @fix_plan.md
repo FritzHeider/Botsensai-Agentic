@@ -671,13 +671,10 @@ a guess. Every task here is worth more than a new metric.
   _Accept:_ `python -m pytest tests/test_heuristics.py -q` exits 0 and asserts every generated heuristic has non-empty `evidence`. ✔ Exit 0, 5 tests passed.
 
 
-- [ ] **P4-03 — Copytrade wallet discovery**
-  `smart_wallet_participation` reads `ctx.extra["wallet_skill"]`, which nothing
-  populates. Build the skill scores from collected trade history: realized PnL
-  and entry earliness on tokens that subsequently ran, computed strictly from
-  trades closed before each evaluation point.
+- [x] **P4-03 — Copytrade wallet discovery**
+  Done 2026-08-10. `botsensai.onchain.wallet_skill`: `WalletSkillIndex` computes point-in-time realized PnL and entry earliness on runners for wallets, strictly bounded by `as_of < before` and `observed_at <= observed_before`. `Database.wallet_trades_before` fetches past trade history. Wired into `Pipeline.build_context` and `Backtester` to populate `ctx.extra["wallet_skill"]` and `ctx.extra["wallet_typical_size"]`.
   _Depends on: P1-03, P1-04._
-  _Accept:_ `python -m pytest tests/test_wallet_skill.py -q` exits 0, including a look-ahead assertion.
+  _Accept:_ `python -m pytest tests/test_wallet_skill.py -q` exits 0, including a look-ahead assertion. ✔ Exit 0, 4 tests passed.
 
 - [ ] **P4-04 — Regime-conditional weight sets**
   Fit and store separate weightings for hot, normal and dead regimes, and

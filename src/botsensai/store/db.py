@@ -1092,6 +1092,52 @@ class Database:
                 counts[row["wallet"]] = int(row["c"])
         return counts
 
+    def wallet_trades_before(
+        self,
+        wallets: Iterable[str],
+        before: datetime,
+        observed_before: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch trades for a set of wallets prior to `before` and `observed_before`.
+
+        Filters strictly on both time bounds (`as_of < before` and
+        `observed_at <= observed_before` if provided) to enforce point-in-time symmetry.
+        """
+        unique = list(dict.fromkeys(w for w in wallets if w))
+        if not unique:
+            return []
+
+        clause = ""
+        tail: list[Any] = []
+        if observed_before is not None:
+            clause = " AND t.observed_at <= ?"
+            tail = [_ts(observed_before)]
+
+        out: list[dict[str, Any]] = []
+        chunk_size = 400
+        for start in range(0, len(unique), chunk_size):
+            chunk = unique[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT t.wallet, t.token_key, t.side, t.amount_native, t.amount_token, "  # noqa: S608
+                f"t.as_of, t.observed_at, l.created_at AS launch_created_at "
+                f"FROM trades t LEFT JOIN launches l ON t.token_key = l.token_key "
+                f"WHERE t.wallet IN ({placeholders}) AND t.as_of < ?" + clause + " ORDER BY t.as_of ASC",
+                [*chunk, _ts(before), *tail],
+            ).fetchall()
+            for r in rows:
+                out.append({
+                    "wallet": str(r["wallet"]),
+                    "token_key": str(r["token_key"]),
+                    "side": str(r["side"]),
+                    "amount_native": float(r["amount_native"] or 0.0),
+                    "amount_token": float(r["amount_token"] or 0.0),
+                    "as_of": float(r["as_of"]),
+                    "observed_at": float(r["observed_at"]),
+                    "launch_created_at": float(r["launch_created_at"]) if r["launch_created_at"] is not None else None,
+                })
+        return out
+
     def refresh_wallet_profiles(self, wallets: Iterable[str] | None = None) -> int:
         """Fold `trades` into the `wallet_profiles` summary table.
 

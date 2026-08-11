@@ -46,6 +46,7 @@ from botsensai.models import (
     utcnow,
 )
 from botsensai.onchain.wallet_priors import WalletPriorIndex
+from botsensai.onchain.wallet_skill import WalletSkillIndex
 from botsensai.scoring.composite import CompositeScorer, Weights, score_to_size
 from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
@@ -72,6 +73,8 @@ class TokenTape:
     posts: list[Any] = field(default_factory=list)
     security: Any = None
     wallet_priors: dict[str, int] = field(default_factory=dict)
+    wallet_skills: dict[str, float] = field(default_factory=dict)
+    wallet_typical_sizes: dict[str, float] = field(default_factory=dict)
     outcome: Outcome | None = None
 
     @property
@@ -141,6 +144,8 @@ class TokenTape:
             recent_narratives=list(recent_narratives),
             extra={
                 "market_regime": market_regime or {},
+                "wallet_skill": self.wallet_skills,
+                "wallet_typical_size": self.wallet_typical_sizes,
                 **(extra or {}),
             },
         )
@@ -389,6 +394,7 @@ class Backtester:
         """Load a replayable universe from persisted collection data."""
         tapes: list[TokenTape] = []
         index = WalletPriorIndex(db)
+        skill_index = WalletSkillIndex(db)
         for launch in db.launches_between(start, end):
             key = launch.token.key
             horizon = end
@@ -414,6 +420,13 @@ class Backtester:
                 launch.created_at,
                 observed_before=launch.created_at,
             )
+            skills_res = skill_index.skills_for(
+                (t.wallet for t in tape.trades),
+                launch.created_at,
+                observed_before=launch.created_at,
+            )
+            tape.wallet_skills = skills_res.scores
+            tape.wallet_typical_sizes = skills_res.typical_sizes
             tapes.append(tape)
         return tapes
 
@@ -442,6 +455,8 @@ class Backtester:
                     posts=sorted(t.posts, key=lambda p: p.as_of),
                     security=t.security,
                     wallet_priors=t.wallet_priors,
+                    wallet_skills=getattr(t, "wallet_skills", {}),
+                    wallet_typical_sizes=getattr(t, "wallet_typical_sizes", {}),
                     outcome=labels.get(t.launch.token.key),
                 )
             )

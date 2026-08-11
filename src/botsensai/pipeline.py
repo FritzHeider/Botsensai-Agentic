@@ -69,6 +69,7 @@ from botsensai.onchain.funding import (
     FundingSourceResolver,
 )
 from botsensai.onchain.wallet_priors import WalletPriorIndex
+from botsensai.onchain.wallet_skill import WalletSkillIndex
 from botsensai.scoring.composite import CompositeScorer, score_to_size
 from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
@@ -210,6 +211,7 @@ class Pipeline:
         self.scorer = CompositeScorer(self.metrics, None, self.settings)
         self.broker = broker or PaperBroker(self.settings, starting_native=10.0)
         self.wallet_priors = WalletPriorIndex(self.db)
+        self.wallet_skills = WalletSkillIndex(self.db)
         # Funding is resolved over RPC, so the resolver is attached only when
         # that surface is enabled. Without it the index still serves whatever is
         # already cached, which is what a backtest needs and what an offline run
@@ -596,6 +598,9 @@ class Pipeline:
         priors = self.wallet_priors.priors_for(
             (t.wallet for t in trades), launch.created_at, observed_before=when
         )
+        skills_res = self.wallet_skills.skills_for(
+            (t.wallet for t in trades), before=when, observed_before=when
+        )
 
         return MetricContext(
             token=launch.token,
@@ -627,6 +632,8 @@ class Pipeline:
                 "fast_follower_share": self._fast_follower_share,
                 "target_position_usd": self.settings.risk.max_position_native * 150.0,
                 "max_impact_pct": self.settings.risk.max_slippage_bps / 10_000.0,
+                "wallet_skill": skills_res.scores,
+                "wallet_typical_size": skills_res.typical_sizes,
             },
         )
 
