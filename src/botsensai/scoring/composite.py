@@ -151,7 +151,7 @@ class Weights:
         return self
 
     def to_dict(self) -> dict[str, Any]:
-        out = {
+        out: dict[str, Any] = {
             "version": self.version,
             "families": self.families,
             "metrics": self.metrics,

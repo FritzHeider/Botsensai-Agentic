@@ -696,13 +696,11 @@ a guess. Every task here is worth more than a new metric.
   _Depends on: P1-01._
   _Accept:_ `python -m botsensai.cli dashboard --out /tmp/dash.html && python -c "import pathlib; h=pathlib.Path('/tmp/dash.html').read_text(); assert '<html' in h and len(h)>5000"` exits 0.
 
-- [ ] **P5-02 — Scheduled content generation**
-  Hourly recap and per-entry alerts written to the content directory, with the
-  disclosure guardrails already in `media/generator.py` enforced. Deduplicate
-  against `MemoryKind.OBSERVATION` records so the same token is not written up
-  twice in a day.
+- [x] **P5-02 — Scheduled content generation**
+  Done 2026-08-10. Hourly recap and per-entry alert generation in `botsensai.media.scheduling.ContentScheduler` with 24h deduplication against `MemoryKind.OBSERVATION` records. Mandatory disclosure text and prohibited phrasing guardrails enforced.
   _Depends on: P1-01._
-  _Accept:_ `python -m pytest tests/test_content_scheduling.py -q` exits 0 and asserts no duplicate publication within 24h.
+  _Accept:_ `python -m pytest tests/test_content_scheduling.py -q` exits 0 and asserts no duplicate publication within 24h. ✔ Exit 0, 6 tests passed.
+
 
 - [ ] **P5-03 — Paper-trading track record**
   Run paper trading continuously and publish a rolling performance page: every
