@@ -702,20 +702,15 @@ a guess. Every task here is worth more than a new metric.
   _Accept:_ `python -m pytest tests/test_content_scheduling.py -q` exits 0 and asserts no duplicate publication within 24h. ✔ Exit 0, 6 tests passed.
 
 
-- [ ] **P5-03 — Paper-trading track record**
-  Run paper trading continuously and publish a rolling performance page: every
-  entry, its score, its outcome, and cumulative expectancy with a confidence
-  interval. This is the artifact that decides whether any of this works.
+- [x] **P5-03 — Paper-trading track record**
+  Done 2026-08-12. `botsensai track-record --out docs/TRACK_RECORD.md` runs paper trading over real store data (or synthetic with `--synthetic`) and publishes a rolling track record including every trade, score, and bootstrap confidence intervals on expectancy.
   _Depends on: P1-01, P3-03._
-  _Accept:_ `python -m botsensai.cli track-record --out docs/TRACK_RECORD.md` exits 0 and the output contains a bootstrap confidence interval.
+  _Accept:_ `python -m botsensai.cli track-record --out docs/TRACK_RECORD.md` exits 0 and the output contains a bootstrap confidence interval. ✔ Exit 0, successfully generated track record.
 
-- [ ] **P5-04 — Kill-switch and alerting**
-  Trip `RiskSettings.kill_switch` automatically on: daily loss limit breached,
-  three consecutive collector sweeps fully degraded, or paper expectancy over
-  the last 50 trades below a configured floor. Log loudly when it trips and
-  require a manual reset.
+- [x] **P5-04 — Kill-switch and alerting**
+  Done 2026-08-12. Automatically trips `RiskSettings.kill_switch` when: daily loss limit is breached, three consecutive sweeps are fully degraded, or paper expectancy over the last 50 trades falls below the configured expectancy floor. Logs loudly when tripped and requires a manual reset.
   _Depends on: P5-03._
-  _Accept:_ `python -m pytest tests/test_kill_switch.py -q` exits 0 for all three trip conditions.
+  _Accept:_ `python -m pytest tests/test_kill_switch.py -q` exits 0 for all three trip conditions. ✔ Exit 0, 3 tests passed.
 
 ---
 

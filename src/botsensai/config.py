@@ -128,6 +128,7 @@ class RiskSettings(BaseModel):
     trailing_stop_pct: float = 0.35
     max_hold_seconds: float = 60 * 60 * 4
     kill_switch: bool = False
+    expectancy_floor: float = -0.05
 
     @model_validator(mode="after")
     def _check_ladder(self) -> RiskSettings:

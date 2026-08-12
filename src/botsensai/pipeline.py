@@ -242,6 +242,7 @@ class Pipeline:
         #: The most recent (or in-flight) collection session, for callers that
         #: need to report on a run that was interrupted rather than returned.
         self.last_session: CollectionSession | None = None
+        self._consecutive_degraded_sweeps: int = 0
 
     def _default_collectors(self) -> list[Collector]:
         """Market surfaces first, then social.
@@ -840,6 +841,7 @@ class Pipeline:
         discovered = await self._sweep_discover(report, discover_limit)
         if discovered is None:
             report.finished_at = utcnow()
+            self._check_and_trip_kill_switch(report)
             return report
 
         regime = self.compute_regime()
@@ -850,6 +852,7 @@ class Pipeline:
         report.screened_in = len(candidates)
         if not candidates:
             report.finished_at = utcnow()
+            self._check_and_trip_kill_switch(report)
             return report
 
         await self._sweep_enrich(report, candidates)
@@ -875,8 +878,58 @@ class Pipeline:
         self._manage_open_positions(report)
         self.review_closed_positions()
         report.finished_at = utcnow()
+        self._check_and_trip_kill_switch(report)
         log.info("pipeline.sweep", **report.summary())
         return report
+
+    def _is_sweep_fully_degraded(self, report: SweepReport) -> bool:
+        discover_failed = any("discover failed" in err for err in report.errors) or ("discover" in report.degraded_surfaces)
+        if not discover_failed:
+            return False
+        enrich_failed = (report.screened_in == 0) or any("enrich failed" in err for err in report.errors) or ("enrich" in report.degraded_surfaces)
+        return enrich_failed
+
+    def _check_and_trip_kill_switch(self, report: SweepReport) -> None:
+        if self.broker.account.daily_loss_native >= self.settings.risk.max_daily_loss_native:
+            self._trip_kill_switch(
+                f"daily loss limit breached: {self.broker.account.daily_loss_native:.4f} >= {self.settings.risk.max_daily_loss_native:.4f} native"
+            )
+            return
+
+        if self._is_sweep_fully_degraded(report):
+            self._consecutive_degraded_sweeps += 1
+        else:
+            self._consecutive_degraded_sweeps = 0
+
+        if self._consecutive_degraded_sweeps >= 3:
+            self._trip_kill_switch(
+                f"three consecutive collector sweeps fully degraded (count: {self._consecutive_degraded_sweeps})"
+            )
+            return
+
+        closed = self.broker.account.closed
+        if len(closed) >= 50:
+            last_50 = closed[-50:]
+            total_pnl = sum(p.realized_pnl_native for p in last_50)
+            expectancy = total_pnl / 50
+            if expectancy < self.settings.risk.expectancy_floor:
+                self._trip_kill_switch(
+                    f"paper expectancy over last 50 trades below floor: {expectancy:.6f} < {self.settings.risk.expectancy_floor:.6f} native"
+                )
+                return
+
+    def _trip_kill_switch(self, reason: str) -> None:
+        if self.settings.risk.kill_switch:
+            return
+        self.settings.risk.kill_switch = True
+        log.error(
+            "*" * 80 + "\n"
+            "!!! RISK ALERT: KILL SWITCH TRIPPED !!!\n"
+            f"REASON: {reason}\n"
+            "SYSTEM HAS ENGAGED THE KILL SWITCH. NO NEW ENTRIES WILL BE ALLOWED.\n"
+            "MANUAL RESET REQUIRED.\n"
+            "*" * 80
+        )
 
     # -- the collection loop ------------------------------------------------ #
 
