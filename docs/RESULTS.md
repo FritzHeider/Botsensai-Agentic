@@ -127,13 +127,32 @@ handle-shaped X link** (measured 2026-08-04, P2-06).
 
 ## Walk-forward results over real collected data
 
-**Not yet measured.** `BacktestSettings` describes train/test/step/embargo and
-nothing consumes it yet; P3-01 implements the rolling harness, P3-03 adds the
-null-hypothesis baselines (random entry, buy-everything, buy-highest-volume)
-that any reported edge has to beat on the same universe and the same fill
-model. When those land, the result belongs in this section **with its sample
-size and confidence interval** — `BacktestResult.summary()` already attaches
-the caveats, and they are not to be stripped on the way into this file.
+**Evaluated over real collected data in data/botsensai.db.** Replayed using the rolling WalkForward harness with parameters:
+- **Train Days**: 14.0 days
+- **Test Days**: 7.0 days
+- **Step Days**: 7.0 days
+- **Embargo Hours**: 24.0 hours
+
+### Pooled Walk-Forward Backtest Summary
+
+| Metric | Value |
+| :--- | :--- |
+| **Folds planned/run** | 112 |
+| **Fitted folds** | 1 / 112 |
+| **Evaluated Universe** | 1477 tokens |
+| **Tokens Evaluated** | 634 |
+| **Positions Entered** | 0 |
+| **Completed Trades** | 0 |
+| **Win Rate** | 0.00% |
+| **Realized PnL** | 0.000000 SOL |
+| **Expectancy** | 0.000000 SOL / trade |
+| **Bootstrap 95% Confidence Interval** | **No interval** (0 out-of-sample trades below threshold) |
+
+### Caveats & Findings
+- **Sample Size Warning**: only 0 trades; this is far below the sample needed for any conclusion in a fat-tailed return distribution
+- **Data Density**: Real collected data is highly concentrated in the most recent period (late July / early August 2026). As a result, only 1 out of 112 folds met the 200-sample fitting threshold (MIN_SAMPLES_TO_FIT), while previous folds fell back to default weights.
+- **Edge Assessment**: With 0 trades executed out-of-sample, we cannot distinguish any positive predictive edge over the null-hypothesis baselines on this real dataset.
+
 
 ---
 

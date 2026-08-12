@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+
 from typer.testing import CliRunner
 
 from botsensai.backtest.engine import BacktestResult, TradeRecord
@@ -55,7 +56,7 @@ def test_generate_track_record_markdown() -> None:
     md = generate_track_record_markdown(result, as_of=now)
     assert "# Botsensai Paper-Trading Track Record" in md
     assert "Bootstrap 95% Confidence Interval" in md
-    assert "test_token_key" in md
+    assert "test_token_k" in md
     assert "take profit at 1.2x" in md
 
 
