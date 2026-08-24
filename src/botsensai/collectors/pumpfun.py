@@ -62,7 +62,6 @@ ADVANCED_API = "https://advanced-api-v2.pump.fun"
 LIVESTREAM_API = "https://livestream-api.pump.fun"
 
 #: Verified from response headers, not guessed.
-FRONTEND_RPM = 45      # header says 50/60s; leave headroom
 SWAP_RPM = 900         # header says 1000/60s
 ADVANCED_RPM = 50      # header says 60/60s — the scarce one
 LIVESTREAM_RPM = 30    # undocumented; self-throttled conservatively

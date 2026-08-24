@@ -32,8 +32,6 @@ from botsensai.util.text import (
     template_cluster_share,
 )
 
-SOCIAL_SURFACES = ("x", "instagram", "tiktok", "reddit", "telegram", "pumpfun")
-
 
 class ReplyTemplateRatio(Metric):
     """Share of replies that belong to a repeated-template cluster.

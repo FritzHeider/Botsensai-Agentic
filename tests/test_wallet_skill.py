@@ -257,6 +257,6 @@ def test_smart_wallet_participation_metric_integration() -> None:
         },
     )
 
-    val, count, notes = metric.compute(ctx)
+    val, _count, notes = metric.compute(ctx)
     assert val is not None and val > 0.0
     assert "skilled wallets participating" in notes

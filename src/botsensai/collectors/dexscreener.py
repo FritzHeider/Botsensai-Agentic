@@ -18,7 +18,6 @@ Marketing spend is genuinely informative in both directions and no other source
 carries it. A token spending heavily on boosts while its organic engagement
 metrics stay flat is buying the appearance of traction; a token whose organic
 metrics run ahead of its promotion spend is the rarer and more interesting case.
-The `boost_to_liquidity` ratio computed here is what makes that comparison.
 
 Rate limits are documented per endpoint family and differ by a factor of five,
 so the two families get separate pacers.
@@ -388,26 +387,6 @@ class DexscreenerCollector(Collector):
         return result
 
     # -- derived signals ---------------------------------------------------- #
-
-    @staticmethod
-    def boost_to_liquidity(
-        boosts: dict[str, dict[str, Any]], snapshot: MarketSnapshot
-    ) -> float | None:
-        """Promotion spend relative to the liquidity it is promoting.
-
-        A high ratio means the team is spending a large fraction of the token's
-        entire economic size on visibility, which is what a launch does when it
-        has nothing else working. Returned as a raw ratio for the narrative
-        metrics to consume.
-        """
-        record = boosts.get(snapshot.token.key)
-        if record is None:
-            return None
-        total = _f(record.get("totalAmount")) or 0.0
-        liquidity = snapshot.liquidity_usd or 0.0
-        if liquidity <= 0:
-            return None
-        return total / liquidity
 
     @staticmethod
     def active_themes(metas: Sequence[dict[str, Any]], top_n: int = 8) -> list[tuple[str, float]]:

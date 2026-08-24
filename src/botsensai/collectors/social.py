@@ -65,9 +65,6 @@ X_TIMELINE_HOST = "https://syndication.twitter.com"
 #: Live single-tweet endpoint. Different host, different (much looser) bucket.
 X_TWEET_HOST = "https://cdn.syndication.twimg.com"
 
-#: Measured: 12 requests then HTTP 429, still 429 at t+311s, recovered near
-#: t+600s. That is ~12 per 15 minutes, so under one request per minute.
-X_TIMELINE_RPM = 0.7
 #: Measured: 40/40 consecutive requests returned 200 with no throttling.
 X_TWEET_RPM = 40.0
 
@@ -449,39 +446,6 @@ class XCollector(Collector):
             media_urls=media_urls,
             source=f"{self.name}:syndication-timeline",
         )
-
-    # -- per-tweet velocity ------------------------------------------------- #
-
-    async def tweet_engagement(self, tweet_id: str) -> dict[str, Any] | None:
-        """Current engagement on one post, from the unthrottled host.
-
-        Only `favorite_count` and `conversation_count` are returned — verified by
-        a full key dump, this endpoint carries no retweet, quote or reply counts.
-        Its value is that it can be polled every few seconds without penalty,
-        which turns it into an engagement-*velocity* probe. The inter-arrival
-        regularity of that series is what `reply_rhythm_naturalness` consumes.
-        """
-        url = f"{X_TWEET_HOST}/tweet-result"
-        try:
-            payload = await self.tweets.get_json(
-                url,
-                params={"id": tweet_id, "token": x_tweet_token(tweet_id), "lang": "en"},
-                cache_ttl=15.0,
-            )
-            _require_body(payload, url)
-        except Exception as exc:
-            log.debug("x.tweet_result_failed", tweet_id=tweet_id, error=str(exc))
-            return None
-        if not isinstance(payload, dict):
-            return None
-        return {
-            "id": payload.get("id_str"),
-            "favorite_count": _int(payload.get("favorite_count")),
-            "conversation_count": _int(payload.get("conversation_count")),
-            "created_at": _iso(payload.get("created_at")),
-            "text": payload.get("text"),
-            "observed_at": utcnow(),
-        }
 
     # -- browser fallback --------------------------------------------------- #
 
@@ -1111,18 +1075,13 @@ class TelegramChannelCollector(Collector):
             return "tgme_widget_message" in (html or "")
         return False
 
-    async def channel_messages(self, channel: str, limit: int = 20) -> list[SocialPost]:
-        """The channel's latest messages. Empty for both "no page" and "no posts"."""
-        return (await self.read_channel(channel, limit))[0]
-
     async def read_channel(
         self, channel: str, limit: int = 20
     ) -> tuple[list[SocialPost], ChannelRead]:
         """The messages, plus a record of the attempt itself.
 
-        The record is the point. `channel_messages` returns `[]` for a channel
-        that answered with an empty page and for one we never reached, and those
-        two are opposite facts: the first says this handle is not a readable
+        The record is the point. An unreadable channel and an unreachable network
+        are opposite facts: the first says this handle is not a readable
         channel, the second says the network had a bad minute. Measured
         2026-08-04, an unreadable handle is *always* the first shape here —
         `t.me/s/pisklauren` and a handle nobody has registered both answer HTTP

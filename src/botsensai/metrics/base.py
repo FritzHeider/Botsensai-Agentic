@@ -110,13 +110,6 @@ class MetricContext:
         cutoff = self.as_of - timedelta(seconds=seconds)
         return [t for t in self.trades if t.as_of >= cutoff]
 
-    def posts_within(self, seconds: float, platform: Platform | None = None) -> list[SocialPost]:
-        cutoff = self.as_of - timedelta(seconds=seconds)
-        out = [p for p in self.posts if p.as_of >= cutoff]
-        if platform is not None:
-            out = [p for p in out if p.platform == platform]
-        return out
-
     def posts_on(self, platform: Platform) -> list[SocialPost]:
         return [p for p in self.posts if p.platform == platform]
 
@@ -128,16 +121,6 @@ class MetricContext:
     @property
     def top_level_posts(self) -> list[SocialPost]:
         return [p for p in self.posts if p.parent_id is None and not p.is_repost]
-
-    def first_trades(self, n: int) -> list[Trade]:
-        """The earliest `n` trades by slot then time. The sniper cohort."""
-        return sorted(self.trades, key=lambda t: (t.slot if t.slot is not None else 0, t.as_of))[:n]
-
-    def trades_in_first_seconds(self, seconds: float) -> list[Trade]:
-        if self.launch is None:
-            return []
-        cutoff = self.launch.created_at + timedelta(seconds=seconds)
-        return [t for t in self.trades if t.as_of <= cutoff]
 
     def peer_sample(self, metric_id: str) -> list[float]:
         return self.peer_values.get(metric_id, [])
@@ -317,10 +300,6 @@ class MetricRegistry:
         self._metrics[metric.id] = metric
         return metric
 
-    def register_all(self, metrics: Sequence[Metric]) -> None:
-        for m in metrics:
-            self.register(m)
-
     def get(self, metric_id: str) -> Metric | None:
         return self._metrics.get(metric_id)
 
@@ -344,18 +323,6 @@ class MetricRegistry:
 
     def evaluate_all(self, ctx: MetricContext) -> list[MetricValue]:
         return [m.evaluate(ctx) for m in self._metrics.values()]
-
-    def calibrate_from(self, history: dict[str, Sequence[float]]) -> int:
-        """Calibrate every metric that has enough recorded history. Returns count."""
-        n = 0
-        for metric_id, samples in history.items():
-            metric = self._metrics.get(metric_id)
-            if metric is not None:
-                before = metric._calibrated
-                metric.calibrate(samples)
-                if metric._calibrated and not before:
-                    n += 1
-        return n
 
     def describe(self) -> list[dict[str, Any]]:
         return [m.describe() for m in self._metrics.values()]

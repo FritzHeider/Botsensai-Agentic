@@ -161,12 +161,6 @@ class WalletSkillIndex:
 
         return WalletSkillResult(scores=scores, typical_sizes=typical_sizes)
 
-    def skill_for(
-        self, wallet: str, before: datetime, observed_before: datetime | None = None
-    ) -> tuple[float, float]:
-        res = self.skills_for([wallet], before, observed_before)
-        return res.scores.get(wallet, 0.5), res.typical_sizes.get(wallet, 0.0)
-
     def _floor_observed(self, observed_before: datetime | None) -> datetime | None:
         if observed_before is None or not self.observed_bucket_seconds:
             return observed_before

@@ -12,7 +12,7 @@ Three capabilities matter here and none of them are available from plain HTTP:
   backend. Watching the network tab gives us that JSON in its native shape,
   already authenticated by the page's own session, without reverse-engineering
   or forging request signatures. This is the single highest-value technique in
-  the file and `capture_json` implements it.
+  the file and `json_matching` implements it.
 * **Session reuse.** Pointing `user_data_dir` at a logged-in Chrome profile lets
   the collector see what the operator can see, and nothing more.
 * **Rendered text.** For surfaces with no usable XHR, the DOM after hydration is
@@ -89,12 +89,6 @@ class PageResult:
     def json_matching(self, pattern: str) -> list[Any]:
         """Bodies of every captured response whose URL matches `pattern`."""
         return [c.body for c in self.captured if c.matches(pattern) and c.body is not None]
-
-    def first_json(self, pattern: str) -> Any | None:
-        for c in self.captured:
-            if c.matches(pattern) and c.body is not None:
-                return c.body
-        return None
 
 
 def _response_listener(
@@ -390,29 +384,6 @@ class WebUseDriver:
             with contextlib.suppress(Exception):
                 result.html = await page.content()
 
-    async def capture_json(
-        self,
-        url: str,
-        pattern: str,
-        *,
-        surface: str = "browser",
-        wait_ms: int = 3000,
-        scrolls: int = 0,
-        **kwargs: Any,
-    ) -> list[Any]:
-        """Convenience: visit `url` and return every JSON body whose request URL
-        matched `pattern`. The workhorse for launchpad and analytics collectors."""
-        result = await self.visit(
-            url,
-            surface=surface,
-            capture_patterns=[pattern],
-            wait_ms=wait_ms,
-            scrolls=scrolls,
-            extract_text=False,
-            **kwargs,
-        )
-        return result.json_matching(pattern)
-
     async def harvest_json(
         self,
         url: str,
@@ -429,7 +400,7 @@ class WebUseDriver:
     ) -> list[Any]:
         """Scroll an infinite feed, handing each round's JSON to `on_batch`.
 
-        `capture_json` answers "what did this page fetch on load"; this answers
+        `visit` answers "what did this page fetch on load"; this answers
         "keep scrolling until I have enough". The difference matters for exactly
         one reason: an infinite feed pays out a page of results per scroll, and
         the caller is the only one that knows when it has enough of them.

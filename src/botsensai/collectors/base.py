@@ -279,9 +279,6 @@ class CollectorRegistry:
         combined.finished_at = utcnow()
         return combined
 
-    def new_run_id(self) -> str:
-        return uuid.uuid4().hex[:12]
-
 
 def tag_posts(posts: Sequence[SocialPost], token_key: str) -> list[SocialPost]:
     """Stamp the token a batch of posts was collected for.

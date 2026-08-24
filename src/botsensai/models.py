@@ -446,9 +446,6 @@ class SocialBundle(Base):
 
     _v_bundle = field_validator("as_of", "observed_at")(_ensure_utc)
 
-    def by_platform(self, platform: Platform) -> list[SocialPost]:
-        return [p for p in self.posts if p.platform == platform]
-
 
 # --------------------------------------------------------------------------- #
 # Metrics and scoring
@@ -645,14 +642,6 @@ class MemoryEntry(Base):
     last_used_at: datetime | None = None
 
     _v_mem = field_validator("created_at", "valid_from")(_ensure_utc)
-
-    def active_at(self, t: datetime) -> bool:
-        t = _ensure_utc(t)
-        if t < self.valid_from:
-            return False
-        if self.valid_until is not None and t >= _ensure_utc(self.valid_until):
-            return False
-        return True
 
 
 # --------------------------------------------------------------------------- #

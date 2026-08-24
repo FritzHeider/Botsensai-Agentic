@@ -156,13 +156,6 @@ class CircuitBreaker:
         self._consecutive_trips += 1
         self._failures.clear()
 
-    def reset(self) -> None:
-        self._failures.clear()
-        self._state = BreakerState.CLOSED
-        self._consecutive_trips = 0
-        self._current_cooldown = self.cooldown_seconds
-        self._probe_in_flight = False
-
 
 class Pacer:
     """A named bucket + breaker pair, one per collector surface."""
@@ -182,10 +175,6 @@ class Pacer:
             existing = cls(name, requests_per_minute, max_concurrency)
             cls._registry[name] = existing
         return existing
-
-    @classmethod
-    def clear_registry(cls) -> None:
-        cls._registry.clear()
 
 
 __all__ = [

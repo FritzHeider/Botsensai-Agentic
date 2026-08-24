@@ -413,21 +413,6 @@ class PaperBroker:
                 out.append(fill)
         return out
 
-    def close_all(self, snapshots: dict[str, MarketSnapshot], as_of: datetime) -> list[Fill]:
-        """Liquidate everything. Used at the end of a backtest window."""
-        out: list[Fill] = []
-        for key in list(self.account.positions.keys()):
-            position = self.account.positions[key]
-            snapshot = snapshots.get(key)
-            if snapshot is None:
-                continue
-            fill = self.close_position(
-                position.token, snapshot, as_of, fraction=1.0, reason="end of window"
-            )
-            if fill is not None:
-                out.append(fill)
-        return out
-
     # -- reporting ---------------------------------------------------------- #
 
     def summary(self) -> dict[str, float | int]:
