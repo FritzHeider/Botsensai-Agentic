@@ -37,7 +37,7 @@ memory/         everything → durable notes            (time-bounded recall)
 pipeline.py     the loop that connects them
 ```
 
-Dependencies point strictly downward. `metrics/` cannot reach the database;
+Dependencies point strictly. downward. `metrics/` cannot reach the database;
 `scoring/` cannot reach a collector. That is what makes the whole stack testable
 against fixtures and replayable in a backtest.
 
