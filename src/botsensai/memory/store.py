@@ -23,7 +23,7 @@ import math
 import sqlite3
 import uuid
 from collections.abc import Iterable, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 

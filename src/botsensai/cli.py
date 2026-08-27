@@ -26,11 +26,20 @@ from rich.table import Table
 from botsensai.backtest.baselines import BaselineComparison, evaluate_baselines, run_baselines
 from botsensai.backtest.engine import Backtester
 from botsensai.backtest.walkforward import WalkForward, _has_label
-from botsensai.config import Settings, TradingMode, get_settings, load_settings
+from botsensai.config import (
+    Settings,
+    TradingMode,
+    detect_unknown_yaml_keys,
+    get_settings,
+    load_settings,
+)
+from botsensai.export import export_data
+from botsensai.inspector import inspect_token
 from botsensai.media import ContentGenerator
 from botsensai.memory.store import MemoryStore
 from botsensai.metrics import build_registry, metric_catalogue
 from botsensai.models import MemoryKind, utcnow
+from botsensai.onboarding import run_onboarding_wizard, show_config, validate_config
 from botsensai.pipeline import Pipeline
 from botsensai.scoring import CompositeScorer, Weights
 from botsensai.scoring.fit import (
@@ -43,6 +52,7 @@ from botsensai.scoring.fit import (
     fit_regime_weights,
 )
 from botsensai.store.db import Database
+from botsensai.supervisor import Supervisor
 from botsensai.util.logging import configure_logging
 from botsensai.util.synthetic import generate_cohort, synthetic_outcome
 from botsensai.watchlist import (
@@ -67,7 +77,24 @@ console = Console()
 
 
 def _settings(config: str | None = None, log_level: str = "INFO") -> Any:
-    settings = load_settings(config) if config else get_settings()
+    try:
+        settings = load_settings(config) if config else get_settings()
+    except Exception as exc:
+        console.print(
+            Panel(
+                f"[red]Configuration Error:[/red] {exc}\n\n"
+                "Run [bold]botsensai config check[/bold] or [bold]botsensai init[/bold] to diagnose.",
+                title="Config Error",
+            )
+        )
+        raise typer.Exit(1) from None
+
+    unknown_keys = detect_unknown_yaml_keys(config)
+    if unknown_keys:
+        console.print(
+            f"[yellow]⚠ Warning: Unknown config keys ignored: {', '.join(unknown_keys)}[/yellow]"
+        )
+
     configure_logging(log_level, settings.log_json)
     return settings
 
@@ -119,7 +146,8 @@ def doctor(
                 await collector.aclose()
         return rows
 
-    results = asyncio.run(probe())
+    with console.status("[bold green]Probing data surfaces for reachability..."):
+        results = asyncio.run(probe())
 
     table = Table(title="data surfaces")
     table.add_column("surface")
@@ -194,7 +222,13 @@ def explain(metric_id: str) -> None:
     metric = registry.get(metric_id)
     if metric is None:
         console.print(f"[red]unknown metric '{metric_id}'[/red]")
-        console.print(f"available: {', '.join(sorted(registry.ids()))}")
+        import difflib
+
+        suggestions = difflib.get_close_matches(metric_id, registry.ids(), n=3, cutoff=0.5)
+        if suggestions:
+            console.print(f"did you mean: [bold green]{', '.join(suggestions)}[/bold green]?")
+        else:
+            console.print(f"available: {', '.join(sorted(registry.ids()))}")
         raise typer.Exit(1)
 
     console.print(Panel(metric.name, title=metric.id, expand=False))
@@ -281,16 +315,24 @@ def collect(
         f"store holds {before['launches']} launches. Ctrl-C to stop early.\n"
     )
 
+    start_time = datetime.now()
+    sweep_count = 0
+
     def show(report: Any) -> None:
+        nonlocal sweep_count
+        sweep_count += 1
         summary = report.summary()
         stamp = report.started_at.strftime("%H:%M:%S")
+        elapsed = datetime.now() - start_time
+        elapsed_str = f"{elapsed.total_seconds() / 3600.0:.2f}h/{hours:g}h"
         note = ""
         if summary["degraded_surfaces"]:
             note = f"  [yellow]degraded: {', '.join(summary['degraded_surfaces'])}[/yellow]"
         console.print(
-            f"[dim]{stamp}[/dim] {summary['duration_seconds']:>5.1f}s  "
+            f"[dim]{stamp}[/dim] #{sweep_count:<3} {summary['duration_seconds']:>4.1f}s  "
             f"discovered {summary['discovered']:>3} → screened {summary['screened_in']:>3} → "
-            f"scored {summary['scored']:>3} → entered {summary['entered']}{note}"
+            f"scored {summary['scored']:>3} → entered {summary['entered']}  "
+            f"[dim]({elapsed_str})[/dim]{note}"
         )
         for error in summary["errors"]:
             console.print(f"  [red]{error}[/red]")
@@ -616,7 +658,8 @@ def backtest(
         settings, start, end, days=days, synthetic=synthetic, universe=universe
     )
 
-    result = tester.run(tapes, starting_native=capital, synthetic=synthetic)
+    with console.status("[bold cyan]Replaying market history through decision stack…"):
+        result = tester.run(tapes, starting_native=capital, synthetic=synthetic)
     summary = result.summary()
 
     comparison = None
@@ -693,26 +736,27 @@ def fit(
         target=target,
     )
 
-    if regimes:
-        regime_report = fit_regime_weights(
-            examples, registry=registry, seed=seed, holdout_fraction=holdout_fraction
-        )
-        if not regime_report.shipped:
-            console.print(f"\n[yellow]⚠️  {regime_report.skip_reason}[/yellow]")
-            report = WeightFitter(registry, seed=seed).fit(examples, holdout_fraction=holdout_fraction)
+    with console.status("[bold green]Fitting weights via coordinate ascent on rank correlation…"):
+        if regimes:
+            regime_report = fit_regime_weights(
+                examples, registry=registry, seed=seed, holdout_fraction=holdout_fraction
+            )
+            if not regime_report.shipped:
+                console.print(f"\n[yellow]⚠️  {regime_report.skip_reason}[/yellow]")
+                report = WeightFitter(registry, seed=seed).fit(examples, holdout_fraction=holdout_fraction)
+                _print_fit_table(report)
+                _print_fit_summary(report, is_synthetic=is_synth)
+            else:
+                console.print("\n[bold green]Fitted regime-conditional weight sets for hot, normal, and dead regimes.[/bold green]")
+                report = FitReport(weights=regime_report.weights, n_samples=len(examples), fitted=True)
+                for rname, rrep in regime_report.reports.items():
+                    console.print(f"\n--- Regime: [cyan]{rname}[/cyan] (n={rrep.n_samples}) ---")
+                    _print_fit_table(rrep)
+        else:
+            fitter = WeightFitter(registry, seed=seed)
+            report = fitter.fit(examples, holdout_fraction=holdout_fraction)
             _print_fit_table(report)
             _print_fit_summary(report, is_synthetic=is_synth)
-        else:
-            console.print("\n[bold green]Fitted regime-conditional weight sets for hot, normal, and dead regimes.[/bold green]")
-            report = FitReport(weights=regime_report.weights, n_samples=len(examples), fitted=True)
-            for rname, rrep in regime_report.reports.items():
-                console.print(f"\n--- Regime: [cyan]{rname}[/cyan] (n={rrep.n_samples}) ---")
-                _print_fit_table(rrep)
-    else:
-        fitter = WeightFitter(registry, seed=seed)
-        report = fitter.fit(examples, holdout_fraction=holdout_fraction)
-        _print_fit_table(report)
-        _print_fit_summary(report, is_synthetic=is_synth)
 
     out_path = Path(out or settings.scoring.weights_path or "config/weights.json")
 
@@ -848,7 +892,8 @@ def ablate(
         settings, registry, days=days, synthetic=synthetic, universe=universe, seed=seed
     )
 
-    report = ablation(examples, registry=registry, seed=seed, holdout_fraction=holdout_fraction)
+    with console.status("[bold yellow]Running ablation study across metric families…"):
+        report = ablation(examples, registry=registry, seed=seed, holdout_fraction=holdout_fraction)
 
     _print_ablation_table(report)
     _print_ablation_summary(report, is_synthetic=is_synth)
@@ -1703,6 +1748,127 @@ def track_record(
     table.add_row("bootstrap 95% CI", f"[{low_ci:+.6f}, {high_ci:+.6f}] SOL/trade")
     console.print(table)
     console.print(f"\nwrote track record to [green]{out}[/green]")
+
+
+# --------------------------------------------------------------------------- #
+# init & config
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+def init(
+    config: str = typer.Option(None, help="Custom path for config YAML."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Run non-interactively with defaults."),
+) -> None:
+    """Guided onboarding wizard to verify environment, API keys, and configuration."""
+    run_onboarding_wizard(Path(config) if config else None, non_interactive=yes)
+
+
+config_app = typer.Typer(help="Inspect and validate configuration.", no_args_is_help=True)
+app.add_typer(config_app, name="config")
+
+
+@config_app.command(name="check")
+def config_check(
+    config: str = typer.Option(None, help="Path to config YAML."),
+) -> None:
+    """Validate configuration syntax and report unknown keys or typos."""
+    ok = validate_config(Path(config) if config else None)
+    if not ok:
+        raise typer.Exit(1)
+
+
+@config_app.command(name="show")
+def config_show(
+    config: str = typer.Option(None, help="Path to config YAML."),
+    as_json: bool = typer.Option(False, "--json", help="Emit as JSON instead of YAML."),
+) -> None:
+    """Display the effective loaded configuration."""
+    show_config(Path(config) if config else None, as_json=as_json)
+
+
+# --------------------------------------------------------------------------- #
+# run (unified supervisor)
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+def run(
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    hours: float = typer.Option(None, "--hours", help="How long to keep running in hours (default: run forever)."),
+    stream: bool = typer.Option(True, "--stream/--no-stream", help="Enable pump.fun WebSocket mint stream."),
+    sweep: bool = typer.Option(True, "--sweep/--no-sweep", help="Enable periodic REST discovery and scoring sweeps."),
+    autolabel: bool = typer.Option(True, "--autolabel/--no-autolabel", help="Enable background outcome labelling."),
+    interval: float = typer.Option(60.0, help="Seconds between discovery sweeps."),
+    limit: int = typer.Option(60, help="Launches to pull per sweep."),
+    candidates: int = typer.Option(20, help="Survivors to enrich and score per sweep."),
+    log_level: str = typer.Option("INFO", help="Log level."),
+) -> None:
+    """Run the unified multi-task supervisor (Streamer, Sweeper, Labeller, Sentinel)."""
+    settings = _settings(config, log_level)
+    if settings.trading_mode is TradingMode.LIVE:
+        console.print("[red]refusing to run in live mode; this build cannot trade[/red]")
+        raise typer.Exit(2)
+    _banner(settings)
+
+    supervisor = Supervisor(
+        settings=settings,
+        enable_stream=stream,
+        enable_sweep=sweep,
+        enable_labeller=autolabel,
+        sweep_interval=interval,
+        discovery_limit=limit,
+        candidates_limit=candidates,
+    )
+
+    max_seconds = hours * 3600.0 if hours else None
+    try:
+        asyncio.run(supervisor.run(max_seconds=max_seconds))
+    except KeyboardInterrupt:
+        console.print("\n[yellow]interrupted; shutting down supervisor cleanly...[/yellow]")
+    finally:
+        supervisor.print_summary()
+
+
+# --------------------------------------------------------------------------- #
+# inspect
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+def inspect(
+    query: str = typer.Argument(..., help="Solana mint address, pump.fun/Dexscreener URL, or $TICKER."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Enrich on-chain and social signals."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Inspect and score any token from a URL, ticker ($SYMBOL), or mint address."""
+    settings = _settings(config, log_level)
+    asyncio.run(inspect_token(query, settings, deep_enrich=enrich))
+
+
+# --------------------------------------------------------------------------- #
+# export
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+def export(
+    table: str = typer.Argument(..., help="Table to export: launches | outcomes | market_snapshots | paper_orders"),
+    format: str = typer.Option("csv", "--format", help="Export format: csv | json | jsonl | parquet"),
+    out: str = typer.Option(None, "--out", help="Output file path."),
+    limit: int = typer.Option(None, help="Limit number of rows exported."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Export SQLite store records to CSV, JSON, or Parquet."""
+    settings = _settings(config, log_level)
+    try:
+        dest = export_data(settings, table=table, output_format=format, out_file=out, limit=limit)
+        console.print(f"[green]✓ Exported table '{table}' to[/green] [bold]{dest}[/bold]")
+    except Exception as exc:
+        console.print(f"[red]Export failed:[/red] {exc}")
+        raise typer.Exit(1) from None
 
 
 def main() -> None:

@@ -16,7 +16,6 @@ from __future__ import annotations
 import abc
 import asyncio
 import time
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime

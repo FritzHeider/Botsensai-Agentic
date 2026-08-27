@@ -248,6 +248,21 @@ class BacktestSettings(BaseModel):
     seed: int = 1337
 
 
+class NotificationSettings(BaseModel):
+    """Notification endpoints and event triggers."""
+
+    enabled: bool = False
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+    discord_webhook_url: str | None = None
+    webhook_url: str | None = None
+    on_entry: bool = True
+    on_exit: bool = True
+    on_high_score: bool = True
+    min_score_alert: float = 0.68
+    on_integrity_alarm: bool = True
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="BOTSENSAI_",
@@ -299,6 +314,7 @@ class Settings(BaseSettings):
     media: MediaSettings = Field(default_factory=MediaSettings)
     media_hash: MediaHashSettings = Field(default_factory=MediaHashSettings)
     backtest: BacktestSettings = Field(default_factory=BacktestSettings)
+    notifications: NotificationSettings = Field(default_factory=NotificationSettings)
     collectors: dict[str, CollectorSettings] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -412,6 +428,61 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+def detect_unknown_yaml_keys(path: str | Path | None = None) -> list[str]:
+    """Inspect a YAML config file and return any unknown keys or typos."""
+    p = Path(config_path) if (config_path := path) else DEFAULT_CONFIG_PATH
+    if not p.exists():
+        return []
+    raw = _load_yaml(p)
+    if not isinstance(raw, dict):
+        return []
+
+    unknown: list[str] = []
+    valid_top = set(Settings.model_fields.keys())
+    for key, val in raw.items():
+        if key not in valid_top:
+            unknown.append(key)
+        elif isinstance(val, dict):
+            field_info = Settings.model_fields.get(key)
+            if field_info and field_info.annotation is not None and hasattr(field_info.annotation, "model_fields"):
+                sub_fields = set(field_info.annotation.model_fields.keys())
+                for sub_k in val:
+                    if sub_k not in sub_fields:
+                        unknown.append(f"{key}.{sub_k}")
+    return unknown
+
+
+def audit_capabilities(settings: Settings) -> dict[str, Any]:
+    """Summarize active vs optional capabilities based on settings & environment."""
+    import importlib.util
+
+    has_playwright = importlib.util.find_spec("playwright") is not None
+    has_sklearn = importlib.util.find_spec("sklearn") is not None
+    has_lightgbm = importlib.util.find_spec("lightgbm") is not None
+
+    return {
+        "trading_mode": settings.trading_mode.value,
+        "helius_rpc": bool(settings.helius_api_key),
+        "birdeye": bool(settings.birdeye_api_key),
+        "bitquery": bool(settings.bitquery_api_key),
+        "x_bearer": bool(settings.x_bearer_token),
+        "x_session": settings.x_session_enabled,
+        "telegram_api": bool(settings.telegram_api_id and settings.telegram_api_hash),
+        "reddit_api": bool(settings.reddit_client_id and settings.reddit_client_secret),
+        "youtube_api": bool(settings.youtube_api_key),
+        "notifications": bool(
+            settings.notifications.enabled
+            and (
+                settings.notifications.discord_webhook_url
+                or (settings.notifications.telegram_bot_token and settings.notifications.telegram_chat_id)
+                or settings.notifications.webhook_url
+            )
+        ),
+        "playwright_installed": has_playwright,
+        "ml_installed": has_sklearn and has_lightgbm,
+    }
+
+
 def load_settings(config_path: str | Path | None = None, **overrides: Any) -> Settings:
     """Build Settings from YAML, then environment, then explicit overrides."""
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
@@ -435,11 +506,14 @@ __all__ = [
     "MediaHashSettings",
     "MediaSettings",
     "MemorySettings",
+    "NotificationSettings",
     "REPO_ROOT",
     "RiskSettings",
     "ScoringSettings",
     "Settings",
     "TradingMode",
+    "audit_capabilities",
+    "detect_unknown_yaml_keys",
     "get_settings",
     "load_settings",
 ]
