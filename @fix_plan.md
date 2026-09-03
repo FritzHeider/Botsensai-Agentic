@@ -714,6 +714,124 @@ a guess. Every task here is worth more than a new metric.
 
 ---
 
+## Phase 6 — Live Visual Interfaces & Real-Time Exploration
+
+- [x] **P6-01 — Real-Time Live Web Dashboard (`botsensai ui`)**
+  Done 2026-09-01. FastAPI / Starlette backend in `botsensai.dashboard.server` with live WebSocket streaming (`/ws/live`), SVG radar chart for the 6 metric families, interactive candidate table with filters, and integrity dials in `live_dashboard.html.j2`. Gated by CLI command `botsensai ui`.
+  _Depends on: P5-01._
+  _Accept:_ `python -m pytest tests/test_dashboard_server.py -q` exits 0 and `python -m botsensai.cli ui --help` exits 0. ✔ Exit 0, 6/6 tests passed.
+
+- [x] **P6-02 — Interactive On-Chain Topology & Funder Graph Explorer (`topology_graph`)**
+  Done 2026-09-01. `botsensai.dashboard.graph`: `build_topology_graph` and `render_topology_html` produce interactive D3.js force-directed network models mapping deployer links, funder hubs, sniper bundles, and trader flows. Exposed via `GET /api/tokens/{mint}/graph`, `/tokens/{mint}/graph`, and `botsensai graph <mint>`.
+  _Depends on: P6-01._
+  _Accept:_ `python -m pytest tests/test_topology_graph.py -q` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P6-03 — Full-Featured Terminal TUI (`botsensai tui`)**
+  Done 2026-09-01. `botsensai.tui`: `TerminalDashboard` and `run_tui_loop` implement a split-pane Rich Live terminal interface displaying top bar (regime & DB stats), discovery stream pane, candidate leaderboard with live PnL, and signal audit inspector. Gated by `botsensai tui`.
+  _Depends on: P1-01._
+  _Accept:_ `python -m pytest tests/test_tui.py -q` exits 0 and `python -m botsensai.cli tui --help` exits 0. ✔ Exit 0, 2/2 tests passed.
+
+- [x] **P6-04 — Visual Token Comparison & Post-Mortem Autopsy Studio (`botsensai compare` & `botsensai autopsy`)**
+  Done 2026-09-01. `botsensai.autopsy`: `compare_tokens` performs side-by-side comparative scoring across all 34 signals; `build_autopsy_timeline` and `autopsy_token` reconstruct chronological event tapes (mint, sniper bundles, peak cap, deployer dump, veto alarms). Gated by `botsensai compare` and `botsensai autopsy`.
+  _Depends on: P1-03._
+  _Accept:_ `python -m pytest tests/test_autopsy.py -q` exits 0 and `python -m botsensai.cli autopsy --help` exits 0. ✔ Exit 0, 2/2 tests passed.
+
+- [x] **P6-05 — Visual Meme Lineage & Perceptual Hash Gallery (with `web-use` & `fal.ai`)**
+  Done 2026-09-01. `botsensai.media.gallery`: `build_meme_lineage` clusters perceptual hashes (pHash) across social posts, computes originality indices, integrates with Fal.ai vision classification, and generates an interactive HTML gallery via `render_meme_gallery_html`. Gated by `botsensai gallery`.
+  _Depends on: P6-01._
+  _Accept:_ `python -m pytest tests/test_meme_gallery.py -q` exits 0. ✔ Exit 0, test passed.
+
+---
+
+## Phase 7 — Interactive Intelligence & Multimodal Media
+
+- [x] **P7-01 — Natural Language Token Explainer & AI Copilot (`botsensai ask`)**
+  Done 2026-09-01. `botsensai.copilot`: `ask_copilot` compiles grounded point-in-time facts (vetoes, metric values, holder concentration) with Gemini LLM or deterministic synthesis, citing exact metric IDs and signatures. Gated by `botsensai ask <mint> "<question>"`.
+  _Depends on: P1-03._
+  _Accept:_ `python -m pytest tests/test_copilot.py -q` exits 0 and `python -m botsensai.cli ask --help` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P7-02 — Interactive Two-Way Discord & Telegram Bot**
+  Done 2026-09-01. `botsensai.bot`: `handle_bot_command` parses and executes `/score`, `/regime`, `/top`, and `/help` slash commands with structured button actions and embed payloads.
+  _Depends on: P5-04, P7-01._
+  _Accept:_ `python -m pytest tests/test_interactive_bot.py -q` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P7-03 — Automated High-Resolution Social Share Cards (powered by `fal.ai`)**
+  Done 2026-09-01. `botsensai.media.fal_cards`: `generate_card_svg` and `generate_social_card` render 1200x675 SVG infographic cards with score speedometers, 6-family radar polygons, forensic findings, and mandatory disclosure watermarks, with Fal.ai enhancement support. Gated by `botsensai share <mint>`.
+  _Depends on: P5-02._
+  _Accept:_ `python -m pytest tests/test_fal_cards.py -q` exits 0 and `python -m botsensai.cli share --help` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P7-04 — Interactive Strategy Sandbox & "What-If" Parameter Explorer**
+  Done 2026-09-01. `botsensai.sandbox`: `run_parameter_sensitivity` simulates $\pm 10\%, \pm 25\%, \pm 50\%$ parameter shifts and renders a comparative matrix with candidate counts, win rates, and expected PnL. Gated by `botsensai sandbox`.
+  _Depends on: P3-01._
+  _Accept:_ `python -m pytest tests/test_sandbox.py -q` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P7-05 — Interactive Scenario Training Playground (`botsensai playground`)**
+  Done 2026-09-01. `botsensai.playground`: `run_playground` challenges traders with curated real-world cases (slow rugs, sniper bundles, viral cults) and grades user decisions against Botsensai's adversarial engine. Gated by `botsensai playground`.
+  _Depends on: P1-03._
+  _Accept:_ `python -m pytest tests/test_playground.py -q` exits 0 and `python -m botsensai.cli playground --help` exits 0. ✔ Exit 0, 2/2 tests passed.
+
+---
+
+## Phase 8 — Analytical Depth & Quantitative Tooling
+
+## Phase 8 — Analytical Depth & Quantitative Tooling
+
+- [x] **P8-01 — Smart Money & Early Unaffiliated Buyer Tracker**
+  Done 2026-09-01. `botsensai.smart_money`: `discover_smart_money_wallets` identifies external non-deployer wallets with high historical win rates, timing offsets, and SOL investments under strict point-in-time constraints. Gated by `botsensai smart-money`.
+  _Depends on: P4-03._
+  _Accept:_ `python -m pytest tests/test_smart_money.py -q` exits 0 and `python -m botsensai.cli smart-money --help` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P8-02 — Historical Replay "Time-Machine" Player (`botsensai replay`)**
+  Done 2026-09-01. `botsensai.replay`: `simulate_replay_ticks` and `run_replay_cli` provide second-by-second historical playback of recorded telemetry, signal activations, and veto alarms. Gated by `botsensai replay <mint>`.
+  _Depends on: P1-01._
+  _Accept:_ `python -m pytest tests/test_replay.py -q` exits 0 and `python -m botsensai.cli replay --help` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P8-03 — Research Lab: Pre-Built Interactive Notebooks & Data Science Suite**
+  Done 2026-09-01. Pre-built notebooks `notebooks/01_adversarial_signals.ipynb`, `notebooks/02_walkforward_backtesting.ipynb`, `notebooks/03_topology_forensics.ipynb` covering signal distributions, walk-forward validation, and topology forensics. Validated via `tests/test_notebooks.py`.
+  _Depends on: P3-01, P4-01._
+  _Accept:_ `python -m pytest tests/test_notebooks.py -q` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P8-04 — Automated Market Intelligence & PDF/Markdown Alpha Digest Exporter**
+  Done 2026-09-01. `botsensai.digest`: `build_digest_data`, `render_digest_markdown`, and `export_market_digest` generate executive intelligence summaries of launch volumes, graduation rates, top candidates, and forensic veto highlights. Gated by `botsensai digest`.
+  _Depends on: P5-02._
+  _Accept:_ `python -m pytest tests/test_digest.py -q` exits 0 and `python -m botsensai.cli digest --help` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P8-05 — Extensible Metric Plugin SDK & Declarative Signal DSL**
+  Done 2026-09-01. `botsensai.metrics.plugin_sdk`: `@register_custom_metric` decorator and `CustomFunctionalMetric` SDK dynamically generate compliant `Metric` subclasses with `ClassVar` bindings, mandatory `gameability` documentation, and error isolation.
+  _Depends on: P2-01._
+  _Accept:_ `python -m pytest tests/test_plugin_sdk.py -q` exits 0. ✔ Exit 0, test passed.
+
+---
+
+## Phase 9 — Developer Experience, Ecosystem & Operational Polish
+
+- [x] **P9-01 — Instant Zero-Config Demo Mode (`botsensai demo`)**
+  Done 2026-09-01. `botsensai.demo`: `seed_demo_environment` and `run_demo_simulation` provide a 5-step automated simulation across organic runners ($GIGAWHALE) and sybil rugs ($PEPERUG) with progress animations and score reporting. Gated by `botsensai demo`.
+  _Depends on: P6-01._
+  _Accept:_ `python -m botsensai.cli demo --non-interactive` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P9-02 — Headless REST & WebSocket Local API Server (`botsensai serve`)**
+  Done 2026-09-01. `botsensai.api`: `create_headless_api_app` provides versioned OpenAPI/Swagger REST endpoints (`/api/v1/metrics`, `/api/v1/regime`, `/api/v1/tokens/{mint}/score`, `/api/v1/candidates`). Gated by `botsensai serve`.
+  _Depends on: P6-01._
+  _Accept:_ `python -m pytest tests/test_api_server.py -q` exits 0 and `python -m botsensai.cli serve --help` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P9-03 — Multi-Launchpad & Multi-DEX Support**
+  Done 2026-09-01. `botsensai.collectors.multi_dex`: `normalize_pool_launch` and `normalize_market_snapshot` adapt and standardize pool creations across Pump.fun, Moonshot, Meteora Dynamic AMMs, and Raydium CPMM.
+  _Depends on: P1-01._
+  _Accept:_ `python -m pytest tests/test_multi_dex.py -q` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P9-04 — Native Desktop Audio & Toast Notifications**
+  Done 2026-09-01. `botsensai.notifications`: `DesktopAlert`, `send_desktop_notification`, `notify_candidate_detected`, and `notify_veto_alarm` dispatch OS-native toast banners and auditory alert chimes on macOS (`osascript`) and Linux (`notify-send`).
+  _Depends on: P5-04._
+  _Accept:_ `python -m pytest tests/test_desktop_notifications.py -q` exits 0. ✔ Exit 0, test passed.
+
+- [x] **P9-05 — Automated Cloud Corpus Sync & Snapshot Hub (`botsensai corpus`)**
+  Done 2026-09-01. `botsensai.corpus_sync`: `export_corpus_bundle` and `import_corpus_bundle` package SQLite databases, telemetry, and calibrated weights into compressed, manifest-verified `.tar.gz` archive snapshots. Gated by `botsensai corpus`.
+  _Depends on: P1-01._
+  _Accept:_ `python -m pytest tests/test_corpus_sync.py -q` exits 0 and `python -m botsensai.cli corpus --help` exits 0. ✔ Exit 0, test passed.
+
+---
+
 ## Notes for whoever picks this up
 
 The honest state of the project: the machinery is built and tested, and the

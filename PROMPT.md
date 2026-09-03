@@ -1,88 +1,88 @@
-# Task: Take Botsensai from a working skeleton to a system with a real, measured edge
+# Task: Build Botsensai 2.0 — Advanced Usability, Interactive Visuals, Web-Use Scraping & Generative Multimodal Content
 
-You are working on Botsensai, a Python monorepo that discovers brand-new Solana
-memecoins, scores them on 32 signals that standard token APIs do not publish,
-backtests those signals honestly, paper-trades them, and writes evidence-sourced
-content about them.
+You are working on **Botsensai**, an agentic Solana memecoin recon, scoring, backtesting, paper-trading, and multimodal content intelligence system.
 
-The skeleton is built and every test passes. What it does **not** have is a
-corpus of real data, weights fitted on real outcomes, or any evidence that the
-signals predict anything. Your job is to close that gap, in the order given in
-`@fix_plan.md`.
+The core pipeline (34 anti-adversarial signals, point-in-time SQLite WAL store, walk-forward embargoed backtester, coordinate ascent weight fitter, ablation engine, paper broker with curve impact and sandwich penalties) is fully verified and passing.
+
+Your job is to execute **Botsensai 2.0** as specified in `@fix_plan.md` (Phases 6 through 9), implementing 20 major usability, visual, and analytical superpowers in the most sophisticated manner possible.
+
+---
 
 ## Read these first, every iteration
 
-- `@fix_plan.md` — the task queue. Work the first unchecked task. Nothing else.
-- `docs/ARCHITECTURE.md` — how the pieces fit and why.
-- `docs/DATA_SOURCES.md` — verified endpoints, field names and rate limits.
-- `git log --oneline -15` — what the last iterations actually did.
+- `@fix_plan.md` — The task queue. Work the first unchecked task whose dependencies are satisfied. Nothing else.
+- `docs/ARCHITECTURE.md` — System architecture and strict layer dependencies.
+- `docs/DATA_SOURCES.md` — Verified endpoints, field names, and rate limits.
+- `docs/superpowers/specs/2026-09-01-botsensai-2.0-comprehensive-spec.md` — Complete technical specifications for Botsensai 2.0 features.
+- `git log --oneline -15` — What recent iterations actually did.
 
 You have no memory of previous iterations. Everything you need is on disk.
 
-## Requirements
+---
 
-- Python 3.11+, installed with `pip install -e ".[dev]"`.
-- New code goes under `src/botsensai/`, new tests under `tests/`.
-- Every new metric subclasses `botsensai.metrics.base.Metric`, is registered in
-  `botsensai/metrics/__init__.py`, and **must** populate the `gameability` class
-  attribute — registration raises without it, by design.
-- Every new collector subclasses `botsensai.collectors.base.Collector`, returns a
-  `CollectionResult`, and never raises out of `discover` or `enrich`. A dead
-  surface sets `degraded=True`; it does not break the sweep.
-- Every record carries both `as_of` and `observed_at`. Reads used by the
-  backtester filter on both.
+## Core Requirements & Integrations
 
-## Constraints
+- **Python 3.11+**, managed with `pyproject.toml`.
+- **Web-Use Skill (Playwright)**:
+  - Used by collectors (`src/botsensai/collectors/browser.py`, `src/botsensai/media/gallery.py`) to scrape dynamic DEX interfaces (Dexscreener, pump.fun, Meteora), extract DOM snapshots, harvest tweet images, and parse social threads safely.
+  - Must run stealth, handle rate limits gracefully, support headless/headed modes, and never crash a sweep on page timeout (`degraded=True`).
+- **Fal.ai Multimodal Generation**:
+  - Integrated into `src/botsensai/media/fal_cards.py` and `src/botsensai/media/generator.py` using the `fal-client` library.
+  - Generates high-resolution 1200x675 social summary infographics, visual radar cards, and AI-assisted meme lineage analysis.
+  - Strict fallback: If Fal.ai credentials are unset or the service is offline, gracefully fall back to local SVG/Pillow rendering with explicit degraded logging.
+- **FastAPI + WebSockets Backend**:
+  - Lightweight async server for real-time web UI (`botsensai ui`) and headless API (`botsensai serve`).
+  - No heavyweight dependencies (no Postgres, Redis, or Celery) — use SQLite WAL mode with asyncio broadcast queues.
+- **Strict Invariants**:
+  - **No Signing Code**: Never add transaction-signing or live wallet execution code. `tests/test_scoring_and_execution.py::test_repository_contains_no_signing_code` must always pass.
+  - **Absence is Never Bearishness**: Metrics with missing data return `MISSING` (`None`), never `0.0`.
+  - **Point-in-Time Correctness**: Every query used by backtesting, wallet skill indices, and AI copilots must filter on both `as_of <= decision_time` and `observed_at <= decision_time`.
+  - **Mandatory Disclosure**: All generated content and shareable cards must include automated disclaimer watermarks.
 
-- **Never add signing or transaction-submission code.** `tests/test_scoring_and_execution.py::test_repository_contains_no_signing_code` enforces this and must keep passing. Live trading is out of scope for this repository.
-- **Never commit a key, a keyfile path, an API token, or a `.env`.** Secrets are read from the environment only.
-- **Never return `0.0` from a metric to mean "no data."** Return `(None, 0, reason)`. A zero is a strong bearish claim; absence is not.
-- **Never widen a rate limit above the verified value** in `docs/DATA_SOURCES.md`. If you find a higher documented limit, verify it live, update the doc with the evidence, and only then change the code.
-- **Never delete or weaken a failing test to make the suite pass.** If a test is genuinely wrong, fix the test and explain why in the commit message.
-- **Never report a backtest result without its sample size and confidence interval.** `BacktestResult.summary()` already attaches the warnings; do not strip them.
-- Do not add heavyweight dependencies (torch, transformers, a database server). numpy/pandas/scipy/networkx/scikit-learn/lightgbm are available and sufficient.
+---
 
-## Acceptance criteria
+## Acceptance Criteria
 
-Every one of these is a command. Run them; do not assert them.
+Every iteration must satisfy the following backpressure checklist before committing:
 
-- `python -m pytest -q` exits 0 with zero failures.
-- `python -m ruff check src tests` exits 0.
-- `python -c "from botsensai.metrics import build_registry; r=build_registry(); assert len(r) >= 32, len(r)"` exits 0.
-- `python -m botsensai.cli doctor` exits 0 and reports at least 4 reachable surfaces.
-- `python -m botsensai.cli backtest --synthetic --universe 40` exits 0 and prints a result table.
-- `python -m botsensai.cli metrics` exits 0 and lists every registered metric.
-- Every task checked off in `@fix_plan.md` has its own acceptance command recorded there, and that command exits 0.
+1. `python scripts/backpressure.py` exits 0 (9/9 gates green, max complexity <= 10, zero type errors).
+2. `python -m pytest -q` exits 0 with zero failures.
+3. `python -m ruff check src tests scripts` exits 0.
+4. `python -m mypy src` exits 0.
+5. The specific acceptance command for the active task in `@fix_plan.md` exits 0.
 
-## Iteration rules
+---
 
-- Re-read `PROMPT.md`, `@fix_plan.md` and the relevant source at the start of every iteration. Assume you remember nothing.
-- Work **one** task from `@fix_plan.md` per iteration — the first unchecked one whose dependencies are all checked.
-- If a task in progress is described in `@fix_plan.md` under "IN PROGRESS", finish that before starting anything new.
-- If a task turns out to be too large for one context window, do not half-build it. Split it into two or more smaller tasks in `@fix_plan.md`, commit the split, and end the iteration.
-- Before ending an iteration: run the full acceptance-criteria list above, then `git add -A && git commit`. Never end an iteration with uncommitted work.
-- In your output, state **specifically** what changed this iteration: which task id, which files, which new tests, and the actual numbers any command printed. Do not write "still working on it" — identical outputs across iterations trip loop detection and kill the run.
-- If you are blocked because a data source is unreachable, do not retry it in a loop. Mark the task blocked in `@fix_plan.md` with the error text, move to the next unblocked task, and commit.
+## Iteration Rules
 
-## Signs
+1. Work **one** task from `@fix_plan.md` per iteration — the first unchecked task whose dependencies are satisfied.
+2. If a task is marked under `**IN PROGRESS**`, complete that before picking anything new.
+3. If a task exceeds one iteration context, split it into atomic sub-tasks in `@fix_plan.md`, commit the split, and finish the first sub-task.
+4. Write thorough unit and integration tests in `tests/` for every newly introduced module.
+5. In your iteration output, report:
+   - Task ID completed (e.g. `P6-01`).
+   - Files created / modified.
+   - Tests added and exact test counts.
+   - Exact numerical output of the acceptance command.
+6. Run `git add -A && git commit` before concluding the iteration. Never leave uncommitted work on disk.
 
-Short corrections for failure modes seen in previous runs. Read them; they are cheaper than rediscovering the same mistakes.
+---
 
-- **A backtest that looks great is a bug until proven otherwise.** Median memecoin outcome is total loss. If a change makes results dramatically better, your first hypothesis is a look-ahead leak, not an insight. Check `observed_at` filtering and time-restricted deployer history before celebrating.
-- **Metric coverage is the real constraint, not metric count.** Adding a 33rd metric that produces a usable value 5% of the time is worse than raising an existing metric's coverage from 30% to 80%. Check `BacktestResult.metric_coverage` before proposing new signals.
-- **Fitting on fewer than 200 labelled outcomes is not fitting.** `WeightFitter` refuses below that threshold on purpose. If you want fitted weights, collect more data first; do not lower the threshold.
-- **Rate limits are the scarcest resource in the system.** Before adding a call to a sweep, work out what it costs against the budget in `docs/DATA_SOURCES.md` and what it displaces. The 60/min hosts are effectively a handful of tokens per sweep.
-- **Prefer raising coverage on the on-chain and topology families over the social ones.** They are cheaper to collect, harder to game, and currently better instrumented.
-- **A 2xx with an empty body is a failure, not an absence.** Three X endpoints return HTTP 200 with zero bytes. Any collector that records that as "no activity" poisons every downstream metric silently and forever. New collectors must route success responses through a body check, and `tests/test_collectors.py` guards the known-dead endpoints by name.
-- **Verify a rate limit before trusting a published one.** `syndication.twitter.com` hard-429s after twelve requests per fifteen minutes and stays blocked for ten; `cdn.syndication.twimg.com` showed no throttling at forty consecutive calls. Those are the same product. Measure, then encode the measurement in config with a comment saying when it was measured.
-- **Exclude program-owned accounts before computing any concentration figure.** The bonding-curve ATA, AMM pool vaults and the burn address are not holders. Include them and every healthy pre-graduation token reads as ~100% concentrated. Use `metrics.topology.tradeable_holders`, never `ctx.holders` directly.
-- **Decode HTML entities before extracting tickers.** 4chan and Telegram both encode `$` as `&#036;`; strip tags without decoding and the cashtag regex silently matches nothing while everything appears to work.
-- **The base rate drifts by more than half.** pump.fun graduation fell from under 2% to roughly 0.63% between late 2024 and late 2025. Never hardcode a threshold against it — `ScoringSettings.regime_*_graduation_rate` carries the anchor date for a reason.
+## Signs & Guardrails
+
+- **A live web dashboard must not block the discovery pipeline.** Use an async event pump or non-blocking in-memory queue.
+- **Fal.ai calls must be asynchronous and bounded by a timeout.** Wrap all external AI calls in `asyncio.wait_for(..., timeout=30.0)` with local SVG fallbacks.
+- **Interactive TUI must cleanly release the terminal.** Ensure Textual / curses cleanup handles `Ctrl+C` and terminal resize signals without corrupting stdout.
+- **AI Copilot responses must cite stored evidence.** Any LLM response summarizing a token must include exact metric IDs and values retrieved from the database.
+- **Playwright instances must be pooled and recycled.** Prevent browser memory leaks by reusing browser contexts and enforcing max page counts.
+
+---
 
 ## Status
 
-- [ ] `python -m pytest -q` passes
-- [ ] `python -m ruff check src tests` passes
-- [ ] All tasks in `@fix_plan.md` are checked off
-- [ ] `docs/RESULTS.md` exists and reports a walk-forward backtest over real collected data, with sample size and confidence interval
-- [ ] TASK_COMPLETE
+- [ ] All Phase 6 tasks checked off (Visual Interfaces & Real-Time Exploration)
+- [ ] All Phase 7 tasks checked off (Interactive Intelligence & Multimodal Media)
+- [ ] All Phase 8 tasks checked off (Analytical Depth & Quantitative Tooling)
+- [ ] All Phase 9 tasks checked off (Developer Experience & Operational Polish)
+- [ ] `python scripts/backpressure.py` passes with 9/9 green gates
+- [ ] LOOP_COMPLETE

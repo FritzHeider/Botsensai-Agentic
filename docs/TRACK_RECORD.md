@@ -1,19 +1,19 @@
 # Botsensai Paper-Trading Track Record
 
-*Generated at: 2026-08-25 21:43:29 UTC*
+*Generated at: 2026-08-31 10:22:14 UTC*
 
 ## Executive Summary
 
 | Metric | Value |
 | :--- | :--- |
 | **Trading Mode** | Paper Trading (Real Store) |
-| **Evaluated Universe** | 586 tokens |
-| **Tokens Evaluated** | 1409 |
+| **Evaluated Universe** | 40 tokens |
+| **Tokens Evaluated** | 4 |
 | **Positions Entered** | 0 |
 | **Completed Trades** | 0 |
 | **Win Rate** | 0.00% |
 | **Starting Capital** | 10.0000 SOL |
-| **Ending Equity** | 9.9860 SOL |
+| **Ending Equity** | 10.0000 SOL |
 | **Realized PnL** | +0.0000 SOL |
 | **Total Return** | +0.00% |
 | **Expectancy** | +0.000000 SOL / trade |
@@ -34,5 +34,5 @@
 ## Risk & Execution Audit
 
 - **Rejected Orders**: 0
-- **Failed Fills**: 7
-- **Total Fills**: 7
+- **Failed Fills**: 0
+- **Total Fills**: 0

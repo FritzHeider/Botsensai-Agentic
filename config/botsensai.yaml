@@ -10,15 +10,15 @@ dry_run: true
 log_level: INFO
 db_path: data/botsensai.db
 seed: 1337
-
+      
 browser:
   headless: true
   stealth: true
+  user_data_dir: /Users/drop/botsensai-browser-profile
   max_pages: 4
   block_resources: [image, media, font]
   # A Chrome profile directory you have logged in to by hand. Keep it OUTSIDE
   # this repository. Off by default; collectors degrade rather than fail without it.
-  user_data_dir: null
 
 # Session-backed X collection. Reply text, view/bookmark counts and per-engager
 # account ages exist on no free X path, and they are the inputs to most of the

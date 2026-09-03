@@ -12,7 +12,9 @@ Nothing in this CLI can place a real order.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import webbrowser
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -100,12 +102,16 @@ def _settings(config: str | None = None, log_level: str = "INFO") -> Any:
 
 
 def _banner(settings: Any) -> None:
+    from botsensai.util.environment import get_virtualenv_info
+
     mode = settings.trading_mode.value
     colour = {"backtest": "cyan", "paper": "green", "live": "red bold"}.get(mode, "white")
+    env_info = get_virtualenv_info()
+    env_label = f"[dim]env: {env_info['env_type']}[/dim]"
     console.print(
         Panel(
             f"[{colour}]mode: {mode}[/{colour}]   metrics: {len(build_registry())}   "
-            f"db: {settings.db_path}",
+            f"db: {settings.db_path}   {env_label}",
             title="botsensai",
             expand=False,
         )
@@ -278,6 +284,32 @@ def sweep(
             await pipeline.aclose()
 
     asyncio.run(run())
+
+
+@app.command()
+def snipe(
+    size: float = typer.Option(None, "--size", "-s", help="Simulated paper position size in SOL (e.g. 0.25)."),
+    min_score: float = typer.Option(None, "--min-score", "-m", help="Minimum conviction score threshold to buy."),
+    force: bool = typer.Option(False, "--force", "-f", help="Force paper entry even if below threshold or vetoed."),
+    limit: int = typer.Option(60, "--limit", help="How many launches to pull during discovery."),
+    candidates: int = typer.Option(20, "--candidates", help="How many survivors to deeply enrich and score."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Discover active launches, score them, and snipe the current #1 best token in paper mode."""
+    from botsensai.sniper import execute_live_snipe
+
+    settings = _settings(config, log_level)
+    asyncio.run(
+        execute_live_snipe(
+            settings=settings,
+            size_sol=size,
+            min_score=min_score,
+            force=force,
+            discover_limit=limit,
+            max_candidates=candidates,
+        )
+    )
 
 
 @app.command()
@@ -1439,6 +1471,47 @@ def dashboard(
             console.print(f"  [red]{flag['headline']}[/red] — {flag['detail']}")
 
 
+@app.command(name="ui")
+def live_ui(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind."),
+    port: int = typer.Option(8000, "--port", help="Port to listen on."),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Open browser automatically."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("INFO", help="Log level."),
+) -> None:
+    """Launch the real-time live WebSocket dashboard."""
+    import uvicorn
+
+    from botsensai.dashboard.server import create_app
+
+    settings = _settings(config, log_level)
+    _banner(settings)
+    app_instance = create_app(settings)
+
+    url = f"http://{host}:{port}"
+    console.print(f"\n[green]🚀 Live Dashboard starting at[/green] [bold cyan]{url}[/bold cyan]")
+    console.print("[dim]Press Ctrl+C to stop the dashboard server.[/dim]\n")
+
+    if open_browser:
+        with contextlib.suppress(Exception):
+            webbrowser.open(url)
+
+    uvicorn.run(app_instance, host=host, port=port, log_level=log_level.lower())
+
+
+@app.command(name="tui")
+def live_tui(
+    seconds: float = typer.Option(None, "--seconds", help="Max seconds to run before exit (useful for testing)."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Launch the split-pane live terminal user interface (TUI)."""
+    from botsensai.tui import run_tui_loop
+
+    settings = _settings(config, log_level)
+    asyncio.run(run_tui_loop(settings, max_seconds=seconds))
+
+
 @app.command()
 def channels(
     rank: bool = typer.Option(
@@ -1764,6 +1837,15 @@ def init(
     run_onboarding_wizard(Path(config) if config else None, non_interactive=yes)
 
 
+@app.command(name="wizard")
+def wizard(
+    config: str = typer.Option(None, help="Custom path for config YAML."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Run non-interactively with defaults."),
+) -> None:
+    """Guided onboarding wizard to verify environment, API keys, and configuration."""
+    run_onboarding_wizard(Path(config) if config else None, non_interactive=yes)
+
+
 config_app = typer.Typer(help="Inspect and validate configuration.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
 
@@ -1805,6 +1887,9 @@ def run(
     log_level: str = typer.Option("INFO", help="Log level."),
 ) -> None:
     """Run the unified multi-task supervisor (Streamer, Sweeper, Labeller, Sentinel)."""
+    from botsensai.util.environment import auto_reexec_in_virtualenv
+
+    auto_reexec_in_virtualenv()
     settings = _settings(config, log_level)
     if settings.trading_mode is TradingMode.LIVE:
         console.print("[red]refusing to run in live mode; this build cannot trade[/red]")
@@ -1830,6 +1915,42 @@ def run(
         supervisor.print_summary()
 
 
+venv_app = typer.Typer(help="Inspect and manage local virtual environment.", no_args_is_help=True)
+app.add_typer(venv_app, name="venv")
+
+
+@venv_app.command(name="info")
+def venv_info() -> None:
+    """Display current Python interpreter and virtualenv status."""
+    from botsensai.util.environment import get_virtualenv_info
+
+    info = get_virtualenv_info()
+    table = Table(title="Python Environment Info", box=None)
+    table.add_column("Property", style="bold cyan")
+    table.add_column("Value")
+    table.add_row("Virtualenv Active", "[green]Yes[/green]" if info["is_virtual"] else "[yellow]No (Global)[/yellow]")
+    table.add_row("Environment Type", info["env_type"])
+    table.add_row("Prefix Path", info["current_prefix"])
+    table.add_row("Executable", info["executable"])
+    table.add_row("Local .venv Exists", "[green]Yes[/green]" if info["local_venv_exists"] else "[dim]No[/dim]")
+    table.add_row("Local .venv Path", info["local_venv_path"])
+    console.print(table)
+
+
+@venv_app.command(name="create")
+def venv_create(
+    dest: str = typer.Option(None, "--dest", "-d", help="Destination path for .venv directory."),
+) -> None:
+    """Create a new standard library virtualenv in the repository root."""
+    from pathlib import Path
+
+    from botsensai.util.environment import create_local_virtualenv
+
+    target = create_local_virtualenv(Path(dest) if dest else None)
+    console.print(f"[green]✓ Created local virtual environment at:[/green] [bold]{target}[/bold]")
+    console.print(f"\nActivate with:\n  [bold cyan]source {target}/bin/activate[/bold cyan]\n")
+
+
 # --------------------------------------------------------------------------- #
 # inspect
 # --------------------------------------------------------------------------- #
@@ -1845,6 +1966,253 @@ def inspect(
     """Inspect and score any token from a URL, ticker ($SYMBOL), or mint address."""
     settings = _settings(config, log_level)
     asyncio.run(inspect_token(query, settings, deep_enrich=enrich))
+
+
+@app.command()
+def graph(
+    mint: str = typer.Argument(..., help="Solana mint address or token key to visualize."),
+    out: str = typer.Option(None, "--out", help="Write HTML graph to this path."),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the generated graph in browser."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Generate an interactive D3.js on-chain topology and funder graph."""
+    from botsensai.dashboard.graph import build_topology_graph, render_topology_html
+
+    settings = _settings(config, log_level)
+    db = Database(settings.path(settings.db_path))
+    token_key = f"solana:{mint}" if not mint.startswith("solana:") else mint
+    try:
+        topo_graph = build_topology_graph(token_key, db)
+    finally:
+        db.close()
+
+    html_content = render_topology_html(topo_graph)
+    target_path = Path(out) if out else Path(f"data/topology_{mint[:8]}.html")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(html_content, encoding="utf-8")
+
+    console.print(
+        f"[green]✓ Generated topology graph:[/green] [bold]{target_path}[/bold] "
+        f"({len(topo_graph.nodes)} wallets, {len(topo_graph.links)} links)"
+    )
+
+    if open_browser:
+        with contextlib.suppress(Exception):
+            webbrowser.open(f"file://{target_path.resolve()}")
+
+
+@app.command()
+def compare(
+    token1: str = typer.Argument(..., help="First token query ($TICKER, mint, or URL)."),
+    token2: str = typer.Argument(..., help="Second token query ($TICKER, mint, or URL)."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Side-by-side comparative scoring audit of two tokens."""
+    from botsensai.autopsy import compare_tokens
+
+    settings = _settings(config, log_level)
+    asyncio.run(compare_tokens(token1, token2, settings))
+
+
+@app.command()
+def autopsy(
+    token: str = typer.Argument(..., help="Token query ($TICKER, mint, or URL) to autopsy."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Reconstruct chronological post-mortem event timeline for a token."""
+    from botsensai.autopsy import autopsy_token
+
+    settings = _settings(config, log_level)
+    asyncio.run(autopsy_token(token, settings))
+
+
+@app.command()
+def gallery(
+    mint: str = typer.Argument(..., help="Solana mint address or token key to inspect memes."),
+    out: str = typer.Option(None, "--out", help="Write HTML gallery to this path."),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the generated gallery in browser."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Generate a visual meme lineage, pHash cluster tree, and originality gallery."""
+    from botsensai.media.gallery import build_meme_lineage, render_meme_gallery_html
+
+    settings = _settings(config, log_level)
+    db = Database(settings.path(settings.db_path))
+    token_key = f"solana:{mint}" if not mint.startswith("solana:") else mint
+    try:
+        report = build_meme_lineage(token_key, db)
+    finally:
+        db.close()
+
+    html_content = render_meme_gallery_html(report)
+    target_path = Path(out) if out else Path(f"data/gallery_{mint[:8]}.html")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(html_content, encoding="utf-8")
+
+    console.print(
+        f"[green]✓ Generated meme lineage gallery:[/green] [bold]{target_path}[/bold] "
+        f"({report.total_images} images, {report.distinct_clusters} clusters, "
+        f"originality: {report.originality_index:.1%})"
+    )
+
+    if open_browser:
+        with contextlib.suppress(Exception):
+            webbrowser.open(f"file://{target_path.resolve()}")
+
+
+@app.command()
+def ask(
+    token: str = typer.Argument(..., help="Token query ($TICKER, mint, or URL)."),
+    question: str = typer.Argument(..., help="Question to ask the AI copilot."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Ask natural language questions to the AI Copilot with evidence grounding."""
+    from botsensai.copilot import run_copilot_cli
+
+    settings = _settings(config, log_level)
+    asyncio.run(run_copilot_cli(token, question, settings))
+
+
+@app.command()
+def share(
+    token: str = typer.Argument(..., help="Token query ($TICKER, mint, or URL) to generate share card for."),
+    out: str = typer.Option(None, "--out", help="Path to write SVG card."),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Open generated card in browser."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Generate a high-resolution 1200x675 SVG social share card."""
+    from botsensai.media.fal_cards import generate_social_card
+
+    settings = _settings(config, log_level)
+    target = asyncio.run(generate_social_card(token, settings, out_path=out))
+    console.print(f"[green]✓ Generated social share card:[/green] [bold]{target}[/bold]")
+
+    if open_browser:
+        with contextlib.suppress(Exception):
+            webbrowser.open(f"file://{target.resolve()}")
+
+
+@app.command()
+def sandbox(
+    param: str = typer.Option("entry_threshold", "--param", help="Strategy parameter to stress-test."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Run interactive 'what-if' strategy parameter sensitivity analysis."""
+    from botsensai.sandbox import run_sandbox_cli
+
+    settings = _settings(config, log_level)
+    asyncio.run(run_sandbox_cli(param, settings))
+
+
+@app.command()
+def playground(
+    interactive: bool = typer.Option(True, "--interactive/--auto", help="Run in interactive prompt mode."),
+) -> None:
+    """Run interactive scenario training playground against adversarial launch cases."""
+    from botsensai.playground import run_playground
+
+    asyncio.run(run_playground(interactive=interactive))
+
+
+@app.command(name="smart-money")
+def smart_money_cmd(
+    min_trades: int = typer.Option(2, "--min-trades", help="Minimum trades to qualify."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Discover and rank smart money wallets with high historical win rates."""
+    from botsensai.smart_money import run_smart_money_cli
+
+    settings = _settings(config, log_level)
+    asyncio.run(run_smart_money_cli(settings, min_trades=min_trades))
+
+
+@app.command()
+def replay(
+    mint: str = typer.Argument(..., help="Token mint or query to replay."),
+    step: float = typer.Option(10.0, "--step", help="Seconds per evaluation step."),
+    animate: bool = typer.Option(False, "--animate", help="Animate the replay in terminal."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Replay historical telemetry and signal evaluations second-by-second."""
+    from botsensai.replay import run_replay_cli
+
+    settings = _settings(config, log_level)
+    asyncio.run(run_replay_cli(mint, settings, step_seconds=step, animate=animate))
+
+
+@app.command()
+def digest(
+    out: str = typer.Option(None, "--out", help="Path to write markdown digest."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Generate and export executive market intelligence and alpha digest."""
+    from botsensai.digest import export_market_digest
+
+    settings = _settings(config, log_level)
+    target = export_market_digest(settings, out_path=out)
+    console.print(f"[green]✓ Generated market intelligence digest:[/green] [bold]{target}[/bold]")
+
+
+@app.command()
+def demo(
+    non_interactive: bool = typer.Option(False, "--non-interactive", help="Run without terminal prompts."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Run an instant zero-config end-to-end simulation of Botsensai 2.0."""
+    from botsensai.demo import run_demo_simulation
+
+    settings = _settings(config, log_level)
+    asyncio.run(run_demo_simulation(settings, non_interactive=non_interactive))
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind."),
+    port: int = typer.Option(8001, "--port", help="Port to listen on."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("INFO", help="Log level."),
+) -> None:
+    """Launch the headless REST and WebSocket API server with OpenAPI docs."""
+    import uvicorn
+
+    from botsensai.api import create_headless_api_app
+
+    settings = _settings(config, log_level)
+    api_app = create_headless_api_app(settings)
+    console.print(f"\n[green]🚀 Botsensai API Server starting at[/green] [bold cyan]http://{host}:{port}/docs[/bold cyan]\n")
+    uvicorn.run(api_app, host=host, port=port, log_level=log_level.lower())
+
+
+@app.command()
+def corpus(
+    action: str = typer.Argument("export", help="Action: export | import"),
+    file_path: str = typer.Option(None, "--file", help="Bundle archive path."),
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    log_level: str = typer.Option("WARNING", help="Log level."),
+) -> None:
+    """Manage training corpus snapshot archives (bundle export and import)."""
+    from botsensai.corpus_sync import export_corpus_bundle, import_corpus_bundle
+
+    settings = _settings(config, log_level)
+    if action == "export":
+        dest = export_corpus_bundle(settings, out_path=file_path)
+        console.print(f"[green]✓ Exported corpus archive to[/green] [bold]{dest}[/bold]")
+    elif action == "import" and file_path:
+        manifest = import_corpus_bundle(settings, bundle_path=file_path)
+        console.print(f"[green]✓ Imported corpus archive from[/green] [bold]{file_path}[/bold] (weights: {manifest.get('weights_version')})")
+    else:
+        console.print("[yellow]Specify a valid action: 'export' or 'import --file <path>'[/yellow]")
 
 
 # --------------------------------------------------------------------------- #

@@ -790,6 +790,13 @@ class Database:
         ).fetchall()
         return [_row_to_launch(r) for r in rows]
 
+    def recent_launches(self, limit: int = 20) -> list[Launch]:
+        """Most recent token launches observed, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM launches ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [_row_to_launch(r) for r in rows]
+
     def social_links(self, field: str) -> dict[str, set[str]]:
         """Published social link -> the launches that published it.
 

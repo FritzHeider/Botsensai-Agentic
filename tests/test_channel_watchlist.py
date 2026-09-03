@@ -1152,7 +1152,7 @@ def _cli(tmp_path, call_channels, **rows):
     path = tmp_path / "cli.yaml"
     path.write_text(yaml.safe_dump(config))
 
-    result = CliRunner().invoke(app, ["channels", "--rank", "--config", str(path)])
+    result = CliRunner().invoke(app, ["channels", "--rank", "--days", "90", "--config", str(path)])
     return result, " ".join(result.stdout.split())
 
 

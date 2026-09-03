@@ -17,7 +17,6 @@ import argparse
 import os
 import subprocess
 from pathlib import Path
-from typing import Any
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
@@ -138,10 +137,10 @@ def generate_seedance_clip(scene: dict, index: int, temp_dir: Path, fal_key: str
     framed_img = temp_dir / f"framed_{index:02d}.jpg"
     overlay_gta_subtitles(raw_img, framed_img, scene["badge"], scene["subtitle"])
 
-    print(f"    • Uploading keyframe to Fal.ai...")
+    print("    • Uploading keyframe to Fal.ai...")
     image_url = fal_client.upload_file(framed_img)
 
-    print(f"    • Submitting to ByteDance Seedance (image-to-video)...")
+    print("    • Submitting to ByteDance Seedance (image-to-video)...")
     # Try Seedance image-to-video / video model endpoints
     endpoints = [
         "fal-ai/bytedance/seedance-2.0/image-to-video",
@@ -217,18 +216,18 @@ def render_local_clip(scene: dict, index: int, temp_dir: Path) -> Path:
 def generate_synthwave_audio(duration: float, out_path: Path) -> Path:
     """Synthesize an authentic 80s/GTA Vice City bassline & arpeggio track using ffmpeg."""
     filter_complex = (
-        "sine=frequency=110:duration={dur}[b1];"
-        "sine=frequency=164.81:duration={dur}[b2];"
-        "sine=frequency=220:duration={dur}[m1];"
-        "anoisesrc=d={dur}:c=pink:r=44100:a=0.08[noise];"
+        f"sine=frequency=110:duration={duration}[b1];"
+        f"sine=frequency=164.81:duration={duration}[b2];"
+        f"sine=frequency=220:duration={duration}[m1];"
+        f"anoisesrc=d={duration}:c=pink:r=44100:a=0.08[noise];"
         "[b1][b2]amix=inputs=2:weights=1 0.8[bass];"
         "[m1]tremolo=f=4:d=0.7[synth];"
         "[noise]lowpass=f=200[kick];"
         "[bass][synth][kick]amix=inputs=3:weights=0.5 0.3 0.4,"
         "volume=0.9,"
         "afade=t=in:ss=0:d=1.0,"
-        "afade=t=out:st={fade_out}:d=1.5[out]"
-    ).format(dur=duration, fade_out=max(0.0, duration - 1.5))
+        f"afade=t=out:st={max(0.0, duration - 1.5)}:d=1.5[out]"
+    )
 
     cmd = [
         "ffmpeg", "-y",

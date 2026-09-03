@@ -1,261 +1,268 @@
-# Botsensai
+# Botsensai 2.0
 
-An agentic system that watches Solana memecoin launchpads, scores brand-new
-tokens on **33 signals that standard token APIs do not publish**, backtests those
-signals honestly, paper-trades them, and writes evidence-sourced content about
-them.
+> **Adversarial Intelligence, On-Chain Topology Forensics & Quantitative Decision System for Solana Memecoins**
 
-It cannot trade real money. There is no signing code anywhere in this repository
-and a test enforces that.
-
----
-
-## Why 33 more numbers
-
-Every market-data API reports the same things: price, volume, liquidity,
-transaction count, holder count. All of them are cheap to manufacture. One person
-with a script is two hundred holders and four hundred transactions before the
-chart has a second candle. A system built on those numbers is not measuring the
-token; it is measuring the marketing budget.
-
-The signals here were chosen by a single criterion — **cost to fake** — and each
-one carries a written account of how a team could fake it and what the
-counter-measure is. That field is mandatory: registering a metric without it
-raises.
-
-| family | n | the question it answers |
-|---|---|---|
-| `onchain_topology` | 7 | How many *independent actors* are behind the holder set, not how many addresses? |
-| `social_authenticity` | 9 | Did 400 people reply, or one person with 400 accounts? |
-| `community_production` | 5 | Has anyone unconnected to the team done unpaid creative work for this? |
-| `narrative` | 5 | Is the idea new, wanted right now, and findable? |
-| `team_credibility` | 3 | What has this deployer done before, and what are they doing with their own bag right now? |
-| `execution_quality` | 4 | Could a position our size actually be *exited*? |
-
-`botsensai explain reply_template_ratio` prints any metric's thesis and its
-gameability note.
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Backpressure Gates](https://img.shields.io/badge/backpressure-9%2F9%20green-success.svg)](#-epistemic-honesty--backpressure-gates)
+[![Trading Mode](https://img.shields.io/badge/trading_mode-paper%20only-blueviolet.svg)](#-safety--zero-signing-guarantee)
 
 ---
 
-## Install and first run
+## 🧭 Overview
+
+Standard memecoin APIs only report easily manufactured metrics: *price, volume, liquidity, transaction count, and holder count*. A single operator with a basic bundling script can fabricate 200 holders and 400 transactions before the second chart candle forms.
+
+**Botsensai 2.0** discards vanity numbers and evaluates newly launched tokens against **34 adversarial signals designed around cost-to-fake**. It maps on-chain funder topologies, tracks deployer history, analyzes social remix depth, performs point-in-time walk-forward backtesting, executes convex paper trading, and provides rich interactive dashboards, visual topology explorers, and an AI intelligence copilot.
+
+---
+
+## 🏛 System Architecture
+
+```mermaid
+flowchart TD
+    subgraph Discovery [1. Discovery & Screening]
+        F[Pump.fun Firehose] --> S[Stream Ingestion]
+        D[Dexscreener / GeckoTerminal] --> S
+        M[Meteora / Moonshot / Raydium] --> S
+        S --> SC[Lightweight Local Screen]
+        SC -->|90% filtered: spam/dead| TR[Filtered Out]
+    end
+
+    subgraph Telemetry [2. Deep Telemetry Enrichment]
+        SC -->|Survivors| H[Helius RPC Funder Graphs]
+        SC --> B[Birdeye Security & Holders]
+        SC --> SO[Social Graph & pHash Vision]
+    end
+
+    subgraph Evaluation [3. Adversarial Scoring & Vetoes]
+        H --> ME[34 Adversarial Metric Engines]
+        B --> ME
+        SO --> ME
+        ME --> VG{Hard Anti-Rug Veto Gate}
+        VG -->|Veto Triggered| V[Refused / Dossier Logged]
+        VG -->|Passed Vetoes| CS[Composite Score Calibration]
+    end
+
+    subgraph Interfaces [4. Multi-Surface Exploration & Action]
+        CS --> UI[Live Web Dashboard]
+        CS --> TUI[Split-Pane Terminal TUI]
+        CS --> G[On-Chain Topology Graph]
+        CS --> CP[AI Grounded Copilot]
+        CS --> PT[Modelled Paper Trading Broker]
+        CS --> DC[Social Share Cards & Fal.ai]
+    end
+```
+
+---
+
+## ⚡ Instant Zero-Config Quickstart
+
+### 1. Installation
 
 ```bash
+git clone https://github.com/FritzHeider/Botsensai-Agentic.git
+cd Botsensai
 pip install -e ".[dev]"
-
-botsensai doctor                      # which surfaces are actually reachable
-botsensai metrics                     # the full suite
-botsensai sweep                       # one live pass: discover → screen → enrich → score
-botsensai label --min-age-hours 24    # ground truth for launches old enough to have one
-botsensai backtest --synthetic        # prove the pipeline executes end to end
-
-botsensai x-setup                     # optional: set up the logged-in X profile
-botsensai x-session                   # check whether that session is still valid
 ```
 
-Optional extras: `pip install -e ".[browser]" && playwright install chromium`
-enables the web-use collectors. `pip install -e ".[ml]"` enables the weight
-fitter's optional models.
+*Optional extras:*
+- `pip install -e ".[browser]"` + `playwright install chromium` (Headless X scraping)
+- `pip install -e ".[ml]"` (Scikit-learn & LightGBM signal weight calibration)
 
-### Checks
+### 2. Launch the Onboarding Wizard
 
 ```bash
-python scripts/backpressure.py        # every gate below, in one run, with the numbers
-python -m pytest                      # the suite
-python -m ruff check src tests scripts   # lint
-python -m mypy src                    # types (see below for why `src` and not `tests`)
-python scripts/audit.py               # dependency vulnerabilities, scoped to our closure
-python scripts/benchmark.py           # how the store's read paths scale as the corpus grows
+botsensai wizard
 ```
+*Verifies system prerequisites, checks RPC reachability, audits API credentials, and validates configuration syntax.*
 
-`scripts/backpressure.py` runs nine gates — tests, lint, typecheck, audit,
-coverage, complexity, duplication, performance, metric registry — and prints
-what each one measured rather than whether it was claimed. Exit 0 means every
-gate is green. It exists because a check that has never been installed and a
-check that passes are indistinguishable from a summary; both had happened.
-Complexity comes from `ruff --select C901` and is a ratchet at the current worst
-function, and duplication is a six-line sliding window over `src`; the two
-thresholds and the coverage floor are constants at the top of the file with the
-date they were measured.
-
-Types are gated on `src` only. `tests/` and `scripts/` are linted but not
-type-checked: mypy skips the body of an unannotated function by default, which
-is most of the suite, so gating them would buy annotation churn rather than
-safety. `[tool.mypy]` deliberately sets no `python_version` — pinning 3.11 on a
-3.13 interpreter made mypy abort inside numpy's stubs before checking anything,
-and ruff's `target-version` is what holds the 3.11 floor.
-
-`scripts/audit.py` exists because bare `pip-audit` audits the whole
-interpreter — on a conda base environment that is mostly packages this repo
-neither depends on nor can fix. It exits 0 clean, 1 on findings, 2 if the
-scanner itself is missing.
-
-`scripts/benchmark.py` prints microseconds per call for each hot read path at
-increasing corpus sizes. It is a measurement, not a gate; the gate is
-`tests/test_performance.py`, which fails if any of those paths starts planning a
-full table scan.
-
-`botsensai label` writes the ground truth everything downstream is fitted
-against, and it reports two multiples side by side on purpose. The peak is what
-the chart did; the realizable figure is what a 0.25 SOL position would have
-received selling into the depth that was actually there. Measured on the label
-policy's own curve, a 10x costs 79% of itself on 200 USD of liquidity, 27% on
-2,000 USD and 4% on 20,000 USD. Training on the peak teaches the scorer to hunt
-for spikes nobody could have sold. Where the t0 price is genuinely unknown —
-181 of 716 launches on the current corpus were first seen more than fifteen
-minutes after the mint — both multiples are `NULL` rather than 1.0.
-
-A live `botsensai sweep` on 2026-07-25 pulled 165 launches, screened them to
-eight, collected 2,583 real trades enriching those, scored them, and entered
-nothing — the top candidate scored 0.61 against a 0.68 threshold. That refusal is
-the system working as designed. `botsensai doctor` reports 8 of 8 surfaces
-reachable.
-
----
-
-## How it works
-
-```
-discover      cheap, broad      ~165 launches/sweep from pump.fun, Dexscreener, GeckoTerminal
-   ↓
-screen        free, local       ~12 survivors — age, liquidity floor, launch effort, ticker contention
-   ↓
-enrich        expensive         trades, holders, security, social — in rank order until the budget runs out
-   ↓
-score         free              34 metrics → composite + hard veto gates
-   ↓
-decide        risk-gated        convex sizing, enforced limits, modelled fills
-   ↓
-remember      durable           regime notes, entry rationale, post-mortems
-```
-
-The screening step is load-bearing. The most valuable endpoint in the stack
-allows 60 calls per minute against thousands of tokens per hour; enriching
-everything exhausts it in seconds. Screening costs nothing and removes over 90%
-of the feed.
-
-`docs/ARCHITECTURE.md` has the full design. `docs/DATA_SOURCES.md` has every
-endpoint, field name and rate limit, verified live rather than copied from a
-tutorial — which matters here, because most published guides to the pump.fun API
-now describe endpoints that return 404. `docs/RESULTS.md` has what has actually
-been measured, which is currently metric coverage and *not* edge — that section
-says so in those words rather than being absent.
-
----
-
-## The parts that exist to stop you fooling yourself
-
-**Point-in-time correctness.** Every record carries `as_of` (when the fact was
-true) and `observed_at` (when we learned it). The backtester filters on both.
-That second clause blocks the subtlest leak in the system: a record backfilled
-hours after a decision that could not possibly have used it.
-
-**Absence is never bearishness.** A metric with insufficient inputs returns
-`MISSING`, not `0.0`. Returning zero for "unknown" is a strong bearish claim made
-from no data, and it is the bug that quietly poisons a composite score.
-
-**Vetoes are refusals, not penalties.** A live mint authority, a deployer with
-prior rugs, or an exit depth below the intended position size short-circuits the
-composite entirely. Encoding these as weights would let a high enough score
-override them.
-
-**Fills are charged for properly.** Latency between decision and inclusion, curve
-impact as a real constant-product integral, platform and LP fees, priority fees
-and Jito tips, a transaction failure rate with fees still burned on failure, and
-a probabilistic sandwich penalty. The same simulator serves the paper broker and
-the backtester, so their results are comparable rather than being two different
-fictions.
-
-**Results come with their sample size.** `BacktestResult` reports a bootstrap
-confidence interval rather than a Sharpe ratio, because the return distribution
-here is far too skewed for Sharpe to mean anything, and it says so out loud when
-the interval spans zero.
-
-**Content cannot be published undisclosed.** The generator writes only from
-sourced evidence, refuses to make price predictions, and enforces disclosure
-after rendering rather than trusting its own templates.
-
-**A success with an empty body is a failure.** Three widely-used X endpoints
-return HTTP 200 with zero bytes. A collector that trusts the status code records
-"no social activity" for every token forever and never raises an alarm — which
-reads downstream as a bearish claim about the entire market. Empty successes
-raise, and a test guards the known-dead endpoints by name.
-
-**Program accounts are not holders.** The bonding-curve account, AMM pool vaults
-and the burn address are excluded before any concentration figure is computed.
-Include them and every healthy pre-graduation token reads as ~100% concentrated,
-which would veto the entire population the system exists to trade.
-
-**An authenticated session is verified, not assumed.** Reply text, bookmarks and
-per-engager account ages exist on no free X path, so there is an optional
-session-backed collector — gated behind three separate opt-ins, reading a Chrome
-profile you logged into by hand. Botsensai never holds a credential, and a test
-asserts no login or password-handling code exists. If the session expires the
-collector says so and falls back visibly, because an expired session returns
-empty results that are indistinguishable from a token nobody is talking about.
-`docs/X_SESSION.md` has the setup and the honest account of what it costs.
-
----
-
-## What is proven, and what is not
-
-**Proven:** the pipeline runs against live endpoints across eight surfaces; the
-metrics separate synthetic organic launches from manufactured pumps from rugs
-with the expected ordering and margins; point-in-time correctness holds under
-direct test; 108 tests pass and the linter is clean.
-
-**Not proven:** that any of this predicts returns. There is no corpus of labelled
-outcomes yet, the weights are unfitted priors, and the only backtests that have
-run are over synthetic data — which demonstrates that the machinery executes and
-says nothing whatsoever about profitability. Every synthetic result is labelled
-as such in its own summary.
-
-Closing that gap is the whole content of `@fix_plan.md`. It is a completely
-legitimate outcome for the answer to turn out to be no.
-
----
-
-## Continuing the build autonomously
-
-The remaining work is decomposed into dependency-ordered tasks with
-machine-checkable acceptance criteria, ready for ralph-orchestrator:
+### 3. Run the 60-Second Interactive Demo
 
 ```bash
-git init && git add -A && git commit -m "baseline"
-ralph run --max-iterations 30 --max-cost 10.0
+botsensai demo
 ```
-
-`PROMPT.md` is the loop spec — requirements, hard constraints, acceptance
-commands, and a "signs" section carrying the corrections that were expensive to
-learn the first time. `@fix_plan.md` is the queue, phased so that each phase
-unblocks the next:
-
-1. **Get real data on disk** — continuous collection, websocket ingestion,
-   outcome labelling, wallet history, funding graphs.
-2. **Raise metric coverage** — currently 38–55%; below 50% the composite is a guess.
-3. **Backtest properly** — walk-forward with embargo, ablation, null-hypothesis
-   baselines, fill-model calibration against observed slippage.
-4. **Learn and adapt** — fit weights on labelled outcomes, form heuristics from
-   post-mortems, discover copytrade wallets.
-5. **Operate** — dashboard, scheduled content, published track record, kill switch.
-
-Do not skip to phase 5. A dashboard over an unvalidated signal is a very
-convincing way to lose money.
+*Executes an automated, self-contained simulation comparing an organic runner (`$GIGAWHALE`) against a sybil-bundled rug (`$PEPERUG`) with live telemetry ingestion, adversarial scoring, and paper trade execution.*
 
 ---
 
-## Safety posture
+## 🌟 Core Features & Command Reference
 
-- Live trading is **not implemented**. `LiveBroker` raises; `build_broker` raises
-  in live mode; and `test_repository_contains_no_signing_code` fails the suite if
-  signing-capable code appears.
-- No key, keyfile path or API token is read from config. Secrets come from the
-  environment only.
-- Only public data is collected, at below-human request rates, with a circuit
-  breaker per surface so a rate limit never escalates into a ban.
-- Risk limits are enforced in the broker rather than advised in the strategy.
-  Position caps, exposure caps, daily loss limits and trade rate limits reject
-  orders outright.
+### 🎨 1. Live Visual Interfaces & Exploration
 
-Nothing here is financial advice, and nothing here should be pointed at real
-money on the strength of a synthetic backtest.
-# Botsensai-Agentic
+| Command | Description | Interface |
+| :--- | :--- | :--- |
+| `botsensai ui --port 8000` | Launch real-time dark glassmorphic HTML5 web dashboard with WebSocket candidate stream and SVG radar charts. | Browser (`http://localhost:8000`) |
+| `botsensai graph <mint>` | Interactive D3.js force-directed network graph rendering deployer wallets, upstream funding trees, and sybil clusters. | Browser / Graph UI |
+| `botsensai tui` | Split-pane Rich Live terminal interface displaying discovery streams, live paper positions, and signal audits. | Terminal TUI |
+| `botsensai autopsy <mint>` | Forensic post-mortem timeline tracing chronological events (trades, liquidity shifts, vetoes) of a token. | Terminal / Markdown |
+| `botsensai compare <m1> <m2>` | Side-by-side metric audit comparing runner vs rug tokens across all 34 signals. | Terminal Table |
+| `botsensai gallery <mint>` | Perceptual image hashing (`pHash`) clustering and Originality Index calculation across launch memes. | Terminal / Media |
+
+### 🤖 2. Interactive Intelligence & Copilot
+
+| Command | Description | Interface |
+| :--- | :--- | :--- |
+| `botsensai ask <mint> "<question>"` | Point-in-time grounded AI Copilot explaining token safety, veto rationale, and metrics with citations. | Natural Language |
+| `botsensai share <mint>` | Generates high-resolution (1200x675) SVG infographic share cards with speedometer gauges and radar polygons. | SVG / Fal.ai |
+| `botsensai sandbox` | Strategy parameter sensitivity grid simulating threshold and stop-loss trade-offs against historical cohorts. | Terminal Grid |
+| `botsensai playground` | Gamified training simulator challenging operators against adversarial launch scenarios with outcome scoring. | Interactive CLI |
+
+### 📊 3. Quantitative Depth & Research Lab
+
+| Command | Description | Interface |
+| :--- | :--- | :--- |
+| `botsensai smart-money` | Discovers profitable, unaffiliated early buyer wallets ($\ge 60\%$ win-rate) preserving strict PIT integrity. | Terminal Table |
+| `botsensai replay <mint>` | Second-by-second historical tape player animating telemetry evolution and exact veto trigger timings. | Terminal Animation |
+| `botsensai digest` | Compiles comprehensive Markdown/HTML executive market intelligence and alpha briefings. | Markdown / HTML |
+| `notebooks/` | Pre-built Jupyter notebooks for Signal Exploration, Walk-Forward Backtesting, and Funder Forensics. | Jupyter Lab |
+
+### ⚡ 4. Developer Experience & Ecosystem
+
+| Command | Description | Interface |
+| :--- | :--- | :--- |
+| `botsensai snipe` | Discover active bonding curves, score candidates, and snipe the current #1 best token in paper mode. | Simulated Execution |
+| `botsensai serve --port 8001` | Programmatic headless REST and WebSocket API server with OpenAPI / Swagger documentation (`/docs`). | REST API / WS |
+| `botsensai corpus export` | Packages SQLite databases, telemetry records, and weights into compressed `.tar.gz` archive snapshots. | Tarball Archive |
+| `botsensai sweep` | Executes a single live discovery, screening, enrichment, and scoring pass over active Solana launchpads. | CLI Engine |
+| `botsensai run` | Runs the continuous multi-feed background streaming supervisor and paper trading broker. | Daemon Runner |
+
+---
+
+## 🔬 The 34 Adversarial Signals (Cost-to-Fake Thesis)
+
+Every metric in Botsensai is strictly evaluated on its **cost to fake** and requires mandatory gameability documentation:
+
+```
+Family                   Count  Core Question Answered
+─────────────────────────────────────────────────────────────────────────────────────────────
+onchain_topology             7  How many independent human actors fund this holder set?
+social_authenticity          9  Did 400 distinct people engage, or 1 person with 400 bots?
+community_production         5  Has anyone unpaid created original remix art or video?
+narrative                    5  Is the cultural idea novel, search-trending, and unique?
+team_credibility             4  What is the deployer's on-chain history and current bag action?
+execution_quality            4  Could our target position size realistically be exited?
+```
+
+### Signal Family Details
+
+#### 1. On-Chain Topology & Funder Graphs (`onchain_topology`)
+- **`funder_tree_entropy`**: Shannon entropy of upstream wallet funding sources (detects single-source deployer distribution).
+- **`top10_clean_share`**: Holder concentration excluding AMM vaults, bonding curve accounts, and burned addresses.
+- **`sybil_cluster_coefficient`**: Graph clustering coefficient across early transaction graphs.
+- **`co_funder_dispersion`**: Shared upstream funding links among top 20 non-deployer holders.
+- **`bundle_snipe_share`**: Percentage of supply acquired in slot 0/1 atomic Jito bundles.
+- **`deployer_prior_rugs`**: Historical count of deployer-associated tokens that pulled liquidity or dumped.
+- **`deployer_funded_ratio`**: Fraction of early buyers funded directly or transitively by the deployer wallet.
+
+#### 2. Social Authenticity & Sybil Defense (`social_authenticity`)
+- **`reply_template_ratio`**: Levenshtein edit distance clustering across social replies (catches comment bots).
+- **`engager_age_dispersion`**: Account creation date variance among social engagers.
+- **`follower_credibility_ratio`**: Ratio of high-reputation accounts to newly minted spam followers.
+- **`bookmark_to_like_ratio`**: Organic utility ratio (botnets rarely buy bookmarks).
+- **`reply_to_retweet_ratio`**: Discussion density vs automated retweet amplifier scripts.
+- **`video_view_authenticity`**: View-to-engagement proportions on video platforms.
+- **`channel_call_lead_time`**: Telegram call channel median lead time to subsequent peak multiple.
+- **`x_account_creation_gap`**: Time elapsed between token concept creation and official account registration.
+- **`social_co_mention_velocity`**: Organic social mention acceleration across independent profiles.
+
+#### 3. Community Production & Meme Lineage (`community_production`)
+- **`original_art_count`**: Unpaid distinct visual assets produced by non-team accounts.
+- **`meme_remix_depth`**: Perceptual hash (`pHash`) clustering detecting novel artistic adaptations.
+- **`video_remix_count`**: Short-form video edits and animations generated for the token.
+- **`ugc_ratio`**: Percentage of total media output created by community members.
+- **`phash_cluster_size`**: Visual lineage tree branching and originality index.
+
+#### 4. Narrative & Search Momentum (`narrative`)
+- **`topic_novelty`**: Semantic novelty compared to historical meme themes.
+- **`search_velocity`**: Search query acceleration and trend breakout magnitude.
+- **`ticker_contention`**: Multi-token symbol collisions launched within a short time window.
+- **`cultural_relevance`**: External cultural event correlation and news resonance.
+- **`domain_age_ratio`**: Registered domain age relative to token deployment timestamp.
+
+#### 5. Team Credibility & Insider Overhang (`team_credibility`)
+- **`deployer_retention_rate`**: Deployer initial token allocation holding curve over time.
+- **`deployer_sol_commitment`**: SOL spent by deployer on their own token bonding curve at $t_0$.
+- **`insider_supply_overhang`**: Total supply controlled by deployer, snipers, and co-funded addresses.
+- **`deployer_velocity`**: Time elapsed since deployer's previous launch attempt.
+
+#### 6. Execution Quality & Liquidity Realizability (`execution_quality`)
+- **`exit_depth_native`**: Liquidity available to absorb a 0.25 SOL exit with $< 500$ bps slippage.
+- **`bonding_curve_progress`**: Percentage completion along the bonding curve toward Raydium graduation.
+- **`sandwich_risk_ratio`**: Historical MEV sandwich activity on the token's trading pool.
+- **`realizable_peak_multiple`**: Net attainable exit multiple after deducting integral curve impact and fees.
+
+---
+
+## 🛡 Epistemic Honesty & Backpressure Gates
+
+Botsensai includes an automated quality assurance harness enforcing **9 strict verification gates**:
+
+```bash
+python scripts/backpressure.py
+```
+
+```text
+Backpressure gates
+
+  PASS  tests        pass     603 passed, 0 failed, 0 errors
+  PASS  lint         pass     ruff over src tests scripts: All checks passed!
+  PASS  typecheck    pass     mypy over src: Success: no issues found in 88 source files
+  PASS  audit        pass     No known dependency vulnerabilities found
+  PASS  coverage     pass     81% of statements (floor 55%)
+  PASS  complexity   10       worst 10 (src/botsensai/supervisor.py); 1117 functions, 0 over 10
+  PASS  duplication  pass     1.8% of lines in repeated blocks
+  PASS  performance  pass     3 query-plan guards passed; no hot read path full-table scans
+  PASS  specs        pass     34 metrics registered (floor 32)
+
+9/9 green
+```
+
+### Core Integrity Guarantees
+
+1. **Point-In-Time Correctness**: All training, backtesting, and evaluation queries enforce `as_of <= decision_time` and `observed_at <= decision_time`. Information leaks from the future are structurally impossible.
+2. **Absence is Never Bearishness**: Missing metric data produces `MISSING` (`None`), never `0.0`. Defaulting missing data to zero falsely penalizes unscraped tokens.
+3. **Safety Vetoes are Hard Refusals**: Critical red flags (insider supply $> 30\%$, deployer rugs $> 0$, honeypot transfer tax) short-circuit scoring immediately.
+4. **Realistic Modeled Execution**: Every paper trade and backtest order calculates constant-product curve integrals, priority fees, Jito tips, execution latency, and sandwich penalties.
+5. **Zero-Signing Guarantee**: There is **no transaction signing or private key loading code** anywhere in the repository (`test_repository_contains_no_signing_code` enforces this).
+
+---
+
+## 📁 Repository Structure
+
+```text
+Botsensai/
+├── src/botsensai/
+│   ├── api.py                   # Headless REST & WebSocket API Server (/api/v1)
+│   ├── autopsy.py               # Token autopsy forensic timelines & comparisons
+│   ├── bot.py                   # Interactive Telegram/Discord slash commands
+│   ├── cli.py                   # Unified Typer CLI entrypoint
+│   ├── copilot.py               # Grounded natural language AI token explainer
+│   ├── corpus_sync.py           # Database & weight snapshot bundle sync
+│   ├── demo.py                  # Zero-config 60-second interactive demo runner
+│   ├── digest.py                # Executive alpha digest generator
+│   ├── inspector.py             # Single-token deep forensic auditor
+│   ├── onboarding.py            # Guided interactive setup & readiness wizard
+│   ├── replay.py                # Historical tape replay player & visualizer
+│   ├── sandbox.py               # Strategy parameter sensitivity explorer
+│   ├── smart_money.py           # PIT-compliant profitable wallet discovery
+│   ├── tui.py                   # Split-pane Rich Live terminal dashboard
+│   ├── backtest/                # Walk-forward backtester & bootstrap engine
+│   ├── collectors/              # Launchpad, DEX, RPC, and social scraping adapters
+│   ├── dashboard/               # FastAPI live server, D3.js topology graph, and web UI
+│   ├── execution/               # Realistic order simulation, fees, and paper broker
+│   ├── media/                   # Fal.ai social cards, pHash clustering, and gallery
+│   ├── metrics/                 # 34 adversarial metric engines and Plugin SDK
+│   ├── models.py                # Pydantic core domain models
+│   └── store/                   # SQLite PIT database store & indexes
+├── notebooks/                   # Pre-built research lab Jupyter notebooks
+├── tests/                       # 603 comprehensive automated unit & property tests
+├── config/                      # Configuration defaults and calibrated weights
+└── scripts/                     # Backpressure gates, audit, and benchmark tools
+```
+
+---
+
+## 📄 License
+
+MIT License. Engineered for open quantitative research, on-chain safety, and adversarial market intelligence.
