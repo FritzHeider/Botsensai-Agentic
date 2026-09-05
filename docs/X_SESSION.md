@@ -43,7 +43,7 @@ Be clear-eyed about it:
 
 Botsensai never sees a credential. There is no password field, no login flow
 anywhere in the codebase, and no cookie is ever written into the repository. You
-log in by hand, once; the collector reads the browser profile you logged into.
+log in by hand, once; the collector reads the browser profile you logged into.7
 
 ## Setup — the short version
 

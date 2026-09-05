@@ -41,6 +41,21 @@ log = get_logger(__name__)
 #: refuses rather than producing a number.
 MIN_SAMPLES_TO_FIT = 200
 
+#: Required minimum labelled samples PER REGIME to fit separate weights for hot, normal, and dead.
+MIN_SAMPLES_PER_REGIME = 200
+
+#: A decile of nineteen observations is one observation. Below this many samples
+#: `top_decile_lift` returns 0.0 — and since the objective is
+#: `0.4 * rank + 0.6 * lift`, that silently deletes sixty percent of it rather
+#: than failing. Named so a caller with a small holdout can say which of the two
+#: terms its numbers actually came from.
+TOP_DECILE_MIN_SAMPLES = 20
+
+#: Float dust below which a delta is not treated as a sign. `_objective` is
+#: deterministic given fixed weights, so a real negative delta is real; this only
+#: keeps `-1e-17` from being announced as a liability.
+LIABILITY_TOLERANCE = 1e-9
+
 
 @dataclass
 class TrainingExample:
@@ -51,6 +66,7 @@ class TrainingExample:
     values: dict[str, float]
     label: float
     weight: float = 1.0
+    regime: str = "unknown"
 
     @classmethod
     def from_values(
@@ -60,6 +76,7 @@ class TrainingExample:
         values: Sequence[MetricValue],
         outcome: Outcome,
         target: str = "realizable",
+        regime: str = "unknown",
     ) -> TrainingExample:
         """Build an example, choosing the target carefully.
 
@@ -88,6 +105,7 @@ class TrainingExample:
             as_of=as_of,
             values={v.metric_id: float(v.normalized) for v in values if v.normalized is not None},
             label=label,
+            regime=regime,
         )
 
 
@@ -154,7 +172,7 @@ def top_decile_lift(scores: Sequence[float], labels: Sequence[float]) -> float:
     ever trades its highest-scoring candidates, so performance in the tail is
     the whole question and average-case correlation can be misleading.
     """
-    if len(scores) < 20 or len(scores) != len(labels):
+    if len(scores) < TOP_DECILE_MIN_SAMPLES or len(scores) != len(labels):
         return 0.0
     paired = sorted(zip(scores, labels, strict=True), key=lambda p: p[0], reverse=True)
     k = max(1, len(paired) // 10)
@@ -223,6 +241,66 @@ class WeightFitter:
 
     # -- fitting ------------------------------------------------------------ #
 
+    def _search(self, train: Sequence[TrainingExample], weights: Weights) -> None:
+        """Coordinate ascent over metric weights then family budgets.
+
+        The step halves only when a full pass moves neither, so the search
+        spends its iterations where they still buy something and stops when the
+        step is too small to matter.
+        """
+        best = self._objective(train, weights)
+        step = 0.5
+        for iteration in range(self.iterations):
+            best, metrics_improved = self._tune_metrics(train, weights, step, best)
+            best, families_improved = self._tune_families(train, weights, best)
+            if metrics_improved or families_improved:
+                continue
+            step *= 0.5
+            if step < 0.02:
+                log.debug("fit.converged", iteration=iteration)
+                break
+
+    def _tune_metrics(
+        self, train: Sequence[TrainingExample], weights: Weights, step: float, best: float
+    ) -> tuple[float, bool]:
+        """One pass over the metric weights in random order."""
+        improved = False
+        order = [m.id for m in self.registry]
+        self.rng.shuffle(order)
+        for metric_id in order:
+            current = weights.metrics.get(metric_id, 0.05)
+            for candidate in (current * (1.0 + step), current * (1.0 - step)):
+                candidate = max(0.0, candidate)
+                if abs(candidate - current) < 1e-6:
+                    continue
+                weights.metrics[metric_id] = candidate
+                value = self._objective(train, weights)
+                if value > best + 1e-6:
+                    best = value
+                    current = candidate
+                    improved = True
+                else:
+                    weights.metrics[metric_id] = current
+        return best, improved
+
+    def _tune_families(
+        self, train: Sequence[TrainingExample], weights: Weights, best: float
+    ) -> tuple[float, bool]:
+        """The same treatment for the family budgets, at a coarser step."""
+        improved = False
+        for family in list(DEFAULT_FAMILY_WEIGHTS):
+            current = weights.families.get(family, 0.1)
+            for candidate in (current * 1.25, current * 0.8):
+                weights.families[family] = max(0.0, candidate)
+                value = self._objective(train, weights)
+                if value > best + 1e-6:
+                    best = value
+                    current = max(0.0, candidate)
+                    improved = True
+                else:
+                    weights.families[family] = current
+        return best, improved
+
     def fit(
         self,
         examples: Sequence[TrainingExample],
@@ -250,45 +328,7 @@ class WeightFitter:
         train, holdout = shuffled[:split], shuffled[split:]
 
         weights = Weights(version=version or f"v{utcnow():%Y%m%d}")
-        best = self._objective(train, weights)
-
-        metric_ids = [m.id for m in self.registry]
-        step = 0.5
-        for iteration in range(self.iterations):
-            improved = False
-            order = list(metric_ids)
-            self.rng.shuffle(order)
-            for metric_id in order:
-                current = weights.metrics.get(metric_id, 0.05)
-                for candidate in (current * (1.0 + step), current * (1.0 - step)):
-                    candidate = max(0.0, candidate)
-                    if abs(candidate - current) < 1e-6:
-                        continue
-                    weights.metrics[metric_id] = candidate
-                    value = self._objective(train, weights)
-                    if value > best + 1e-6:
-                        best = value
-                        current = candidate
-                        improved = True
-                    else:
-                        weights.metrics[metric_id] = current
-            # Family budgets get the same treatment, at a coarser step.
-            for family in list(DEFAULT_FAMILY_WEIGHTS):
-                current = weights.families.get(family, 0.1)
-                for candidate in (current * 1.25, current * 0.8):
-                    weights.families[family] = max(0.0, candidate)
-                    value = self._objective(train, weights)
-                    if value > best + 1e-6:
-                        best = value
-                        current = max(0.0, candidate)
-                        improved = True
-                    else:
-                        weights.families[family] = current
-            if not improved:
-                step *= 0.5
-                if step < 0.02:
-                    log.debug("fit.converged", iteration=iteration)
-                    break
+        self._search(train, weights)
 
         # Renormalize families so the budget sums to one; scores stay in 0..1.
         family_total = sum(weights.families.values())
@@ -351,45 +391,310 @@ class WeightFitter:
         return dict(sorted(out.items(), key=lambda kv: kv[1], reverse=True))
 
 
+@dataclass(frozen=True)
+class AblationRow:
+    """One metric's contribution, with the sample size that produced it.
+
+    `coverage` is not decoration. A delta of zero has two completely different
+    meanings — *this metric was scored on every token and moved nothing* and
+    *this metric never produced a value at all* — and without the count beside
+    it the second is indistinguishable from the first. Reporting an unmeasured
+    metric as a neutral one is the same mistake as returning `0.0` from a metric
+    to mean "no data".
+    """
+
+    metric_id: str
+    family: str
+    #: Holdout examples that carried a value for this metric.
+    coverage: int
+    #: Objective with every metric, minus the objective with this one dropped.
+    #: Positive means the metric earns its place; negative means removing it
+    #: made the model better.
+    delta: float
+
+    @property
+    def measured(self) -> bool:
+        return self.coverage > 0
+
+    @property
+    def liability(self) -> bool:
+        """Removal improved the objective — and it was actually scored."""
+        return self.measured and self.delta < -LIABILITY_TOLERANCE
+
+    @property
+    def inert(self) -> bool:
+        """Scored on real tokens and worth nothing. Not the same as unmeasured."""
+        return self.measured and abs(self.delta) <= LIABILITY_TOLERANCE
+
+    @property
+    def state(self) -> str:
+        if not self.measured:
+            return "not measured"
+        if self.liability:
+            return "liability"
+        if self.inert:
+            return "inert"
+        return "contributes"
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "metric_id": self.metric_id,
+            "family": self.family,
+            "coverage": self.coverage,
+            "delta": round(self.delta, 5),
+            "state": self.state,
+        }
+
+
+@dataclass
+class AblationReport:
+    """Every registered metric's contribution, measured out of sample."""
+
+    rows: list[AblationRow]
+    baseline_objective: float
+    n_examples: int
+    n_train: int
+    n_holdout: int
+    fitted: bool
+    weights_version: str
+    #: Token keys on each side of the split. Exposed so a caller can prove the
+    #: deltas were measured on tokens the fit never saw, rather than take it on
+    #: faith from a docstring.
+    train_keys: tuple[str, ...] = ()
+    holdout_keys: tuple[str, ...] = ()
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def liabilities(self) -> list[AblationRow]:
+        return [r for r in self.rows if r.liability]
+
+    @property
+    def unmeasured(self) -> list[AblationRow]:
+        return [r for r in self.rows if not r.measured]
+
+    @property
+    def inert(self) -> list[AblationRow]:
+        return [r for r in self.rows if r.inert]
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "n_examples": self.n_examples,
+            "n_train": self.n_train,
+            "n_holdout": self.n_holdout,
+            "fitted": self.fitted,
+            "weights_version": self.weights_version,
+            "baseline_objective": round(self.baseline_objective, 5),
+            "metrics": len(self.rows),
+            "measured": len(self.rows) - len(self.unmeasured),
+            "liabilities": [r.metric_id for r in self.liabilities],
+            "warnings": self.warnings,
+        }
+
+
+def _strip(examples: Sequence[TrainingExample], metric_id: str) -> list[TrainingExample]:
+    return [
+        TrainingExample(
+            token_key=e.token_key,
+            as_of=e.as_of,
+            values={k: v for k, v in e.values.items() if k != metric_id},
+            label=e.label,
+            weight=e.weight,
+        )
+        for e in examples
+    ]
+
+
+def _ablation_warnings(report: AblationReport) -> list[str]:
+    """The caveats that decide how much of the table means anything."""
+    notes: list[str] = []
+    if report.n_holdout < TOP_DECILE_MIN_SAMPLES:
+        notes.append(
+            f"only {report.n_holdout} holdout examples, below the {TOP_DECILE_MIN_SAMPLES} "
+            "a decile needs: top_decile_lift is 0.0 for every candidate, so 60% of the "
+            "objective is dead and every delta below is the rank term alone"
+        )
+    if report.unmeasured:
+        names = ", ".join(r.metric_id for r in report.unmeasured)
+        notes.append(
+            f"{len(report.unmeasured)} of {len(report.rows)} metrics produced no value on "
+            f"any holdout token, so their 0.00000 means NOT MEASURED, not no effect — "
+            f"nothing here judges them: {names}"
+        )
+    if not report.fitted:
+        notes.append(
+            "weights were not fitted, so these deltas describe each metric's contribution "
+            "under the default hand-set weighting, not under a model"
+        )
+    return notes
+
+
 def ablation(
     examples: Sequence[TrainingExample],
     registry: MetricRegistry | None = None,
     seed: int = 1337,
-) -> dict[str, float]:
-    """Drop each metric in turn and measure how much the objective falls.
+    *,
+    holdout_fraction: float = 0.25,
+) -> AblationReport:
+    """Drop each metric in turn and measure how much the holdout objective falls.
 
     A metric whose removal does not move the objective is not earning its place,
     and one whose removal *improves* it is actively harmful. Running this
     routinely is what stops the suite from accumulating dead weight.
+
+    The split is the point. Weights are fitted on the train half and every delta
+    is then measured on a holdout the fit never saw, because an in-sample
+    ablation rewards a metric for the noise it helped memorize — the metric that
+    looks most valuable is the one the fit leaned on hardest to overfit. (The
+    fitter runs its own inner split of the train half for its own diagnostics;
+    that is a different, smaller holdout and it is not this one.)
+
+    Every registered metric gets a row whether or not it was ever scored, and a
+    row that was never scored says so rather than reporting a zero delta that
+    reads as a verdict.
     """
     reg = registry or build_registry()
     fitter = WeightFitter(reg, seed=seed)
-    baseline_weights = Weights()
-    baseline = fitter._objective(examples, baseline_weights)
+    family_of = {m.id: m.family for m in reg}
 
-    out: dict[str, float] = {}
-    for metric in reg:
-        stripped = [
-            TrainingExample(
-                token_key=e.token_key,
-                as_of=e.as_of,
-                values={k: v for k, v in e.values.items() if k != metric.id},
-                label=e.label,
-                weight=e.weight,
-            )
-            for e in examples
-        ]
-        value = fitter._objective(stripped, baseline_weights)
-        out[metric.id] = round(baseline - value, 5)
-    return dict(sorted(out.items(), key=lambda kv: kv[1], reverse=True))
+    shuffled = list(examples)
+    random.Random(seed).shuffle(shuffled)
+    split = int(len(shuffled) * (1.0 - holdout_fraction))
+    train, holdout = shuffled[:split], shuffled[split:]
+
+    fit = fitter.fit(train)
+    baseline = fitter._objective(holdout, fit.weights)
+
+    rows = [
+        AblationRow(
+            metric_id=metric.id,
+            family=family_of.get(metric.id, "unknown"),
+            coverage=sum(1 for e in holdout if metric.id in e.values),
+            delta=baseline - fitter._objective(_strip(holdout, metric.id), fit.weights),
+        )
+        for metric in reg
+    ]
+    # Measured rows first, best contribution at the top. Unmeasured rows sink to
+    # the bottom rather than sorting in among the genuine zeros, where they would
+    # read as the marginal metrics rather than as the unjudged ones.
+    rows.sort(key=lambda r: (r.measured, r.delta), reverse=True)
+
+    report = AblationReport(
+        rows=rows,
+        baseline_objective=baseline,
+        n_examples=len(shuffled),
+        n_train=len(train),
+        n_holdout=len(holdout),
+        fitted=fit.fitted,
+        weights_version=fit.weights.version,
+        train_keys=tuple(e.token_key for e in train),
+        holdout_keys=tuple(e.token_key for e in holdout),
+        warnings=list(fit.warnings),
+    )
+    report.warnings.extend(_ablation_warnings(report))
+    log.info("ablation.done", **report.summary())
+    return report
+
+
+@dataclass
+class RegimeFitReport:
+    """Report for regime-conditional weight fitting across market regimes."""
+
+    weights: Weights
+    sample_counts: dict[str, int]
+    shipped: bool
+    skip_reason: str | None = None
+    reports: dict[str, FitReport] = field(default_factory=dict)
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "shipped": self.shipped,
+            "sample_counts": self.sample_counts,
+            "skip_reason": self.skip_reason,
+            "reports": {k: v.summary() for k, v in self.reports.items()},
+        }
+
+
+def fit_regime_weights(
+    examples: Sequence[TrainingExample],
+    registry: MetricRegistry | None = None,
+    seed: int = 1337,
+    *,
+    holdout_fraction: float = 0.25,
+    min_samples_per_regime: int = MIN_SAMPLES_PER_REGIME,
+) -> RegimeFitReport:
+    """Fit separate weightings for hot, normal, and dead regimes if each regime has enough samples.
+
+    Only ships regime-conditional weights if each regime ('hot', 'normal', 'dead') has at least
+    min_samples_per_regime labelled samples of its own; otherwise records why it was skipped
+    and returns global weights with shipped=False.
+    """
+    reg = registry or build_registry()
+    fitter = WeightFitter(reg, seed=seed)
+    global_fit = fitter.fit(examples, holdout_fraction=holdout_fraction)
+
+    by_regime: dict[str, list[TrainingExample]] = {"hot": [], "normal": [], "dead": []}
+    for e in examples:
+        if e.regime in by_regime:
+            by_regime[e.regime].append(e)
+
+    sample_counts = {k: len(v) for k, v in by_regime.items()}
+    insufficient = [k for k, count in sample_counts.items() if count < min_samples_per_regime]
+
+    if insufficient:
+        counts_str = ", ".join(f"{k}={sample_counts[k]}" for k in sorted(sample_counts))
+        skip_reason = (
+            f"Insufficient samples for regime-conditional fitting: {counts_str} "
+            f"(minimum {min_samples_per_regime} required per regime). "
+            "Skipping regime-specific weight shipping and falling back to global weights."
+        )
+        log.info("fit_regime_weights.skipped", reason=skip_reason)
+        return RegimeFitReport(
+            weights=global_fit.weights,
+            sample_counts=sample_counts,
+            shipped=False,
+            skip_reason=skip_reason,
+        )
+
+    regime_reports: dict[str, FitReport] = {}
+    parent_weights = Weights(
+        version=global_fit.weights.version,
+        families=dict(global_fit.weights.families),
+        metrics=dict(global_fit.weights.metrics),
+        fitted_on=global_fit.weights.fitted_on,
+        sample_size=global_fit.weights.sample_size,
+    )
+    for regime_name in ("hot", "normal", "dead"):
+        rfitter = WeightFitter(reg, seed=seed)
+        rfit = rfitter.fit(
+            by_regime[regime_name],
+            holdout_fraction=holdout_fraction,
+            version=f"{global_fit.weights.version}-{regime_name}",
+        )
+        regime_reports[regime_name] = rfit
+        parent_weights.regimes[regime_name] = rfit.weights
+
+    log.info("fit_regime_weights.shipped", sample_counts=sample_counts)
+    return RegimeFitReport(
+        weights=parent_weights,
+        sample_counts=sample_counts,
+        shipped=True,
+        reports=regime_reports,
+    )
 
 
 __all__ = [
+    "LIABILITY_TOLERANCE",
+    "MIN_SAMPLES_PER_REGIME",
     "MIN_SAMPLES_TO_FIT",
+    "TOP_DECILE_MIN_SAMPLES",
+    "AblationReport",
+    "AblationRow",
     "FitReport",
+    "RegimeFitReport",
     "TrainingExample",
     "WeightFitter",
     "ablation",
+    "fit_regime_weights",
     "spearman",
     "top_decile_lift",
 ]

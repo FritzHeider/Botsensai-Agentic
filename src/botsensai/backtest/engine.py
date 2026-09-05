@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -35,7 +35,7 @@ from typing import Any
 from botsensai.config import Settings, get_settings
 from botsensai.execution.broker import PaperBroker
 from botsensai.metrics import MetricRegistry, build_registry
-from botsensai.metrics.base import MetricContext
+from botsensai.metrics.base import MetricContext, MetricValue
 from botsensai.models import (
     Launch,
     MarketSnapshot,
@@ -45,11 +45,21 @@ from botsensai.models import (
     TokenRef,
     utcnow,
 )
+from botsensai.onchain.wallet_priors import WalletPriorIndex
+from botsensai.onchain.wallet_skill import WalletSkillIndex
 from botsensai.scoring.composite import CompositeScorer, Weights, score_to_size
 from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
 
 log = get_logger(__name__)
+
+#: Fewest trades a bootstrap interval may be computed from. Below it,
+#: `bootstrap_expectancy_ci` returns `(0.0, 0.0)` as a sentinel meaning *no
+#: interval*, which is a different finding from an interval that happens to
+#: span zero: the first says there is not enough data to say anything, the
+#: second says there is data and it shows no edge. Callers must tell them
+#: apart, so the threshold is named here rather than buried as a literal.
+BOOTSTRAP_MIN_TRADES = 5
 
 
 @dataclass
@@ -63,6 +73,8 @@ class TokenTape:
     posts: list[Any] = field(default_factory=list)
     security: Any = None
     wallet_priors: dict[str, int] = field(default_factory=dict)
+    wallet_skills: dict[str, float] = field(default_factory=dict)
+    wallet_typical_sizes: dict[str, float] = field(default_factory=dict)
     outcome: Outcome | None = None
 
     @property
@@ -132,6 +144,8 @@ class TokenTape:
             recent_narratives=list(recent_narratives),
             extra={
                 "market_regime": market_regime or {},
+                "wallet_skill": self.wallet_skills,
+                "wallet_typical_size": self.wallet_typical_sizes,
                 **(extra or {}),
             },
         )
@@ -174,6 +188,9 @@ class BacktestResult:
     score_distribution: list[float] = field(default_factory=list)
     veto_counts: dict[str, int] = field(default_factory=dict)
     metric_coverage: dict[str, float] = field(default_factory=dict)
+    # metric_id -> why a value was unusable, for the metrics that produced at
+    # least one unusable value. Present for every metric at 0.0 coverage.
+    absence_reasons: dict[str, str] = field(default_factory=dict)
     weights_version: str = "v0"
     synthetic: bool = False
     notes: list[str] = field(default_factory=list)
@@ -278,7 +295,7 @@ class BacktestResult:
         import random as _random
 
         pnl = [t.pnl_native for t in self.trades]
-        if len(pnl) < 5:
+        if len(pnl) < BOOTSTRAP_MIN_TRADES:
             return (0.0, 0.0)
         rng = _random.Random(seed)
         means: list[float] = []
@@ -292,6 +309,64 @@ class BacktestResult:
         return (round(lo, 6), round(hi, 6))
 
 
+@dataclass
+class _RunState:
+    """The accumulators threaded through one replay.
+
+    Grouped into an object so the phases of `Backtester.run` can be separate
+    methods without passing eight mutable containers to each of them.
+    """
+
+    scores_seen: list[float] = field(default_factory=list)
+    veto_counts: dict[str, int] = field(default_factory=dict)
+    metric_hits: dict[str, int] = field(default_factory=dict)
+    # First note seen for an unusable value, per metric. A metric at 0% coverage
+    # is otherwise indistinguishable from one whose collector silently died, and
+    # the note is the only place the difference is written down.
+    absence_reasons: dict[str, str] = field(default_factory=dict)
+    evaluated: int = 0
+    entered: int = 0
+    entry_info: dict[str, tuple[Score, float]] = field(default_factory=dict)
+    trades: list[TradeRecord] = field(default_factory=list)
+    # Peer values accumulate as the replay proceeds, so cross-sectional
+    # normalization only ever uses metrics already computed on earlier tokens.
+    # Seeding it from the whole population would be look-ahead.
+    peer_values: dict[str, list[float]] = field(default_factory=dict)
+
+    def accumulate(self, values: Sequence[MetricValue], score: Score) -> None:
+        self.scores_seen.append(score.composite)
+        for value in values:
+            if value.usable:
+                self.metric_hits[value.metric_id] = self.metric_hits.get(value.metric_id, 0) + 1
+            elif value.metric_id not in self.absence_reasons and value.notes:
+                self.absence_reasons[value.metric_id] = value.notes
+            if value.raw is not None:
+                self.peer_values.setdefault(value.metric_id, []).append(value.raw)
+        for veto in score.vetoes:
+            self.veto_counts[veto.value] = self.veto_counts.get(veto.value, 0) + 1
+
+
+@dataclass
+class _RegimeCache:
+    """Market regime, recomputed at most once every `interval_seconds` of replay.
+
+    The regime is a population-wide figure that does not move meaningfully
+    inside fifteen minutes, and recomputing it at every decision point walks
+    every tape again.
+    """
+
+    compute: Callable[[datetime], dict[str, Any]]
+    interval_seconds: float = 900.0
+    _value: dict[str, Any] = field(default_factory=dict)
+    _at: datetime | None = None
+
+    def value(self, when: datetime) -> dict[str, Any]:
+        if self._at is None or (when - self._at).total_seconds() >= self.interval_seconds:
+            self._value = self.compute(when)
+            self._at = when
+        return self._value
+
+
 class Backtester:
     """Replays a token population and produces a `BacktestResult`."""
 
@@ -302,10 +377,11 @@ class Backtester:
         weights: Weights | None = None,
         decision_interval_seconds: float = 60.0,
         max_decision_age_seconds: float = 3600.0,
+        scorer: CompositeScorer | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.registry = registry or build_registry()
-        self.scorer = CompositeScorer(self.registry, weights, self.settings)
+        self.scorer = scorer or CompositeScorer(self.registry, weights, self.settings)
         self.decision_interval = decision_interval_seconds
         self.max_decision_age = max_decision_age_seconds
 
@@ -317,6 +393,8 @@ class Backtester:
     ) -> list[TokenTape]:
         """Load a replayable universe from persisted collection data."""
         tapes: list[TokenTape] = []
+        index = WalletPriorIndex(db)
+        skill_index = WalletSkillIndex(db)
         for launch in db.launches_between(start, end):
             key = launch.token.key
             horizon = end
@@ -329,18 +407,43 @@ class Backtester:
                 security=db.security_as_of(key, horizon),
                 outcome=db.outcome(key),
             )
-            # Prior trading history per wallet, restricted to before this launch.
-            priors: dict[str, int] = {}
-            for t in tape.trades:
-                if t.wallet not in priors:
-                    priors[t.wallet] = db.wallet_seen_before(t.wallet, launch.created_at)
-            tape.wallet_priors = priors
+            # Prior trading history per wallet, restricted to before this launch
+            # *and* to what had been collected by then. The knowledge bound is
+            # the conservative choice available here: a tape's priors are fixed
+            # once and then reused at every decision instant, so they have to be
+            # valid at the earliest of them. Bounding on the launch instant can
+            # only undercount — which makes wallets read fresher and the signal
+            # more bearish — where dropping the bound silently credits a wallet
+            # with history nobody had yet seen.
+            tape.wallet_priors = index.priors_for(
+                (t.wallet for t in tape.trades),
+                launch.created_at,
+                observed_before=launch.created_at,
+            )
+            skills_res = skill_index.skills_for(
+                (t.wallet for t in tape.trades),
+                launch.created_at,
+                observed_before=launch.created_at,
+            )
+            tape.wallet_skills = skills_res.scores
+            tape.wallet_typical_sizes = skills_res.typical_sizes
             tapes.append(tape)
         return tapes
 
     @staticmethod
-    def tapes_from_synthetic(tokens: Iterable[Any]) -> list[TokenTape]:
-        """Wrap `SyntheticToken` objects as tapes."""
+    def tapes_from_synthetic(
+        tokens: Iterable[Any], *, outcomes: Mapping[str, Outcome] | None = None
+    ) -> list[TokenTape]:
+        """Wrap `SyntheticToken` objects as tapes.
+
+        `outcomes` is keyed on `TokenRef.key` and is what makes a synthetic
+        universe usable by anything that has to *fit* rather than only replay:
+        the walk-forward harness drops any train tape without a label, so
+        without it every train fold is empty and every fold silently runs on
+        default weights. It stays optional and empty by default because a plain
+        replay must not be handed outcome data it would then be scored against.
+        """
+        labels = outcomes or {}
         out: list[TokenTape] = []
         for t in tokens:
             out.append(
@@ -352,6 +455,9 @@ class Backtester:
                     posts=sorted(t.posts, key=lambda p: p.as_of),
                     security=t.security,
                     wallet_priors=t.wallet_priors,
+                    wallet_skills=getattr(t, "wallet_skills", {}),
+                    wallet_typical_sizes=getattr(t, "wallet_typical_sizes", {}),
+                    outcome=labels.get(t.launch.token.key),
                 )
             )
         return out
@@ -375,9 +481,9 @@ class Backtester:
             "graduation_rate_24h": graduated / len(recent),
             "launches_per_hour": len(recent) / hours,
             "new_token_inflow_usd_1h": sum(
-                (t.snapshot_at(when).liquidity_usd or 0.0)
-                for t in recent
-                if t.snapshot_at(when) is not None
+                snap.liquidity_usd or 0.0
+                for snap in (t.snapshot_at(when) for t in recent)
+                if snap is not None
             )
             / hours,
             "sample_size": len(recent),
@@ -409,28 +515,107 @@ class Backtester:
     ) -> BacktestResult:
         run_start = utcnow()
         if not tapes:
-            return BacktestResult(
-                started_at=run_start,
-                finished_at=utcnow(),
-                window_start=start or run_start,
-                window_end=end or run_start,
-                universe_size=0,
-                evaluated=0,
-                entered=0,
-                synthetic=synthetic,
-                notes=["empty universe"],
-            )
+            return self._empty_result(run_start, start, end, synthetic)
 
+        window_start, window_end = self._window_bounds(tapes, start, end)
+        broker = PaperBroker(self.settings, starting_native=starting_native, seed=self.settings.seed)
+        by_key = {t.token.key: t for t in tapes}
+        events = self._event_schedule(tapes, window_end)
+
+        state = _RunState()
+        regime = _RegimeCache(lambda w: self.compute_regime(tapes, w))
+
+        for when, key in events:
+            tape = by_key[key]
+            snapshot = tape.snapshot_at(when)
+            if snapshot is None:
+                continue
+
+            broker.mark(tape.token, snapshot.price_native or 0.0)
+
+            # Exits first: a position must be able to close before new capital
+            # is committed, otherwise the exposure cap is enforced against a
+            # stale portfolio.
+            broker.apply_exits(tape.token, snapshot, when)
+
+            already_in = key in broker.account.positions
+            if not already_in:
+                self._record_closed(tape, key, state, broker)
+
+            ctx = self._context(tape, when, tapes, state, regime.value(when))
+            if getattr(self.scorer, "skip_metric_evaluation", False):
+                values = []
+            else:
+                values = self.registry.evaluate_all(ctx)
+            score = self.scorer.score(ctx, values)
+            state.evaluated += 1
+            state.accumulate(values, score)
+
+            if on_score is not None:
+                on_score(tape, score)
+
+            if already_in:
+                should_exit, reason = self.scorer.should_exit(score)
+                if should_exit:
+                    broker.close_position(tape.token, snapshot, when, reason=reason)
+                continue
+
+            self._try_enter(tape, key, when, snapshot, ctx, score, broker, state)
+
+        self._liquidate(by_key, broker, state, window_end)
+
+        coverage = self._coverage(state)
+        return BacktestResult(
+            started_at=run_start,
+            finished_at=utcnow(),
+            window_start=window_start,
+            window_end=window_end,
+            universe_size=len(tapes),
+            evaluated=state.evaluated,
+            entered=state.entered,
+            trades=state.trades,
+            account=broker.summary(),
+            score_distribution=state.scores_seen,
+            veto_counts=state.veto_counts,
+            metric_coverage=coverage,
+            absence_reasons=dict(sorted(state.absence_reasons.items())),
+            weights_version=self.scorer.weights.version,
+            synthetic=synthetic,
+            notes=self._notes(coverage, state.entered),
+        )
+
+    # -- run phases --------------------------------------------------------- #
+
+    @staticmethod
+    def _empty_result(
+        run_start: datetime, start: datetime | None, end: datetime | None, synthetic: bool
+    ) -> BacktestResult:
+        return BacktestResult(
+            started_at=run_start,
+            finished_at=utcnow(),
+            window_start=start or run_start,
+            window_end=end or run_start,
+            universe_size=0,
+            evaluated=0,
+            entered=0,
+            synthetic=synthetic,
+            notes=["empty universe"],
+        )
+
+    @staticmethod
+    def _window_bounds(
+        tapes: Sequence[TokenTape], start: datetime | None, end: datetime | None
+    ) -> tuple[datetime, datetime]:
         window_start = start or min(t.launch.created_at for t in tapes)
         window_end = end or max(
             (t.snapshots[-1].as_of if t.snapshots else t.launch.created_at) for t in tapes
         )
+        return window_start, window_end
 
-        broker = PaperBroker(self.settings, starting_native=starting_native, seed=self.settings.seed)
-        by_key = {t.token.key: t for t in tapes}
-
-        # Build the event schedule: one decision point per token per interval,
-        # bounded by the maximum age we are willing to enter at.
+    def _event_schedule(
+        self, tapes: Sequence[TokenTape], window_end: datetime
+    ) -> list[tuple[datetime, str]]:
+        """One decision point per token per interval, bounded by the entry age cap."""
         events: list[tuple[datetime, str]] = []
         for tape in tapes:
             t0 = tape.launch.created_at
@@ -444,123 +629,87 @@ class Backtester:
             for i in range(1, n_steps + 1):
                 events.append((t0 + timedelta(seconds=i * step), tape.token.key))
         events.sort(key=lambda e: e[0])
+        return events
 
-        scores_seen: list[float] = []
-        veto_counts: dict[str, int] = {}
-        metric_hits: dict[str, int] = {}
-        metric_total = 0
-        evaluated = 0
-        entered = 0
-        entry_info: dict[str, tuple[Score, float]] = {}
-        trades: list[TradeRecord] = []
+    def _context(
+        self,
+        tape: TokenTape,
+        when: datetime,
+        tapes: Sequence[TokenTape],
+        state: _RunState,
+        regime_cache: dict[str, Any],
+    ) -> MetricContext:
+        return tape.context_at(
+            when,
+            peer_values=state.peer_values,
+            recent_narratives=self.recent_narratives(tapes, when),
+            market_regime=regime_cache,
+            deployer_history=self._deployer_history(tapes, tape, when),
+            extra={
+                "target_position_usd": self.settings.risk.max_position_native * 150.0,
+                "max_impact_pct": self.settings.risk.max_slippage_bps / 10_000.0,
+            },
+        )
 
-        # Peer values accumulate as the replay proceeds, so cross-sectional
-        # normalization only ever uses metrics already computed on earlier
-        # tokens. Seeding it from the whole population would be look-ahead.
-        peer_values: dict[str, list[float]] = {}
+    def _record_closed(
+        self, tape: TokenTape, key: str, state: _RunState, broker: PaperBroker
+    ) -> None:
+        """Record a trade for a position that has just closed."""
+        if key not in state.entry_info:
+            return
+        score, size = state.entry_info.pop(key)
+        closed = next((p for p in reversed(broker.account.closed) if p.token.key == key), None)
+        if closed is not None:
+            state.trades.append(self._record(tape, score, size, closed))
 
-        last_regime_at: datetime | None = None
-        regime_cache: dict[str, Any] = {}
+    def _try_enter(
+        self,
+        tape: TokenTape,
+        key: str,
+        when: datetime,
+        snapshot: MarketSnapshot,
+        ctx: MetricContext,
+        score: Score,
+        broker: PaperBroker,
+        state: _RunState,
+    ) -> None:
+        ok, _reason = self.scorer.should_enter(score)
+        if not ok:
+            return
 
-        for when, key in events:
-            tape = by_key[key]
-            snapshot = tape.snapshot_at(when)
-            if snapshot is None:
-                continue
+        size = score_to_size(
+            score,
+            self.settings.risk.max_position_native,
+            stop_loss_fraction=self.settings.risk.stop_loss_pct,
+        )
+        if size <= 1e-6:
+            return
 
-            broker.mark(tape.token, snapshot.price_native or 0.0)
+        forward = tape.snapshot_after(when)
+        entry_fill = broker.open_position(
+            tape.token,
+            size,
+            snapshot,
+            when,
+            age_seconds=(when - tape.launch.created_at).total_seconds(),
+            reason=score.explanation or "",
+            score=score.composite,
+            contention=self._contention(ctx),
+            future_price_native=forward.price_native if forward else None,
+            recent_volatility=self._volatility(tape, when),
+        )
+        if entry_fill is not None and not entry_fill.rejected:
+            state.entered += 1
+            state.entry_info[key] = (score, size)
 
-            # Exits first: a position must be able to close before new capital
-            # is committed, otherwise the exposure cap is enforced against a
-            # stale portfolio.
-            for fill in broker.apply_exits(tape.token, snapshot, when):
-                if fill.rejected:
-                    continue
-
-            if key in entry_info and key not in broker.account.positions:
-                score, size = entry_info.pop(key)
-                closed = next(
-                    (p for p in reversed(broker.account.closed) if p.token.key == key), None
-                )
-                if closed is not None:
-                    trades.append(self._record(tape, score, size, closed))
-
-            if (
-                last_regime_at is None
-                or (when - last_regime_at).total_seconds() >= 900
-            ):
-                regime_cache = self.compute_regime(tapes, when)
-                last_regime_at = when
-
-            already_in = key in broker.account.positions
-            age = (when - tape.launch.created_at).total_seconds()
-
-            ctx = tape.context_at(
-                when,
-                peer_values=peer_values,
-                recent_narratives=self.recent_narratives(tapes, when),
-                market_regime=regime_cache,
-                deployer_history=self._deployer_history(tapes, tape, when),
-                extra={
-                    "target_position_usd": self.settings.risk.max_position_native * 150.0,
-                    "max_impact_pct": self.settings.risk.max_slippage_bps / 10_000.0,
-                },
-            )
-
-            values = self.registry.evaluate_all(ctx)
-            score = self.scorer.score(ctx, values)
-            evaluated += 1
-            scores_seen.append(score.composite)
-
-            for value in values:
-                metric_total += 1
-                if value.usable:
-                    metric_hits[value.metric_id] = metric_hits.get(value.metric_id, 0) + 1
-                if value.raw is not None:
-                    peer_values.setdefault(value.metric_id, []).append(value.raw)
-
-            for veto in score.vetoes:
-                veto_counts[veto.value] = veto_counts.get(veto.value, 0) + 1
-
-            if on_score is not None:
-                on_score(tape, score)
-
-            if already_in:
-                should_exit, reason = self.scorer.should_exit(score)
-                if should_exit:
-                    broker.close_position(tape.token, snapshot, when, reason=reason)
-                continue
-
-            ok, _reason = self.scorer.should_enter(score)
-            if not ok:
-                continue
-
-            size = score_to_size(
-                score,
-                self.settings.risk.max_position_native,
-                stop_loss_fraction=self.settings.risk.stop_loss_pct,
-            )
-            if size <= 1e-6:
-                continue
-
-            forward = tape.snapshot_after(when)
-            fill = broker.open_position(
-                tape.token,
-                size,
-                snapshot,
-                when,
-                age_seconds=age,
-                reason=score.explanation or "",
-                score=score.composite,
-                contention=self._contention(ctx),
-                future_price_native=forward.price_native if forward else None,
-                recent_volatility=self._volatility(tape, when),
-            )
-            if fill is not None and not fill.rejected:
-                entered += 1
-                entry_info[key] = (score, size)
-
-        # Liquidate anything still open at the end of the window.
+    def _liquidate(
+        self,
+        by_key: dict[str, TokenTape],
+        broker: PaperBroker,
+        state: _RunState,
+        window_end: datetime,
+    ) -> None:
+        """Close anything still open at the end of the window."""
         final_snapshots = {
             k: (by_key[k].snapshots[-1] if by_key[k].snapshots else None)
             for k in list(broker.account.positions.keys())
@@ -571,20 +720,19 @@ class Backtester:
             broker.close_position(
                 by_key[key].token, snapshot, window_end, reason="end of backtest window"
             )
-            if key in entry_info:
-                score, size = entry_info.pop(key)
-                closed = next(
-                    (p for p in reversed(broker.account.closed) if p.token.key == key), None
-                )
-                if closed is not None:
-                    trades.append(self._record(by_key[key], score, size, closed))
+            self._record_closed(by_key[key], key, state, broker)
 
+    def _coverage(self, state: _RunState) -> dict[str, float]:
         coverage = {
-            mid: round(hits / max(1, evaluated), 4) for mid, hits in sorted(metric_hits.items())
+            mid: round(hits / max(1, state.evaluated), 4)
+            for mid, hits in sorted(state.metric_hits.items())
         }
         for metric in self.registry:
             coverage.setdefault(metric.id, 0.0)
+        return coverage
 
+    @staticmethod
+    def _notes(coverage: dict[str, float], entered: int) -> list[str]:
         notes: list[str] = []
         thin = [mid for mid, c in coverage.items() if c < 0.2]
         if thin:
@@ -597,24 +745,7 @@ class Backtester:
             notes.append(
                 f"only {entered} entries were taken; thresholds may be too strict for this universe"
             )
-
-        return BacktestResult(
-            started_at=run_start,
-            finished_at=utcnow(),
-            window_start=window_start,
-            window_end=window_end,
-            universe_size=len(tapes),
-            evaluated=evaluated,
-            entered=entered,
-            trades=trades,
-            account=broker.summary(),
-            score_distribution=scores_seen,
-            veto_counts=veto_counts,
-            metric_coverage=coverage,
-            weights_version=self.scorer.weights.version,
-            synthetic=synthetic,
-            notes=notes,
-        )
+        return notes
 
     # -- helpers ------------------------------------------------------------ #
 

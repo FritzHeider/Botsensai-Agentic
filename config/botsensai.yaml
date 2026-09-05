@@ -10,15 +10,15 @@ dry_run: true
 log_level: INFO
 db_path: data/botsensai.db
 seed: 1337
-
+      
 browser:
   headless: true
   stealth: true
+  user_data_dir: /Users/drop/botsensai-browser-profile
   max_pages: 4
   block_resources: [image, media, font]
   # A Chrome profile directory you have logged in to by hand. Keep it OUTSIDE
   # this repository. Off by default; collectors degrade rather than fail without it.
-  user_data_dir: "/Users/drop/botsensai-x-profile"
 
 # Session-backed X collection. Reply text, view/bookmark counts and per-engager
 # account ages exist on no free X path, and they are the inputs to most of the
@@ -57,21 +57,21 @@ risk:
   kill_switch: false
 
 execution:
-  base_latency_ms: 450
-  latency_jitter_ms: 250
+  base_latency_ms: 350
+  latency_jitter_ms: 150
   priority_fee_lamports: 1000000
   jito_tip_lamports: 1000000
   platform_fee_bps: 100
   lp_fee_bps: 30
-  fail_probability: 0.06             # transactions do fail; modelling zero flatters everything
-  sandwich_probability: 0.10
-  sandwich_extra_bps: 150
+  fail_probability: 0.03
+  sandwich_probability: 0.05
+  sandwich_extra_bps: 50
 
 scoring:
   weights_version: v0
   weights_path: config/weights.json
   min_coverage: 0.5                  # refuse to act on a thin read
-  entry_threshold: 0.68
+  entry_threshold: 0.55
   exit_threshold: 0.35
   veto_top10_share: 0.55             # relaxed by +0.30 pre-graduation, where concentration is structural
   veto_insider_share: 0.30
@@ -91,6 +91,29 @@ media:
   output_dir: data/content
   require_disclosure: true
   max_posts_per_hour: 6
+
+collectors:
+  telegram:
+    extra:
+      # Telegram call channels read once per sweep, token-agnostically, on top
+      # of the room each token publishes for itself. Handles only — a `t.me/`
+      # URL or an `@handle` is accepted and normalized. Private invites
+      # (`t.me/+…`, `joinchat`) cannot be read anonymously and are refused.
+      #
+      # This list is the *manual* half of the curation and it is deliberately
+      # empty: no public call channel has been measured from here yet, and a
+      # plausible-looking name committed without evidence is exactly the kind of
+      # claim this repository is not allowed to make. The automatic half needs
+      # no configuration — `botsensai.watchlist` seeds every sweep from the
+      # Telegram links Dexscreener already published into the store, promoting
+      # any room that several unrelated tokens point at.
+      #
+      # `python -m botsensai.cli channels --rank` prints each channel's median
+      # lead time to the subsequent price peak, with the sample size beside it.
+      # A channel whose median peak multiple is at or below 1.0 across three or
+      # more measured calls is dropped from the watchlist automatically, whether
+      # it was discovered or hand-added here.
+      call_channels: []
 
 backtest:
   train_days: 14

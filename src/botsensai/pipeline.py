@@ -28,6 +28,8 @@ trades, then reads them back as inputs on the next pass.
 from __future__ import annotations
 
 import asyncio
+import uuid
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -36,6 +38,7 @@ from typing import Any
 from botsensai.collectors.base import CollectionResult, Collector, CollectorRegistry
 from botsensai.collectors.dexscreener import DexscreenerCollector
 from botsensai.collectors.geckoterminal import GeckoTerminalCollector
+from botsensai.collectors.longtail import InstagramCollector, TikTokCollector, tiktok_links
 from botsensai.collectors.pumpfun import PumpFunCollector
 from botsensai.collectors.social import (
     FourChanBizCollector,
@@ -46,21 +49,50 @@ from botsensai.collectors.social import (
 from botsensai.collectors.x_session import AuthenticatedXCollector
 from botsensai.config import Settings, get_settings
 from botsensai.execution.broker import PaperBroker
+from botsensai.media.hasher import MediaHasher
 from botsensai.memory.store import MemoryStore
 from botsensai.metrics import MetricRegistry, build_registry
 from botsensai.metrics.base import MetricContext
 from botsensai.models import (
+    HolderRecord,
     Launch,
     MemoryKind,
+    Platform,
     Score,
+    SocialPost,
     utcnow,
 )
+from botsensai.onchain.funding import (
+    DEFAULT_RESOLVE_DEADLINE_SECONDS,
+    DEFAULT_RESOLVE_LIMIT,
+    FundingIndex,
+    FundingSourceResolver,
+)
+from botsensai.onchain.wallet_priors import WalletPriorIndex
+from botsensai.onchain.wallet_skill import WalletSkillIndex
 from botsensai.scoring.composite import CompositeScorer, score_to_size
 from botsensai.store.db import Database
 from botsensai.util.logging import get_logger
 from botsensai.util.text import tokens as text_tokens
+from botsensai.watchlist import build_watchlist, normalize_channel
 
 log = get_logger(__name__)
+
+#: Surface name used for the per-sweep heartbeat row in `collector_runs`.
+#: It is not a data surface. It is written once per sweep, whatever happened, so
+#: that a stretch of time with no row in it is provably a stretch of time when
+#: nothing was collecting — which is the only way to tell a quiet market from a
+#: daemon that died at 3am.
+HEARTBEAT_SURFACE = "sweep"
+
+#: A sweep is allowed to overrun the collection deadline by this much before it
+#: is cut off. Without a cap, `collect --hours N` returns whenever the last
+#: sweep happens to finish, which makes it unusable under an external timeout.
+DEADLINE_GRACE_SECONDS = 15.0
+
+#: How many sweep reports a session keeps. A day of one-minute sweeps is 1440
+#: reports; a week is ten thousand. The counters below are exact regardless.
+MAX_RETAINED_REPORTS = 200
 
 
 @dataclass
@@ -98,6 +130,60 @@ class SweepReport:
         }
 
 
+@dataclass
+class CollectionSession:
+    """What a whole `collect` run did.
+
+    The counters are exact totals over every sweep; `recent` holds only the last
+    `MAX_RETAINED_REPORTS` reports, because a daemon that runs for a week must
+    not accumulate a week of reports in memory to be able to print a summary.
+    """
+
+    started_at: datetime
+    finished_at: datetime | None = None
+    stopped_because: str = "deadline"
+    sweeps: int = 0
+    failed_sweeps: int = 0
+    discovered: int = 0
+    scored: int = 0
+    entered: int = 0
+    exited: int = 0
+    degraded_surfaces: dict[str, int] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    recent: list[SweepReport] = field(default_factory=list)
+
+    def record(self, report: SweepReport) -> None:
+        self.sweeps += 1
+        self.discovered += report.discovered
+        self.scored += report.scored
+        self.entered += report.entered
+        self.exited += report.exited
+        if report.errors:
+            self.failed_sweeps += 1
+        for surface in report.degraded_surfaces:
+            self.degraded_surfaces[surface] = self.degraded_surfaces.get(surface, 0) + 1
+        for error in report.errors:
+            self.errors.append(error)
+        del self.errors[:-MAX_RETAINED_REPORTS]
+        self.recent.append(report)
+        del self.recent[:-MAX_RETAINED_REPORTS]
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "duration_seconds": round(
+                ((self.finished_at or utcnow()) - self.started_at).total_seconds(), 1
+            ),
+            "stopped_because": self.stopped_because,
+            "sweeps": self.sweeps,
+            "failed_sweeps": self.failed_sweeps,
+            "discovered": self.discovered,
+            "scored": self.scored,
+            "entered": self.entered,
+            "exited": self.exited,
+            "degraded_surfaces": dict(self.degraded_surfaces),
+        }
+
+
 class Pipeline:
     """Orchestrates one sweep, or many."""
 
@@ -124,6 +210,23 @@ class Pipeline:
         self.metrics = registry or build_registry()
         self.scorer = CompositeScorer(self.metrics, None, self.settings)
         self.broker = broker or PaperBroker(self.settings, starting_native=10.0)
+        self.wallet_priors = WalletPriorIndex(self.db)
+        self.wallet_skills = WalletSkillIndex(self.db)
+        # Funding is resolved over RPC, so the resolver is attached only when
+        # that surface is enabled. Without it the index still serves whatever is
+        # already cached, which is what a backtest needs and what an offline run
+        # gets: reads never depend on the network.
+        rpc = self.settings.collector(FundingSourceResolver.surface)
+        self.funding = FundingIndex(
+            self.db,
+            self.settings,
+            resolver=FundingSourceResolver(self.settings) if rpc.enabled else None,
+        )
+
+        # Media hashing sits in the pipeline rather than in each social collector
+        # so the byte budget, the URL cache and the deadline are shared across
+        # every platform in a sweep instead of being re-spent per surface.
+        self.media_hasher = MediaHasher(self.settings)
 
         self.collectors = CollectorRegistry(self.settings)
         for collector in collectors or self._default_collectors():
@@ -136,6 +239,10 @@ class Pipeline:
         # Per-token evidence that arrives as a raw collector payload rather than
         # as a stored record, e.g. X's fast-follower classification.
         self._fast_follower_share: dict[str, float] = {}
+        #: The most recent (or in-flight) collection session, for callers that
+        #: need to report on a run that was interrupted rather than returned.
+        self.last_session: CollectionSession | None = None
+        self._consecutive_degraded_sweeps: int = 0
 
     def _default_collectors(self) -> list[Collector]:
         """Market surfaces first, then social.
@@ -160,10 +267,21 @@ class Pipeline:
             RedditCollector(self.settings),
             FourChanBizCollector(self.settings),
             TelegramChannelCollector(self.settings),
+            # Both are near-certain to degrade without a browser session, and
+            # both cost nothing when they do: each checks for the session before
+            # opening a page. They are in the sweep anyway because a surface
+            # that is absent from the sweep never appears in
+            # `degraded_surfaces`, and `cross_platform_propagation_lag` would
+            # then read a blind spot as a confident bearish answer.
+            InstagramCollector(self.settings),
+            TikTokCollector(self.settings),
         ]
 
     async def aclose(self) -> None:
         await self.collectors.aclose()
+        await self.media_hasher.aclose()
+        if self.funding.resolver is not None:
+            await self.funding.resolver.aclose()
 
     # -- step 1: discover --------------------------------------------------- #
 
@@ -273,20 +391,146 @@ class Pipeline:
 
         tokens = [launch.token for launch in launches]
         results = await self.collectors.sweep_enrich(tokens)
+
+        # Record each surface separately before combining. `combine` folds
+        # everything into one result, which is what made a single surface being
+        # killed by its timeout invisible: the sweep reported "degraded: enrich"
+        # and never said which surface, or that it had produced nothing.
+        run_id = uuid.uuid4().hex
+        for outcome in results:
+            self.db.record_run(
+                run_id=run_id,
+                surface=outcome.surface,
+                started_at=outcome.started_at,
+                finished_at=outcome.finished_at,
+                ok=outcome.ok and not outcome.degraded,
+                records=outcome.record_count,
+                error=outcome.error,
+            )
+
         combined = CollectorRegistry.combine(results, surface="enrich")
 
         self.db.insert_snapshots(combined.snapshots)
         self.db.insert_trades(combined.trades)
         self.db.insert_holders(combined.holders)
+        # Fold the wallets we just learned about into the profile summary, so the
+        # next sweep can answer "this wallet is younger than the token" without a
+        # counting query. Scoped to the wallets in hand — a full rebuild is a
+        # corpus-wide scan and this runs every sweep.
+        if combined.trades:
+            self.wallet_priors.refresh_profiles({t.wallet for t in combined.trades})
+        await self._resolve_funding(combined.holders)
         for report in combined.security:
             self.db.insert_security(report)
-        for post in combined.posts:
-            self.db.insert_posts([post])
+        # Each post carries the token it was collected for, so this must be a
+        # single call that lets `insert_posts` read `post.token_key`. Passing no
+        # key at all — which this did — wrote every post with token_key NULL,
+        # and `posts_as_of` filters on that column: 494 posts were stored and
+        # none was ever readable by a social metric.
+        # Hashes must be attached before the write, not after: `insert_posts`
+        # is the only path into the store and a second pass would have to update
+        # rows it has no key to find.
+        combined.posts.extend(await self._follow_offplatform_links(combined.posts, launches))
+        await self.media_hasher.hash_posts(combined.posts)
+        self.db.insert_posts(combined.posts)
+        # Profile snapshots, which until now were collected and dropped. They
+        # are the only source for the promoter's join date and lifetime post
+        # count, and keeping them in a process-local dict meant every metric
+        # built on them was live-only and MISSING in every backtest.
+        self.db.insert_accounts(combined.accounts)
+        # Per channel, not per surface. The Telegram surface reads fine while a
+        # single handle on its watchlist answers with an empty page every sweep,
+        # and until this row existed nothing could tell the two apart, so an
+        # unreadable channel held a watchlist slot and a fetch for good.
+        self.db.record_channel_reads(combined.raw.get("channel_reads") or [])
 
         fast = combined.raw.get("fast_follower_share")
         if isinstance(fast, dict):
             self._fast_follower_share.update(fast)
         return combined
+
+    #: Ceiling on TikTok links resolved in one sweep. Each is one cheap request
+    #: against an endpoint measured at ~230/min, but a spam wave posting the
+    #: same video under fifty tokens must not own the budget.
+    max_link_resolutions_per_sweep = 12
+
+    async def _follow_offplatform_links(
+        self, posts: Sequence[SocialPost], launches: Sequence[Launch]
+    ) -> list[SocialPost]:
+        """Turn TikTok links found on other platforms into TikTok posts.
+
+        This is where `cross_platform_propagation_lag` actually gets its second
+        platform. TikTok's own search is login-gated and its hashtag feed 403s,
+        but people post TikTok links into the X, Telegram, 4chan and pump.fun
+        rooms this system already reads — and a link carries everything the
+        metric needs, because `oembed` returns the caption and author and the
+        video id decodes to the creation time.
+
+        It sits here rather than inside the collector for the same reason media
+        hashing does: only the pipeline holds every surface's posts at once, and
+        this is the last point before `insert_posts`, which is the only path
+        into the store.
+        """
+        collector = self.collectors.get(TikTokCollector.name)
+        if not isinstance(collector, TikTokCollector) or not collector.config.enabled:
+            return []
+
+        tokens = {launch.token.key: launch.token for launch in launches}
+        wanted: dict[str, set[str]] = defaultdict(set)
+        for post in posts:
+            if post.platform is Platform.TIKTOK or not post.token_key:
+                continue
+            links = tiktok_links(f"{post.text} {post.url or ''}")
+            if links:
+                wanted[post.token_key].update(links)
+
+        resolved: list[SocialPost] = []
+        budget = self.max_link_resolutions_per_sweep
+        for token_key, urls in wanted.items():
+            # One enforcement point, not two. An `if budget <= 0: break` above
+            # this line reads like a guard and is not one — the slice already
+            # empties at zero — and an untested branch that cannot change an
+            # outcome is how a real guard gets mistaken for decoration later.
+            #
+            # Slice to whichever cap binds first. Charging the sweep budget for
+            # the links a token *offers* rather than the ones that will be
+            # requested lets a single link-stuffed post exhaust the sweep having
+            # made six calls, starving every token behind it.
+            batch = sorted(urls)[: min(budget, collector.max_links_per_token)]
+            videos = await collector.resolve_links(batch, tokens.get(token_key))
+            for video in videos:
+                video.token_key = video.token_key or token_key
+            resolved.extend(videos)
+            budget -= len(batch)
+
+        if resolved:
+            log.info("pipeline.offplatform_links", platform="tiktok", posts=len(resolved))
+        return resolved
+
+    async def _resolve_funding(self, holders: Sequence[HolderRecord]) -> int:
+        """Look up the funders we do not have yet, largest holdings first.
+
+        Ordering is the whole budget decision. Two RPC calls per wallet against
+        an endpoint that 429s at ten a second means a sweep can afford a few
+        dozen lookups, and the wallets that decide whether a distribution is one
+        actor or forty are the ones at the top of the holder table, not the
+        dust at the bottom.
+        """
+        if not holders:
+            return 0
+        ranked = sorted(holders, key=lambda h: h.share_of_supply, reverse=True)
+        wallets = list(dict.fromkeys(h.wallet for h in ranked))
+        rpc = self.settings.collector(FundingSourceResolver.surface)
+        written = await self.funding.resolve_missing(
+            wallets,
+            limit=int(rpc.extra.get("max_funding_resolutions", DEFAULT_RESOLVE_LIMIT)),
+            deadline_seconds=float(
+                rpc.extra.get("funding_deadline_seconds", DEFAULT_RESOLVE_DEADLINE_SECONDS)
+            ),
+        )
+        if written:
+            log.info("pipeline.funding_resolved", wallets=written, candidates=len(wallets))
+        return written
 
     def _wire_social_handles(self, launches: Sequence[Launch]) -> None:
         """Map token -> X handle and Telegram channel from launch metadata."""
@@ -307,8 +551,27 @@ class Pipeline:
             x_collector.config.extra["handles"] = handles
         telegram = self.collectors.get("telegram")
         if telegram is not None:
-            telegram.config.extra.setdefault("call_channels", [])
             telegram.config.extra["channels"] = channels
+            telegram.config.extra["call_channels"] = self._call_channels(telegram)
+
+    def _call_channels(self, telegram: Collector) -> list[str]:
+        """Rebuild the call-channel watchlist from the store, every sweep.
+
+        The curated list is copied aside on the first pass and read from there
+        afterwards. `call_channels` is both the documented config key and this
+        method's output, so without the copy the list would only ever grow: a
+        channel the ranking dropped would be read back next sweep as if a human
+        had chosen it, and nothing could ever leave the watchlist.
+        """
+        extra = telegram.config.extra
+        curated = extra.setdefault("curated_call_channels", list(extra.get("call_channels", [])))
+        try:
+            return build_watchlist(
+                self.db, curated, limit=TelegramChannelCollector.max_call_channels
+            )
+        except Exception as exc:  # a curation nicety must never fail a sweep
+            log.debug("pipeline.watchlist_failed", error=str(exc))
+            return [c for c in (normalize_channel(x) for x in curated) if c is not None]
 
     # -- step 4: score ------------------------------------------------------ #
 
@@ -329,21 +592,38 @@ class Pipeline:
             if entry["token_key"] != key
         ]
 
+        trades = self.db.trades_as_of(key, when)
+        # Prior history is bounded twice: trades that happened before this token
+        # existed (`launch.created_at`) and that we had already collected by the
+        # instant being scored (`when`). Dropping either bound is look-ahead.
+        priors = self.wallet_priors.priors_for(
+            (t.wallet for t in trades), launch.created_at, observed_before=when
+        )
+        skills_res = self.wallet_skills.skills_for(
+            (t.wallet for t in trades), before=when, observed_before=when
+        )
+
         return MetricContext(
             token=launch.token,
             as_of=when,
             launch=launch,
             snapshots=self.db.snapshots_as_of(key, when),
-            trades=self.db.trades_as_of(key, when),
-            holders=self.db.holders_as_of(key, when),
+            trades=trades,
+            # Funders are attached here rather than stored on the holder row:
+            # the answer is per wallet, not per (token, wallet, slice), so one
+            # cached lookup serves every token that wallet ever holds. Bounded
+            # on funding event time, and exchange withdrawals are withheld so
+            # unrelated customers of one exchange do not read as one cluster.
+            holders=self.funding.apply(self.db.holders_as_of(key, when), before=when),
             security=self.db.security_as_of(key, when),
             posts=self.db.posts_as_of(key, when),
+            accounts=self.db.accounts_as_of(key, when),
             deployer_history=(
                 self.db.deployer_history(launch.deployer, before=launch.created_at)
                 if launch.deployer
                 else {}
             ),
-            wallet_priors={},
+            wallet_priors=priors,
             recent_narratives=self._recent_narratives,
             degraded_surfaces=set(),
             extra={
@@ -353,6 +633,8 @@ class Pipeline:
                 "fast_follower_share": self._fast_follower_share,
                 "target_position_usd": self.settings.risk.max_position_native * 150.0,
                 "max_impact_pct": self.settings.risk.max_slippage_bps / 10_000.0,
+                "wallet_skill": skills_res.scores,
+                "wallet_typical_size": skills_res.typical_sizes,
             },
         )
 
@@ -502,19 +784,64 @@ class Pipeline:
 
     # -- the sweep ---------------------------------------------------------- #
 
+    async def _sweep_discover(self, report: SweepReport, limit: int) -> CollectionResult | None:
+        """Discover into `report`, or return None if the surface raised outright."""
+        try:
+            discovered = await self.discover(limit)
+        except Exception as exc:
+            report.errors.append(f"discover failed: {exc}")
+            return None
+        report.discovered = len(discovered.launches)
+        if discovered.degraded:
+            report.degraded_surfaces.append("discover")
+        if discovered.error:
+            report.errors.append(discovered.error)
+        return discovered
+
+    async def _sweep_enrich(self, report: SweepReport, candidates: Sequence[Launch]) -> None:
+        """Enrich the candidates. A failure costs the detail, not the sweep."""
+        try:
+            enriched = await self.enrich(candidates)
+        except Exception as exc:
+            report.errors.append(f"enrich failed: {exc}")
+            return
+        report.enriched = len(candidates)
+        if enriched.degraded:
+            report.degraded_surfaces.append("enrich")
+
+    def _rank(self, report: SweepReport, candidates: Sequence[Launch]) -> list[tuple[float, Launch, Score]]:
+        """Score every candidate, best first. One bad token does not stop the rest."""
+        ranked: list[tuple[float, Launch, Score]] = []
+        for launch in candidates:
+            try:
+                result = self.score(launch)
+            except Exception as exc:
+                report.errors.append(f"score failed for {launch.token.key}: {exc}")
+                continue
+            report.scored += 1
+            ranked.append((result.composite, launch, result))
+        ranked.sort(key=lambda triple: triple[0], reverse=True)
+        return ranked
+
+    def _manage_open_positions(self, report: SweepReport) -> None:
+        """Mark and exit anything already open against the freshest snapshot."""
+        for key in list(self.broker.account.positions.keys()):
+            snapshots = self.db.snapshots_as_of(key, utcnow())
+            if not snapshots:
+                continue
+            latest = snapshots[-1]
+            position = self.broker.account.positions[key]
+            self.broker.mark(position.token, latest.price_native or 0.0)
+            fills = self.broker.apply_exits(position.token, latest, utcnow())
+            report.exited += sum(1 for f in fills if not f.rejected)
+
     async def sweep(self, discover_limit: int = 60, max_candidates: int = 25) -> SweepReport:
         report = SweepReport(started_at=utcnow())
 
-        try:
-            discovered = await self.discover(discover_limit)
-            report.discovered = len(discovered.launches)
-            if discovered.degraded:
-                report.degraded_surfaces.append("discover")
-            if discovered.error:
-                report.errors.append(discovered.error)
-        except Exception as exc:
-            report.errors.append(f"discover failed: {exc}")
+        discovered = await self._sweep_discover(report, discover_limit)
+        if discovered is None:
             report.finished_at = utcnow()
+            self._check_and_trip_kill_switch(report)
             return report
 
         regime = self.compute_regime()
@@ -525,27 +852,12 @@ class Pipeline:
         report.screened_in = len(candidates)
         if not candidates:
             report.finished_at = utcnow()
+            self._check_and_trip_kill_switch(report)
             return report
 
-        try:
-            enriched = await self.enrich(candidates)
-            report.enriched = len(candidates)
-            if enriched.degraded:
-                report.degraded_surfaces.append("enrich")
-        except Exception as exc:
-            report.errors.append(f"enrich failed: {exc}")
+        await self._sweep_enrich(report, candidates)
 
-        ranked: list[tuple[float, Launch, Score]] = []
-        for launch in candidates:
-            try:
-                result = self.score(launch)
-            except Exception as exc:
-                report.errors.append(f"score failed for {launch.token.key}: {exc}")
-                continue
-            report.scored += 1
-            ranked.append((result.composite, launch, result))
-
-        ranked.sort(key=lambda triple: triple[0], reverse=True)
+        ranked = self._rank(report, candidates)
         report.top_candidates = [
             {
                 "symbol": launch.token.symbol,
@@ -563,21 +875,225 @@ class Pipeline:
             if outcome.startswith("entered"):
                 report.entered += 1
 
-        # Manage anything already open against fresh snapshots.
-        for key in list(self.broker.account.positions.keys()):
-            snapshots = self.db.snapshots_as_of(key, utcnow())
-            if not snapshots:
-                continue
-            latest = snapshots[-1]
-            position = self.broker.account.positions[key]
-            self.broker.mark(position.token, latest.price_native or 0.0)
-            fills = self.broker.apply_exits(position.token, latest, utcnow())
-            report.exited += sum(1 for f in fills if not f.rejected)
-
+        self._manage_open_positions(report)
         self.review_closed_positions()
         report.finished_at = utcnow()
+        self._check_and_trip_kill_switch(report)
         log.info("pipeline.sweep", **report.summary())
         return report
+
+    def _is_sweep_fully_degraded(self, report: SweepReport) -> bool:
+        discover_failed = any("discover failed" in err for err in report.errors) or ("discover" in report.degraded_surfaces)
+        if not discover_failed:
+            return False
+        enrich_failed = (report.screened_in == 0) or any("enrich failed" in err for err in report.errors) or ("enrich" in report.degraded_surfaces)
+        return enrich_failed
+
+    def _check_and_trip_kill_switch(self, report: SweepReport) -> None:
+        if self.broker.account.daily_loss_native >= self.settings.risk.max_daily_loss_native:
+            self._trip_kill_switch(
+                f"daily loss limit breached: {self.broker.account.daily_loss_native:.4f} >= {self.settings.risk.max_daily_loss_native:.4f} native"
+            )
+            return
+
+        if self._is_sweep_fully_degraded(report):
+            self._consecutive_degraded_sweeps += 1
+        else:
+            self._consecutive_degraded_sweeps = 0
+
+        if self._consecutive_degraded_sweeps >= 3:
+            self._trip_kill_switch(
+                f"three consecutive collector sweeps fully degraded (count: {self._consecutive_degraded_sweeps})"
+            )
+            return
+
+        closed = self.broker.account.closed
+        if len(closed) >= 50:
+            last_50 = closed[-50:]
+            total_pnl = sum(p.realized_pnl_native for p in last_50)
+            expectancy = total_pnl / 50
+            if expectancy < self.settings.risk.expectancy_floor:
+                self._trip_kill_switch(
+                    f"paper expectancy over last 50 trades below floor: {expectancy:.6f} < {self.settings.risk.expectancy_floor:.6f} native"
+                )
+                return
+
+    def _trip_kill_switch(self, reason: str) -> None:
+        if self.settings.risk.kill_switch:
+            return
+        self.settings.risk.kill_switch = True
+        log.error(
+            "*" * 80 + "\n"
+            "!!! RISK ALERT: KILL SWITCH TRIPPED !!!\n"
+            f"REASON: {reason}\n"
+            "SYSTEM HAS ENGAGED THE KILL SWITCH. NO NEW ENTRIES WILL BE ALLOWED.\n"
+            "MANUAL RESET REQUIRED.\n"
+            "*" * 80
+        )
+
+    # -- the collection loop ------------------------------------------------ #
+
+    def record_heartbeat(self, report: SweepReport, run_id: str | None = None) -> None:
+        """Write one `collector_runs` row describing a whole sweep.
+
+        The per-surface rows written by `enrich` say which surface failed. They
+        cannot say that no sweep ran at all — a dead daemon writes nothing, and
+        nothing is indistinguishable from a market where every surface happened
+        to return quietly. This row is written for every sweep including the ones
+        that failed outright, so the sequence of `started_at` values is a record
+        of when the system was actually awake.
+        """
+        self.db.record_run(
+            run_id=run_id or uuid.uuid4().hex,
+            surface=HEARTBEAT_SURFACE,
+            started_at=report.started_at,
+            finished_at=report.finished_at or utcnow(),
+            ok=not report.errors,
+            records=report.discovered,
+            error="; ".join(report.errors)[:500] or None,
+        )
+
+    @staticmethod
+    def _last_sweep_seconds(session: CollectionSession) -> float:
+        """How long the previous sweep took, as the estimate for the next one."""
+        if not session.recent:
+            return 0.0
+        last = session.recent[-1]
+        return ((last.finished_at or utcnow()) - last.started_at).total_seconds()
+
+    def _stop_before_sweep(
+        self,
+        session: CollectionSession,
+        deadline: datetime | None,
+        max_sweeps: int | None,
+        now: datetime,
+    ) -> tuple[str | None, float | None]:
+        """Why to stop before starting another sweep (or None), and the time left."""
+        if max_sweeps is not None and session.sweeps >= max_sweeps:
+            return "max_sweeps", None
+        remaining = (deadline - now).total_seconds() if deadline is not None else None
+        if remaining is not None and remaining <= 0:
+            return "deadline", remaining
+        # Do not start a sweep the window has no room for. Cutting one off at the
+        # deadline would write a failed heartbeat every single run, which would
+        # train whoever reads the integrity panel to ignore it — and a truncated
+        # sweep spends its rate-limit budget for a partial result.
+        if remaining is not None and session.sweeps and remaining < self._last_sweep_seconds(session):
+            return "deadline", remaining
+        return None, remaining
+
+    @staticmethod
+    def _sweep_budget(default: float, remaining: float | None) -> float:
+        if remaining is None:
+            return default
+        return min(default, remaining + DEADLINE_GRACE_SECONDS)
+
+    async def _sweep_within_budget(
+        self,
+        started_at: datetime,
+        budget: float,
+        discover_limit: int,
+        max_candidates: int,
+    ) -> tuple[SweepReport, bool]:
+        """Run one sweep under a hard time cap.
+
+        Returns the report and whether an interrupt ended it. Neither Ctrl-C
+        spelling is re-raised: everything the sweep wrote is already committed,
+        and the point of catching it is to close the heartbeat, so that whoever
+        reads this gap back next week can tell an operator stopping the daemon
+        from a crash.
+        """
+        report = SweepReport(started_at=started_at)
+        try:
+            return (
+                await asyncio.wait_for(self.sweep(discover_limit, max_candidates), timeout=budget),
+                False,
+            )
+        except TimeoutError:
+            report.errors.append(f"sweep exceeded its {budget:.0f}s budget and was cut off")
+            log.warning("pipeline.sweep_timeout", budget_seconds=round(budget, 1))
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # `asyncio.run` delivers Ctrl-C by cancelling the running task, not
+            # by raising KeyboardInterrupt inside it, so both spellings have to
+            # be caught here.
+            report.errors.append("interrupted before the sweep finished")
+            report.finished_at = utcnow()
+            return report, True
+        except Exception as exc:
+            report.errors.append(f"sweep failed: {type(exc).__name__}: {exc}")
+            log.warning("pipeline.sweep_failed", error=str(exc))
+        report.finished_at = utcnow()
+        return report, False
+
+    @staticmethod
+    def _nap_seconds(report: SweepReport, interval_seconds: float, deadline: datetime | None) -> float:
+        """Time to idle before the next sweep, never past the deadline."""
+        elapsed = (utcnow() - report.started_at).total_seconds()
+        nap = max(0.0, interval_seconds - elapsed)
+        if deadline is not None:
+            nap = min(nap, max(0.0, (deadline - utcnow()).total_seconds()))
+        return nap
+
+    async def collect(
+        self,
+        hours: float | None = None,
+        interval_seconds: float = 60.0,
+        discover_limit: int = 60,
+        max_candidates: int = 25,
+        max_sweeps: int | None = None,
+        sweep_timeout: float | None = None,
+        on_report: Any = None,
+    ) -> CollectionSession:
+        """Sweep on a cadence until the deadline, surviving anything a sweep does.
+
+        Three failure modes are contained here rather than allowed to end the
+        run: a sweep that raises, a sweep that hangs, and an operator's Ctrl-C.
+        The first two cost one sweep and are written into the heartbeat so the
+        gap is attributable afterwards; the third stops the loop cleanly with
+        everything collected so far already committed.
+
+        `hours=None` runs until `max_sweeps` is reached, or forever.
+        """
+        session = CollectionSession(started_at=utcnow())
+        # Reachable by the caller even if this never returns normally, so an
+        # interrupted run can still report what it collected.
+        self.last_session = session
+        deadline = session.started_at + timedelta(hours=hours) if hours is not None else None
+        budget_default = (
+            sweep_timeout if sweep_timeout is not None else max(180.0, interval_seconds * 3)
+        )
+
+        while True:
+            now = utcnow()
+            stop, remaining = self._stop_before_sweep(session, deadline, max_sweeps, now)
+            if stop is not None:
+                session.stopped_because = stop
+                break
+
+            budget = self._sweep_budget(budget_default, remaining)
+            report, interrupted = await self._sweep_within_budget(
+                now, budget, discover_limit, max_candidates
+            )
+
+            self.record_heartbeat(report)
+            session.record(report)
+            if interrupted:
+                session.stopped_because = "interrupted"
+                break
+            if on_report is not None:
+                on_report(report)
+
+            nap = self._nap_seconds(report, interval_seconds, deadline)
+            if nap > 0:
+                try:
+                    await asyncio.sleep(nap)
+                except (KeyboardInterrupt, asyncio.CancelledError):
+                    session.stopped_because = "interrupted"
+                    break
+
+        session.finished_at = utcnow()
+        log.info("pipeline.collect", **session.summary())
+        return session
 
     async def run_forever(self, interval_seconds: float = 60.0, max_sweeps: int | None = None) -> None:
         """Sweep on a fixed cadence until stopped.
@@ -585,16 +1101,9 @@ class Pipeline:
         Errors inside a sweep are contained and logged rather than terminating
         the loop; a collector outage should cost one sweep, not the session.
         """
-        sweeps = 0
-        while max_sweeps is None or sweeps < max_sweeps:
-            started = utcnow()
-            try:
-                await self.sweep()
-            except Exception as exc:
-                log.warning("pipeline.sweep_failed", error=str(exc))
-            sweeps += 1
-            elapsed = (utcnow() - started).total_seconds()
-            await asyncio.sleep(max(1.0, interval_seconds - elapsed))
+        await self.collect(
+            hours=None, interval_seconds=interval_seconds, max_sweeps=max_sweeps
+        )
 
 
-__all__ = ["Pipeline", "SweepReport"]
+__all__ = ["CollectionSession", "Pipeline", "SweepReport", "HEARTBEAT_SURFACE"]

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en" data-mode="{{ snap.mode }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>botsensai — {{ snap.trading_mode }}</title>
+<style>
+:root{--bg:#0b0d10;--panel:#12151a;--line:#232830;--text:#d7dde5;--dim:#7d8794;
+--ok:#4a9d6a;--warn:#c08a3e;--alarm:#c0553e;--accent:#5b8bb5;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header{border-bottom:1px solid var(--line);padding:10px 16px;display:flex;
+justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.banner{color:var(--warn);font-weight:600;letter-spacing:.05em}
+main{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);
+gap:16px;padding:16px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{border:1px solid var(--line);background:var(--panel);margin-bottom:16px}
+h2{margin:0;padding:8px 12px;border-bottom:1px solid var(--line);font-size:11px;
+letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.body{padding:10px 12px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;color:var(--dim);font-weight:500;font-size:11px;
+text-transform:uppercase;letter-spacing:.08em;padding:6px 8px;
+border-bottom:1px solid var(--line)}
+td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.veto{color:var(--alarm)}
+.tag{display:inline-block;border:1px solid var(--line);padding:0 5px;
+font-size:11px;color:var(--dim);white-space:nowrap}
+.tag.pre{color:var(--warn);border-color:var(--warn)}
+.flag{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.flag:last-child{border-bottom:0}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}
+.dot.alarm{background:var(--alarm)}
+.flag .h{font-weight:600}
+.flag .d{color:var(--dim)}
+.bar{height:6px;background:var(--line);position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);display:block}
+.dim{color:var(--dim)}
+footer{padding:10px 16px;color:var(--dim);border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">botsensai</span>
+  <span class="banner">{{ snap.trading_mode }} &middot; UNVALIDATED &middot;
+    {{ snap.labelled_outcomes }} labelled outcomes</span>
+  <span class="dim">generated {{ snap.generated_at.strftime('%Y-%m-%d %H:%M:%SZ') }}</span>
+</header>
+<main>
+<div>
+  <section>
+    <h2>Candidates</h2>
+    <div class="body">
+      {% if snap.candidates %}
+      <table>
+        <tr><th>token</th><th class="num">score</th><th class="num">coverage</th>
+            <th>state</th></tr>
+        {% for c in snap.candidates %}
+        <tr>
+          <td>{{ c.symbol }}
+            {% if c.contaminated %}<span class="tag pre">PRE-FIX</span>{% endif %}</td>
+          <td class="num">{{ '%.3f'|format(c.composite) }}</td>
+          <td class="num">{{ (c.coverage * 100)|round|int }}%</td>
+          <td>
+            {% if c.vetoes %}<span class="veto">{{ c.vetoes|join(', ') }}</span>
+            {% elif c.refused %}<span class="dim">refused &mdash; below threshold
+              {{ snap.entry_threshold }} / coverage {{ snap.min_coverage }}</span>
+            {% else %}<span class="dim">eligible</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <p class="dim">No scores yet &mdash; run <code>botsensai sweep</code>.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Metric coverage by family</h2>
+    <div class="body">
+      {% if snap.families %}
+      <table>
+        <tr><th>family</th><th class="num">measured</th><th>&nbsp;</th></tr>
+        {% for name, f in snap.families.items() %}
+        <tr>
+          <td>{{ name }}</td>
+          <td class="num">{{ f.measured }}/{{ f.total }}</td>
+          <td><span class="bar"><i style="width:{{
+            (100 * f.measured / f.total)|round|int if f.total else 0 }}%"></i></span></td>
+        </tr>
+        {% endfor %}
+      </table>
+      <p class="dim">A family at 0 measured is reporting MISSING, not zero.</p>
+      {% else %}
+      <p class="dim">No metric values yet &mdash; MISSING, not zero.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<div>
+  <section>
+    <h2>Collection integrity</h2>
+    <div class="body">
+      {% for f in snap.integrity %}
+      <div class="flag">
+        <span class="dot {{ f.level }}"></span>
+        <span><span class="h">{{ f.headline }}</span><br>
+          <span class="d">{{ f.detail }}</span></span>
+      </div>
+      {% else %}
+      <p class="dim">No checks ran &mdash; the store is empty.
+        Run <code>botsensai sweep</code>.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Collector runs</h2>
+    <div class="body">
+      {% if snap.runs %}
+      <table>
+        <tr><th>surface</th><th class="num">records</th><th>state</th></tr>
+        {% for r in snap.runs %}
+        <tr>
+          <td>{{ r.surface }}<br>
+            <span class="dim">{{ r.started_at.strftime('%m-%d %H:%M:%SZ') }}</span></td>
+          <td class="num">{{ r.records }}</td>
+          <td>
+            {% if r.ok %}<span class="dim">ok</span>
+            {% else %}<span class="veto">degraded or timed out</span>
+              {% if r.error %}<br><span class="dim">{{ r.error }}</span>{% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      <p class="dim">A surface that times out is recorded as not ok, so a partial
+        sweep can never be mistaken for a complete one.</p>
+      {% else %}
+      <p class="dim">No collector run recorded yet &mdash; run
+        <code>botsensai sweep</code>.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Social posts by platform</h2>
+    <div class="body">
+      {% if snap.posts %}
+      <table>
+        <tr><th>platform</th><th class="num">stored</th><th class="num">reachable</th>
+            <th class="num">authors</th><th class="num">aged</th></tr>
+        {% for name, p in snap.posts.items() %}
+        <tr>
+          <td>{{ name }}</td>
+          <td class="num">{{ p.total }}</td>
+          <td class="num">{{ p.reachable }}</td>
+          <td class="num">{{ p.distinct_authors }}</td>
+          <td class="num">{{ p.with_author_age }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <p class="dim">A stored post with no token_key is reachable by no metric:
+        every metric query filters on that column.</p>
+      {% else %}
+      <p class="dim">No social posts collected yet &mdash; run
+        <code>botsensai collect</code>.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Store</h2>
+    <div class="body">
+      <table>
+        {% for name, n in snap.counts.items() %}
+        <tr><td class="dim">{{ name }}</td><td class="num">{{ n }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </section>
+</div>
+</main>
+<footer>
+  weights {{ snap.weights_version }} &middot; unfitted priors &middot;
+  no edge is proven by anything on this page<br>
+  <span class="dim">Scores written before
+    {{ snap.contaminated_before.strftime('%Y-%m-%d') }} came from a collection
+    path with known-wrong author parsing, which penalised every token for
+    fabricated author concentration; those rows are marked in the candidates
+    table and are not a baseline. A family showing 0 measured is reporting
+    MISSING, not a zero score.</span>
+</footer>
+</body>
+</html>

@@ -1,6 +1,6 @@
 """The Botsensai metric suite.
 
-Thirty-two metrics across six families, none of which is available from a
+Thirty-four metrics across six families, none of which is available from a
 standard token-data API. Each one documents the specific evasion it is designed
 to survive, because in an adversarial market a metric without a stated
 counter-measure is a liability rather than an asset.
@@ -51,6 +51,7 @@ from botsensai.metrics.social import (
     EngagementDepthRatio,
     EngagerAgeDispersion,
     FollowerEngagementCoherence,
+    IdentityDiscontinuity,
     MentionAuthorDiversity,
     PurchasedFollowerSignal,
     ReplyRhythmNaturalness,
@@ -79,6 +80,7 @@ METRIC_CLASSES: tuple[type[Metric], ...] = (
     MentionAuthorDiversity,
     SocialVelocityAcceleration,
     PurchasedFollowerSignal,
+    IdentityDiscontinuity,
     # --- community production ------------------------------------------------
     OrganicMediaProductionRate,
     DerivativeRemixDepth,

@@ -15,8 +15,15 @@ dependencies = [
     "httpx>=0.27",
     "anyio>=4.4",
     "pydantic>=2.7",
-    "pydantic-settings>=2.3",
-    "python-dotenv>=1.0",
+    # 2.14.2 fixes GHSA-4xgf-cpjx-pc3j: with `secrets_nested_subdir=True` a
+    # symlink inside `secrets_dir` was followed out of the directory, reading
+    # arbitrary local files into settings. Botsensai reads secrets from the
+    # environment and never sets that flag, so the exposure was latent — but
+    # this is a floor, not a preference. See `python scripts/audit.py`.
+    "pydantic-settings>=2.14.2",
+    # 1.2.2 fixes PYSEC-2026-2270: `set_key()`/`unset_key()` followed symlinks
+    # when rewriting `.env`. We only ever read, so again latent, and again a floor.
+    "python-dotenv>=1.2.2",
     "orjson>=3.10",
     "structlog>=24.1",
     "typer>=0.12",
@@ -31,6 +38,12 @@ dependencies = [
     "python-dateutil>=2.9",
     "PyYAML>=6.0",
     "jinja2>=3.1",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    # The pump.fun mint firehose is a websocket and httpx does not speak one.
+    # Pure Python, no build step, no transitive weight — this is the cheapest
+    # way to stop discovering tokens a poll interval late.
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +57,10 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
     "hypothesis>=6.100",
+    # Drives `python scripts/audit.py`. Bare `pip-audit` audits the whole
+    # interpreter, which on a conda base env is mostly packages this repo
+    # neither depends on nor can fix; the script scopes it to our closure.
+    "pip-audit>=2.7",
 ]
 
 [project.scripts]
@@ -73,6 +90,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
 ignore = ["E501", "B008", "UP042", "SIM102", "SIM103", "SIM108"]
 
 [tool.mypy]
-python_version = "3.11"
+# Deliberately no `python_version`. Pinning it to 3.11 while running on a 3.13
+# interpreter made mypy read 3.13's numpy stubs under 3.11 rules, and
+# `numpy/__init__.pyi` uses a PEP 695 `type` statement — one syntax error that
+# aborted the whole run before a single line of ours was checked. Letting mypy
+# follow the interpreter keeps stubs and rules in agreement; ruff's
+# `target-version = "py311"` is what holds the language floor.
 ignore_missing_imports = true
 warn_unused_ignores = false

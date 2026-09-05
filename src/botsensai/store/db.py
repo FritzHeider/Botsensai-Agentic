@@ -15,12 +15,13 @@ from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 import orjson
 
 from botsensai.models import (
     Chain,
+    ChannelRead,
     Confidence,
     CurveStage,
     HolderRecord,
@@ -33,6 +34,7 @@ from botsensai.models import (
     Score,
     SecurityReport,
     Side,
+    SocialAccount,
     SocialPost,
     TokenRef,
     Trade,
@@ -42,7 +44,12 @@ from botsensai.util.logging import get_logger
 
 log = get_logger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 7
+
+#: Launch columns `social_links` will read. An allow-list rather than a check
+#: for suspicious characters: the caller supplies a column name, and the only
+#: safe answer to "is this identifier legal here" is a fixed set.
+_LINK_COLUMNS = frozenset({"website", "twitter", "telegram"})
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -127,6 +134,10 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 CREATE INDEX IF NOT EXISTS ix_trades_token_time ON trades(token_key, as_of);
 CREATE INDEX IF NOT EXISTS ix_trades_wallet ON trades(wallet, as_of);
+-- Prior-history counts filter a wallet on both time bounds. Carrying
+-- observed_at in the index keeps that count index-only instead of sending it to
+-- the table for every candidate row.
+CREATE INDEX IF NOT EXISTS ix_trades_wallet_seen ON trades(wallet, as_of, observed_at);
 CREATE INDEX IF NOT EXISTS ix_trades_slot ON trades(token_key, slot);
 
 CREATE TABLE IF NOT EXISTS holders (
@@ -261,6 +272,25 @@ CREATE TABLE IF NOT EXISTS wallet_profiles (
 );
 CREATE INDEX IF NOT EXISTS ix_wallets_cluster ON wallet_profiles(cluster_id);
 
+-- Who first sent SOL to a wallet. This is an immutable historical fact — a
+-- wallet has exactly one first funder, and it cannot change — so the cache is
+-- permanent and unversioned rather than a point-in-time series. `funded_at` is
+-- the event time and is what point-in-time reads bound on; `resolved_at` is
+-- only when we looked, and is deliberately NOT a bound (see onchain/funding.py).
+-- `kind` records the classification, so an exchange withdrawal stays a known
+-- fact instead of being erased to "no funder".
+CREATE TABLE IF NOT EXISTS wallet_funding (
+    wallet       TEXT PRIMARY KEY,
+    funder       TEXT,
+    kind         TEXT NOT NULL,
+    exchange     TEXT,
+    funded_at    REAL,
+    signature    TEXT,
+    resolved_at  REAL NOT NULL,
+    source       TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_wallet_funding_funder ON wallet_funding(funder);
+
 CREATE TABLE IF NOT EXISTS deployer_profiles (
     deployer        TEXT PRIMARY KEY,
     launch_count    INTEGER DEFAULT 0,
@@ -282,10 +312,63 @@ CREATE TABLE IF NOT EXISTS collector_runs (
     error        TEXT,
     PRIMARY KEY (run_id, surface, started_at)
 );
+
+-- One attempt to read one public channel. `collector_runs` above is per
+-- surface, which is why nothing could answer "has this one watchlist entry
+-- ever produced a message": the Telegram surface reads fine while one handle on
+-- it returns an empty page every sweep, forever. `fetched` separates a page
+-- that arrived and held nothing (evidence about the channel) from a page we
+-- never saw (evidence about the network), because only the first may evict.
+CREATE TABLE IF NOT EXISTS channel_reads (
+    channel     TEXT NOT NULL,
+    observed_at REAL NOT NULL,
+    messages    INTEGER NOT NULL DEFAULT 0,
+    fetched     INTEGER NOT NULL DEFAULT 1,
+    error       TEXT,
+    PRIMARY KEY (channel, observed_at)
+);
+CREATE INDEX IF NOT EXISTS ix_channel_reads_time ON channel_reads(channel, observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS social_accounts (
+    platform         TEXT NOT NULL,
+    handle           TEXT NOT NULL,
+    token_key        TEXT,
+    role             TEXT NOT NULL DEFAULT 'engager',
+    account_id       TEXT,
+    created_at       REAL,
+    followers        INTEGER,
+    following        INTEGER,
+    post_count       INTEGER,
+    verified         INTEGER,
+    verified_type    TEXT,
+    bio              TEXT,
+    fast_followers   INTEGER,
+    normal_followers INTEGER,
+    timeline_posts   INTEGER,
+    timeline_oldest_at REAL,
+    timeline_newest_at REAL,
+    observed_at      REAL NOT NULL,
+    PRIMARY KEY (platform, handle, token_key, observed_at)
+);
+CREATE INDEX IF NOT EXISTS ix_accounts_token_time ON social_accounts(token_key, observed_at);
 """
 
 
+@overload
+def _ts(value: datetime | float) -> float: ...
+
+
+@overload
+def _ts(value: None) -> None: ...
+
+
 def _ts(value: datetime | float | None) -> float | None:
+    """Seconds since the epoch, or None for None.
+
+    Overloaded so a caller that passes a real datetime gets `float` back rather
+    than `float | None`. Every `as_of` read subtracts a lookback from this, and
+    without the overloads that arithmetic reads as `None - float`.
+    """
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -383,6 +466,19 @@ class Database:
                        website, twitter, telegram, initial_supply, dev_buy_sol, source)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(token_key) DO UPDATE SET
+                       -- Both timestamps take the minimum, and neither is a
+                       -- detail. The websocket ingester learns of a mint before
+                       -- anything else does but is given no mint time by the
+                       -- feed, so it writes its receipt time — an upper bound.
+                       -- Letting the first writer pin `created_at` would leave
+                       -- that approximation in place permanently and skew every
+                       -- age screen; taking the minimum lets the REST path's
+                       -- authoritative `created_timestamp` correct it. And
+                       -- `observed_at` must be the *earliest* observation for
+                       -- the latency measurement to mean anything, so a later
+                       -- sweep re-seeing a token must not push it forward.
+                       created_at=MIN(excluded.created_at, launches.created_at),
+                       observed_at=MIN(excluded.observed_at, launches.observed_at),
                        symbol=COALESCE(excluded.symbol, launches.symbol),
                        name=COALESCE(excluded.name, launches.name),
                        deployer=COALESCE(excluded.deployer, launches.deployer),
@@ -528,11 +624,18 @@ class Database:
             )
 
     def insert_posts(self, posts: Iterable[SocialPost], token_key: str | None = None) -> int:
+        """Store posts, tagged with the token they were collected for.
+
+        `token_key` overrides for callers that hold one token's posts; otherwise
+        each post's own `token_key` is used. One of the two must be present or the
+        row is written unreachable — `posts_as_of` filters on this column, so an
+        untagged post can never be read back by a metric.
+        """
         rows = [
             (
                 p.platform.value,
                 p.post_id,
-                token_key,
+                token_key if token_key is not None else p.token_key,
                 p.author,
                 p.author_id,
                 _ts(p.as_of),
@@ -564,6 +667,49 @@ class Database:
             conn.executemany(
                 "INSERT OR REPLACE INTO social_posts VALUES "
                 "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                rows,
+            )
+        return len(rows)
+
+    def insert_accounts(self, accounts: Iterable[SocialAccount]) -> int:
+        """Store profile snapshots, tagged with the token they were collected for.
+
+        An account with no `token_key` is refused rather than written, and that
+        is not tidiness. `accounts_as_of` filters on the column, so an untagged
+        row is unreadable by every metric — and because `token_key` is part of
+        the primary key and SQLite treats NULLs as distinct, untagged rows do
+        not even deduplicate against each other. Writing them would grow the
+        table forever with data nothing can read.
+        """
+        rows = [
+            (
+                a.platform.value,
+                a.handle.lower(),
+                a.token_key,
+                a.role,
+                a.account_id,
+                _ts(a.created_at),
+                a.followers,
+                a.following,
+                a.post_count,
+                None if a.verified is None else int(a.verified),
+                a.verified_type,
+                a.bio,
+                a.fast_followers,
+                a.normal_followers,
+                a.timeline_posts,
+                _ts(a.timeline_oldest_at),
+                _ts(a.timeline_newest_at),
+                _ts(a.observed_at),
+            )
+            for a in accounts
+            if a.token_key and a.handle
+        ]
+        if not rows:
+            return 0
+        with self.tx() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO social_accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows,
             )
         return len(rows)
@@ -643,6 +789,84 @@ class Database:
             (_ts(start), _ts(end)),
         ).fetchall()
         return [_row_to_launch(r) for r in rows]
+
+    def recent_launches(self, limit: int = 20) -> list[Launch]:
+        """Most recent token launches observed, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM launches ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [_row_to_launch(r) for r in rows]
+
+    def social_links(self, field: str) -> dict[str, set[str]]:
+        """Published social link -> the launches that published it.
+
+        `field` is one of the launch link columns; anything else is refused
+        rather than interpolated, because this is the one place in the module
+        where a column name reaches SQL from a caller.
+
+        For `telegram` this is the Dexscreener `links` feed under another name:
+        `info.socials` of type `telegram` is folded into `Launch.telegram` at
+        parse time, so the store already holds every link Dexscreener published
+        and reading it back costs no requests.
+        """
+        if field not in _LINK_COLUMNS:
+            raise ValueError(f"not a launch link column: {field!r}")
+        rows = self.conn.execute(
+            f"SELECT {field} AS link, token_key FROM launches "  # noqa: S608 - allow-listed above
+            f"WHERE {field} IS NOT NULL AND {field} != ''"
+        ).fetchall()
+        links: dict[str, set[str]] = {}
+        for row in rows:
+            links.setdefault(str(row["link"]), set()).add(str(row["token_key"]))
+        return links
+
+    def posts_by_platform(
+        self, platform: Platform, since: datetime | None = None, limit: int = 20_000
+    ) -> list[SocialPost]:
+        """Freshest observation of every post on one platform, newest first."""
+        clause = "platform = ?"
+        params: list[Any] = [platform.value]
+        if since is not None:
+            clause += " AND as_of >= ?"
+            params.append(_ts(since))
+        return self._freshest_posts(clause, params, limit)
+
+    def posts_matching(
+        self, fragment: str, since: datetime | None = None, limit: int = 20_000
+    ) -> list[SocialPost]:
+        """Freshest observation of every post whose text contains `fragment`.
+
+        The fragment is matched literally: LIKE's own wildcards are escaped, so
+        a caller searching for `t.me/` gets `t.me/` and not `t<any char>me/`.
+        """
+        escaped = fragment.replace("\\", r"\\").replace("%", r"\%").replace("_", r"\_")
+        clause = r"text LIKE ? ESCAPE '\'"
+        params: list[Any] = [f"%{escaped}%"]
+        if since is not None:
+            clause += " AND as_of >= ?"
+            params.append(_ts(since))
+        return self._freshest_posts(clause, params, limit)
+
+    def _freshest_posts(
+        self, clause: str, params: list[Any], limit: int
+    ) -> list[SocialPost]:
+        """One row per post, the latest observation of it, newest post first.
+
+        Posts are stored once per observation so engagement can be tracked over
+        time. Any caller counting posts rather than reading engagement has to
+        collapse those first, or a channel that was read twenty times looks like
+        twenty calls.
+        """
+        rows = self.conn.execute(
+            f"""SELECT * FROM social_posts p
+                 WHERE {clause}
+                   AND observed_at = (
+                       SELECT MAX(observed_at) FROM social_posts q
+                        WHERE q.platform = p.platform AND q.post_id = p.post_id)
+                 ORDER BY as_of DESC LIMIT ?""",  # noqa: S608 - clause is module-internal
+            [*params, int(limit)],
+        ).fetchall()
+        return [_row_to_post(r) for r in rows]
 
     def snapshots_as_of(
         self, token_key: str, as_of: datetime, lookback_seconds: float | None = None
@@ -734,6 +958,36 @@ class Database:
         ).fetchall()
         return [_row_to_post(r) for r in rows]
 
+    def accounts_as_of(self, token_key: str, as_of: datetime) -> list[SocialAccount]:
+        """Freshest profile snapshot per account that was already collected at `as_of`.
+
+        Only `observed_at` is bounded, and unlike everywhere else in this file
+        that is not a missing second bound. A profile snapshot has no event time
+        distinct from its observation: `followers` is what the account had when
+        we looked, so the instant we looked *is* the instant the fact is about.
+        The account's own `created_at` is a property of the account, not of the
+        reading, and bounding on it would hide every account older than the
+        token — which is all of them.
+        """
+        t = _ts(as_of)
+        # The bound lives in the subquery and only there. An outer
+        # `observed_at <= ?` alongside it reads like a second safeguard and is
+        # not one: the row has to equal a MAX that is itself bounded by `t`, so
+        # the outer clause can never exclude anything the subquery admitted. A
+        # guard that cannot fire is worse than no guard, because it draws the
+        # eye away from the clause actually doing the work.
+        rows = self.conn.execute(
+            """SELECT * FROM social_accounts a
+               WHERE token_key = ?
+                 AND observed_at = (
+                   SELECT MAX(observed_at) FROM social_accounts b
+                   WHERE b.platform = a.platform AND b.handle = a.handle
+                     AND b.token_key = a.token_key AND b.observed_at <= ?)
+               ORDER BY observed_at""",
+            (token_key, t),
+        ).fetchall()
+        return [_row_to_account(r) for r in rows]
+
     def metric_values_as_of(self, token_key: str, as_of: datetime) -> list[MetricValue]:
         t = _ts(as_of)
         rows = self.conn.execute(
@@ -792,12 +1046,230 @@ class Database:
             "best_multiple": best,
         }
 
-    def wallet_seen_before(self, wallet: str, before: datetime) -> int:
-        row = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM trades WHERE wallet = ? AND as_of < ?",
-            (wallet, _ts(before)),
-        ).fetchone()
-        return int(row["c"]) if row else 0
+    def wallet_seen_before(
+        self, wallet: str, before: datetime, observed_before: datetime | None = None
+    ) -> int:
+        """Trades by `wallet` that happened — and were known — before a moment.
+
+        Two bounds, because they answer different questions. `before` is event
+        time: did the trade happen before this token existed. `observed_before`
+        is knowledge time: had we collected it by the instant we are scoring.
+        Filtering on `as_of` alone credits a wallet with history that was not
+        knowable at the decision point, which is look-ahead bias in a feature
+        that is fed straight to the backtester.
+        """
+        return self.wallet_prior_counts([wallet], before, observed_before).get(wallet, 0)
+
+    def wallet_prior_counts(
+        self,
+        wallets: Iterable[str],
+        before: datetime,
+        observed_before: datetime | None = None,
+    ) -> dict[str, int]:
+        """Batched `wallet_seen_before`, one query per chunk instead of per wallet.
+
+        A scored token routinely has hundreds of distinct buyers, and the live
+        path scores many tokens per sweep. Wallets with no prior trades are
+        absent from the result rows, so they are seeded to 0 first — a missing
+        key would read as "unknown history" to `fresh_wallet_ratio`, which is a
+        different claim from "no history".
+        """
+        unique = list(dict.fromkeys(wallets))
+        if not unique:
+            return {}
+
+        counts: dict[str, int] = dict.fromkeys(unique, 0)
+        clause = ""
+        tail: list[Any] = []
+        if observed_before is not None:
+            clause = " AND observed_at <= ?"
+            tail = [_ts(observed_before)]
+
+        # SQLITE_MAX_VARIABLE_NUMBER is 999 on older builds; stay well inside it.
+        chunk_size = 400
+        for start in range(0, len(unique), chunk_size):
+            chunk = unique[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT wallet, COUNT(*) AS c FROM trades "  # noqa: S608 - placeholders only
+                f"WHERE wallet IN ({placeholders}) AND as_of < ?" + clause + " GROUP BY wallet",
+                [*chunk, _ts(before), *tail],
+            ).fetchall()
+            for row in rows:
+                counts[row["wallet"]] = int(row["c"])
+        return counts
+
+    def wallet_trades_before(
+        self,
+        wallets: Iterable[str],
+        before: datetime,
+        observed_before: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch trades for a set of wallets prior to `before` and `observed_before`.
+
+        Filters strictly on both time bounds (`as_of < before` and
+        `observed_at <= observed_before` if provided) to enforce point-in-time symmetry.
+        """
+        unique = list(dict.fromkeys(w for w in wallets if w))
+        if not unique:
+            return []
+
+        clause = ""
+        tail: list[Any] = []
+        if observed_before is not None:
+            clause = " AND t.observed_at <= ?"
+            tail = [_ts(observed_before)]
+
+        out: list[dict[str, Any]] = []
+        chunk_size = 400
+        for start in range(0, len(unique), chunk_size):
+            chunk = unique[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT t.wallet, t.token_key, t.side, t.amount_native, t.amount_token, "  # noqa: S608
+                f"t.as_of, t.observed_at, l.created_at AS launch_created_at "
+                f"FROM trades t LEFT JOIN launches l ON t.token_key = l.token_key "
+                f"WHERE t.wallet IN ({placeholders}) AND t.as_of < ?" + clause + " ORDER BY t.as_of ASC",
+                [*chunk, _ts(before), *tail],
+            ).fetchall()
+            for r in rows:
+                out.append({
+                    "wallet": str(r["wallet"]),
+                    "token_key": str(r["token_key"]),
+                    "side": str(r["side"]),
+                    "amount_native": float(r["amount_native"] or 0.0),
+                    "amount_token": float(r["amount_token"] or 0.0),
+                    "as_of": float(r["as_of"]),
+                    "observed_at": float(r["observed_at"]),
+                    "launch_created_at": float(r["launch_created_at"]) if r["launch_created_at"] is not None else None,
+                })
+        return out
+
+    def refresh_wallet_profiles(self, wallets: Iterable[str] | None = None) -> int:
+        """Fold `trades` into the `wallet_profiles` summary table.
+
+        The summary is deliberately *lifetime* and carries no point-in-time
+        claim: `trade_count` here is everything we have ever seen, which is the
+        wrong number to hand a metric. What it is good for is the negative case
+        — a wallet whose `first_seen_at` is at or after the moment being scored
+        cannot have priors, and that is answerable without touching `trades`.
+        """
+        params: list[Any] = []
+        clause = ""
+        if wallets is not None:
+            unique = list(dict.fromkeys(wallets))
+            if not unique:
+                return 0
+            clause = " WHERE wallet IN (" + ",".join("?" * len(unique)) + ")"
+            params = list(unique)
+
+        rows = self.conn.execute(
+            "SELECT wallet, MIN(as_of) AS first_seen, MAX(as_of) AS last_seen, "  # noqa: S608
+            "COUNT(*) AS trades FROM trades" + clause + " GROUP BY wallet",
+            params,
+        ).fetchall()
+        if not rows:
+            return 0
+
+        now = _ts(utcnow())
+        payload = [
+            (r["wallet"], r["first_seen"], r["last_seen"], int(r["trades"]), now) for r in rows
+        ]
+        with self.tx() as conn:
+            conn.executemany(
+                """INSERT INTO wallet_profiles
+                       (wallet, first_seen_at, last_seen_at, trade_count, updated_at)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(wallet) DO UPDATE SET
+                       first_seen_at = MIN(COALESCE(wallet_profiles.first_seen_at, excluded.first_seen_at),
+                                           excluded.first_seen_at),
+                       last_seen_at  = MAX(COALESCE(wallet_profiles.last_seen_at, excluded.last_seen_at),
+                                           excluded.last_seen_at),
+                       trade_count   = excluded.trade_count,
+                       updated_at    = excluded.updated_at""",
+                payload,
+            )
+        return len(payload)
+
+    def wallet_first_seen(self, wallets: Iterable[str]) -> dict[str, float]:
+        """`first_seen_at` per wallet from the profile table, for wallets that have one."""
+        unique = list(dict.fromkeys(wallets))
+        out: dict[str, float] = {}
+        chunk_size = 400
+        for start in range(0, len(unique), chunk_size):
+            chunk = unique[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT wallet, first_seen_at FROM wallet_profiles "  # noqa: S608
+                f"WHERE wallet IN ({placeholders}) AND first_seen_at IS NOT NULL",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                out[row["wallet"]] = float(row["first_seen_at"])
+        return out
+
+    # -- funding sources ----------------------------------------------------- #
+
+    def upsert_wallet_funding(self, rows: Iterable[dict[str, Any]]) -> int:
+        """Persist resolved funding sources. Last writer wins, by design.
+
+        Unlike every other table here this one holds no time series: a wallet's
+        first inbound transfer is a single immutable fact, so a re-resolution
+        either agrees with what is stored or corrects a parse we got wrong, and
+        in both cases the newer row is the one to keep.
+        """
+        payload = [
+            (
+                r["wallet"],
+                r.get("funder"),
+                r.get("kind") or "unknown",
+                r.get("exchange"),
+                _ts(r.get("funded_at")),
+                r.get("signature"),
+                _ts(r.get("resolved_at") or utcnow()),
+                r.get("source"),
+            )
+            for r in rows
+            if r.get("wallet")
+        ]
+        if not payload:
+            return 0
+        with self.tx() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO wallet_funding VALUES (?,?,?,?,?,?,?,?)", payload
+            )
+        return len(payload)
+
+    def wallet_funding(self, wallets: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """Cached funding rows for the wallets that have one. Missing keys are absent."""
+        unique = list(dict.fromkeys(w for w in wallets if w))
+        out: dict[str, dict[str, Any]] = {}
+        chunk_size = 400
+        for start in range(0, len(unique), chunk_size):
+            chunk = unique[start : start + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT * FROM wallet_funding WHERE wallet IN ({placeholders})",  # noqa: S608
+                chunk,
+            ).fetchall()
+            for row in rows:
+                out[row["wallet"]] = dict(row)
+        return out
+
+    def funder_fanout(self, min_wallets: int = 2) -> dict[str, int]:
+        """Distinct wallets each funder is behind, corpus-wide.
+
+        The seed list of exchange hot wallets can only ever be incomplete. This
+        is the measured half of the same question: a funder that appears behind
+        hundreds of unrelated wallets in our own store is a dispenser, whatever
+        its label, and collapsing its wallets into one cluster would be wrong.
+        """
+        rows = self.conn.execute(
+            "SELECT funder, COUNT(DISTINCT wallet) AS c FROM wallet_funding "
+            "WHERE funder IS NOT NULL GROUP BY funder HAVING c >= ?",
+            (int(min_wallets),),
+        ).fetchall()
+        return {row["funder"]: int(row["c"]) for row in rows}
 
     def record_run(
         self,
@@ -815,6 +1287,59 @@ class Database:
                 (run_id, surface, _ts(started_at), _ts(finished_at), int(ok), records, error),
             )
 
+    def record_channel_reads(self, reads: Iterable[ChannelRead]) -> int:
+        """Persist what each channel returned this sweep. Returns rows written.
+
+        Keyed on `(channel, observed_at)`, so re-recording a sweep replaces its
+        row rather than inflating a channel's history — a streak counted from
+        duplicated rows would evict a channel in one sweep instead of three.
+        """
+        # A read with no handle is what a caller got for `@` or `/`: there was
+        # never a channel to record, and storing it would file every one of them
+        # together under the same empty key.
+        rows = [
+            (r.channel, _ts(r.observed_at), int(r.messages), int(r.fetched), r.error)
+            for r in reads
+            if r.channel
+        ]
+        if not rows:
+            return 0
+        with self.tx() as conn:
+            conn.executemany("INSERT OR REPLACE INTO channel_reads VALUES (?,?,?,?,?)", rows)
+        return len(rows)
+
+    def channel_reads(
+        self, since: datetime | None = None, limit_per_channel: int = 50
+    ) -> dict[str, list[ChannelRead]]:
+        """Read history per channel, newest first.
+
+        `since` is what lets an eviction expire. A dropped channel stops being
+        read, so its streak would otherwise stand forever and a room that went
+        public later could never come back; bounding the history to the same
+        window the ranking uses means the evidence ages out and the channel
+        earns a handful of fresh attempts.
+        """
+        clause = "" if since is None else " WHERE observed_at >= ?"
+        params: list[Any] = [] if since is None else [_ts(since)]
+        rows = self.conn.execute(
+            f"SELECT * FROM channel_reads{clause} ORDER BY channel, observed_at DESC",  # noqa: S608 - clause is module-internal
+            params,
+        ).fetchall()
+        out: dict[str, list[ChannelRead]] = {}
+        for row in rows:
+            history = out.setdefault(str(row["channel"]), [])
+            if len(history) < limit_per_channel:
+                history.append(
+                    ChannelRead(
+                        channel=str(row["channel"]),
+                        observed_at=_dt(row["observed_at"]) or utcnow(),
+                        messages=int(row["messages"]),
+                        fetched=bool(row["fetched"]),
+                        error=row["error"],
+                    )
+                )
+        return out
+
     def counts(self) -> dict[str, int]:
         tables = [
             "launches",
@@ -826,12 +1351,271 @@ class Database:
             "metric_values",
             "scores",
             "outcomes",
+            "wallet_funding",
         ]
         out: dict[str, int] = {}
         for t in tables:
             row = self.conn.execute(f"SELECT COUNT(*) AS c FROM {t}").fetchone()
             out[t] = int(row["c"]) if row else 0
         return out
+
+    # -- dashboard reads ---------------------------------------------------- #
+
+    def recent_scores(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Most recent scores, newest first.
+
+        Returns plain dicts rather than `Score` models: the row stores a
+        `token_key` string, not a full `TokenRef`, and reconstructing one would
+        invent a chain/mint split the display does not need.
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM scores ORDER BY as_of DESC, composite DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "token_key": r["token_key"],
+                "as_of": _dt(r["as_of"]),
+                "composite": float(r["composite"]),
+                "coverage": float(r["coverage"]),
+                "regime": r["regime"] or "unknown",
+                "weights_version": r["weights_version"] or "v0",
+                "vetoes": _unjson(r["vetoes"]),
+                "explanation": r["explanation"],
+            }
+            for r in rows
+        ]
+
+    def social_post_integrity(self, since: float | None = None) -> dict[str, dict[str, int]]:
+        """Per-platform counts that make silent collection failures visible.
+
+        `reachable` is the load-bearing one: a post whose `token_key` is NULL is
+        stored complete and invisible to every metric, because `posts_as_of`
+        filters on that column.
+        """
+        clause = " WHERE observed_at >= ?" if since is not None else ""
+        params: list[Any] = [since] if since is not None else []
+        rows = self.conn.execute(
+            f"""SELECT platform,
+                       COUNT(*) AS total,
+                       SUM(CASE WHEN token_key IS NOT NULL AND token_key != ''
+                                THEN 1 ELSE 0 END) AS reachable,
+                       COUNT(DISTINCT author) AS distinct_authors,
+                       SUM(CASE WHEN author = 'unknown' OR author LIKE 'id:%'
+                                THEN 1 ELSE 0 END) AS unresolved_authors,
+                       SUM(CASE WHEN views IS NOT NULL THEN 1 ELSE 0 END) AS with_views,
+                       SUM(CASE WHEN bookmarks IS NOT NULL THEN 1 ELSE 0 END) AS with_bookmarks,
+                       SUM(CASE WHEN author_created_at IS NOT NULL
+                                THEN 1 ELSE 0 END) AS with_author_age
+                FROM social_posts{clause}
+                GROUP BY platform""",
+            params,
+        ).fetchall()
+        return {
+            r["platform"]: {
+                "total": int(r["total"]),
+                "reachable": int(r["reachable"] or 0),
+                "distinct_authors": int(r["distinct_authors"] or 0),
+                "unresolved_authors": int(r["unresolved_authors"] or 0),
+                "with_views": int(r["with_views"] or 0),
+                "with_bookmarks": int(r["with_bookmarks"] or 0),
+                "with_author_age": int(r["with_author_age"] or 0),
+            }
+            for r in rows
+        }
+
+    def metric_raw_spread(self) -> dict[str, dict[str, Any]]:
+        """Distinct raw values per metric in the newest batch.
+
+        A metric returning one raw value for every token is reporting a
+        constant, not a signal. That is exactly how a clamped entropy term hid
+        for the life of the project, and it is cheap to detect.
+        """
+        latest = self.conn.execute("SELECT MAX(as_of) AS t FROM metric_values").fetchone()
+        if latest is None or latest["t"] is None:
+            return {}
+        cutoff = float(latest["t"]) - 300.0
+        rows = self.conn.execute(
+            """SELECT metric_id,
+                      COUNT(*) AS n,
+                      COUNT(DISTINCT ROUND(raw, 6)) AS distinct_raw,
+                      MIN(raw) AS lo,
+                      MAX(raw) AS hi
+               FROM metric_values
+               WHERE as_of >= ? AND raw IS NOT NULL AND confidence != 'missing'
+               GROUP BY metric_id""",
+            (cutoff,),
+        ).fetchall()
+        return {
+            r["metric_id"]: {
+                "count": int(r["n"]),
+                "distinct": int(r["distinct_raw"] or 0),
+                "min": float(r["lo"]) if r["lo"] is not None else None,
+                "max": float(r["hi"]) if r["hi"] is not None else None,
+            }
+            for r in rows
+        }
+
+    def recent_runs(self, limit: int = 40) -> list[dict[str, Any]]:
+        """Latest collector runs, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM collector_runs ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "run_id": r["run_id"],
+                "surface": r["surface"],
+                "started_at": _dt(r["started_at"]),
+                "finished_at": _dt(r["finished_at"]),
+                "ok": bool(r["ok"]),
+                "records": int(r["records"] or 0),
+                "error": r["error"],
+            }
+            for r in rows
+        ]
+
+    def collection_gaps(
+        self,
+        tolerance_seconds: float,
+        surface: str = "sweep",
+        limit: int = 5000,
+    ) -> list[dict[str, Any]]:
+        """Stretches between consecutive heartbeats longer than `tolerance_seconds`.
+
+        This is the read the heartbeat exists for. A gap here is time the
+        collector was not running, which is the difference between "the market
+        produced nothing" and "the process was dead" — two states that produce
+        an identical corpus and opposite conclusions.
+
+        Measured from one run's `finished_at` to the next run's `started_at`, so
+        a slow sweep is not itself reported as a gap.
+        """
+        rows = self.conn.execute(
+            """SELECT started_at, finished_at FROM (
+                   SELECT started_at, finished_at FROM collector_runs
+                   WHERE surface = ? ORDER BY started_at DESC LIMIT ?
+               ) ORDER BY started_at ASC""",
+            (surface, limit),
+        ).fetchall()
+
+        gaps: list[dict[str, Any]] = []
+        for previous, following in zip(rows, rows[1:], strict=False):
+            ended = previous["finished_at"] or previous["started_at"]
+            seconds = float(following["started_at"]) - float(ended)
+            if seconds > tolerance_seconds:
+                gaps.append(
+                    {
+                        "after": _dt(ended),
+                        "before": _dt(following["started_at"]),
+                        "seconds": round(seconds, 1),
+                    }
+                )
+        return gaps
+
+    def observation_latency(self, since: datetime | None = None) -> dict[str, dict[str, Any]]:
+        """Per-source time from mint to the first time Botsensai saw the token.
+
+        `source` on a launch row is the collector that *created* it and is never
+        overwritten by a later upsert, so grouping by it answers the question the
+        websocket work exists to answer: which surface got there first, and by
+        how much did it beat the poller.
+
+        Two counts are reported and they are not interchangeable:
+
+        * `launches` — every row this source discovered.
+        * `measured` — the subset with `created_at < observed_at`, i.e. those
+          whose mint time came from somewhere other than the observation itself.
+
+        The distinction is the whole point. The pumpportal feed carries no mint
+        timestamp, so a websocket-discovered token starts life with
+        `created_at == observed_at` and a latency of exactly zero — not because
+        it was seen instantly, but because nothing yet knows when it was minted.
+        Those rows are excluded from the percentiles rather than averaged in as
+        zeroes, which would manufacture a spectacular and completely fictional
+        latency figure. They join `measured` once the REST path corroborates the
+        mint time, which `upsert_launch` folds in with a MIN.
+
+        Percentiles are computed here rather than in SQL because sqlite has no
+        median, and the alternative — an average — is meaningless over a
+        distribution with a tail this long.
+        """
+        clause = "WHERE observed_at >= ?" if since is not None else ""
+        params: tuple[Any, ...] = (_ts(since),) if since is not None else ()
+        rows = self.conn.execute(
+            f"SELECT source, created_at, observed_at FROM launches {clause}", params
+        ).fetchall()
+
+        buckets: dict[str, list[float]] = {}
+        totals: dict[str, int] = {}
+        for row in rows:
+            source = row["source"] or "unknown"
+            totals[source] = totals.get(source, 0) + 1
+            seconds = float(row["observed_at"]) - float(row["created_at"])
+            if seconds > 0:
+                buckets.setdefault(source, []).append(seconds)
+
+        def percentile(values: list[float], fraction: float) -> float:
+            index = min(len(values) - 1, max(0, int(round(fraction * (len(values) - 1)))))
+            return values[index]
+
+        report: dict[str, dict[str, Any]] = {}
+        for source, count in sorted(totals.items(), key=lambda kv: -kv[1]):
+            measured = sorted(buckets.get(source, []))
+            report[source] = {
+                "launches": count,
+                "measured": len(measured),
+                "median_seconds": round(percentile(measured, 0.5), 2) if measured else None,
+                "p90_seconds": round(percentile(measured, 0.9), 2) if measured else None,
+                "fastest_seconds": round(measured[0], 2) if measured else None,
+            }
+        return report
+
+    def outcome_spread(self) -> dict[str, Any]:
+        """Distribution of the two multiples across every labelled outcome.
+
+        Reported side by side on purpose. `peak` is the price ratio the chart
+        shows; `realizable` is what the position size the system actually takes
+        would have received selling into the depth that was there. The gap
+        between them is the liquidity tax, and on this asset class it is usually
+        most of the number — a labelling pass where the two are close is a
+        reason to distrust the depth data, not a reason to celebrate.
+
+        Counts are separate from percentiles for the same reason
+        `observation_latency` splits them: an outcome whose t0 price is unknown
+        carries `NULL`, and folding those in as zeroes would understate every
+        figure here.
+        """
+        rows = self.conn.execute(
+            "SELECT max_multiple_from_t0 AS peak, max_realizable_multiple AS realizable "
+            "FROM outcomes"
+        ).fetchall()
+
+        def stats(values: list[float]) -> dict[str, Any]:
+            values = sorted(values)
+            if not values:
+                return {"n": 0, "median": None, "p90": None, "max": None}
+
+            def at(fraction: float) -> float:
+                index = min(len(values) - 1, max(0, round(fraction * (len(values) - 1))))
+                return values[index]
+
+            return {
+                "n": len(values),
+                "median": round(at(0.5), 4),
+                "p90": round(at(0.9), 4),
+                "max": round(values[-1], 4),
+            }
+
+        peaks = [float(r["peak"]) for r in rows if r["peak"] is not None]
+        realizable = [float(r["realizable"]) for r in rows if r["realizable"] is not None]
+        both = [r for r in rows if r["peak"] is not None and r["realizable"] is not None]
+        return {
+            "labelled": len(rows),
+            "with_both": len(both),
+            "peak": stats(peaks),
+            "realizable": stats(realizable),
+        }
 
 
 def _b(value: bool | None) -> int | None:
@@ -962,6 +1746,7 @@ def _row_to_post(row: sqlite3.Row) -> SocialPost:
     return SocialPost(
         platform=Platform(row["platform"]),
         post_id=row["post_id"],
+        token_key=row["token_key"],
         author=row["author"],
         author_id=row["author_id"],
         as_of=_dt(row["as_of"]),  # type: ignore[arg-type]
@@ -984,6 +1769,29 @@ def _row_to_post(row: sqlite3.Row) -> SocialPost:
         author_created_at=_dt(row["author_created_at"]),
         mentioned_tokens=_unjson(row["mentioned_tokens"]),
         source=row["source"] or "unknown",
+    )
+
+
+def _row_to_account(row: sqlite3.Row) -> SocialAccount:
+    return SocialAccount(
+        platform=Platform(row["platform"]),
+        handle=row["handle"],
+        token_key=row["token_key"],
+        role=row["role"] or "engager",
+        account_id=row["account_id"],
+        created_at=_dt(row["created_at"]),
+        followers=row["followers"],
+        following=row["following"],
+        post_count=row["post_count"],
+        verified=None if row["verified"] is None else bool(row["verified"]),
+        verified_type=row["verified_type"],
+        bio=row["bio"],
+        fast_followers=row["fast_followers"],
+        normal_followers=row["normal_followers"],
+        timeline_posts=row["timeline_posts"],
+        timeline_oldest_at=_dt(row["timeline_oldest_at"]),
+        timeline_newest_at=_dt(row["timeline_newest_at"]),
+        observed_at=_dt(row["observed_at"]),  # type: ignore[arg-type]
     )
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 from collections import Counter, defaultdict
 
+from botsensai.media.phash import cluster_by_distance, perceptual_values
 from botsensai.metrics.base import Metric, MetricContext
 from botsensai.models import Direction, Platform, SocialPost
 from botsensai.util.stats import clamp, saturating, shannon_entropy
@@ -145,25 +146,39 @@ class DerivativeRemixDepth(Metric):
         "but not the evenness term, and they trip `reply_rhythm_naturalness`."
     )
 
+    #: Bits of a 64-bit perceptual hash two images may differ by and still count
+    #: as the same visual idea. A re-encode or a resize moves 0-4 bits; a
+    #: recaption or a crop moves 8-16; an unrelated picture sits near 32, which
+    #: is where random 64-bit strings land. 10 separates re-posting from remixing.
+    cluster_distance = 10
+
     def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
         hashes: list[str] = []
         for p in ctx.posts:
             hashes.extend(h for h in p.media_hashes if h)
-        if len(hashes) < 5:
-            return None, len(hashes), "fewer than 5 hashed media items"
+        # Only perceptual hashes may be compared to each other. 4chan hands us
+        # an MD5, which answers "same file" and is stored, but two MD5s of the
+        # same picture re-encoded are as far apart as two of different pictures,
+        # so counting them as visual clusters would read every re-upload as a
+        # remix — the exact artefact this metric exists to avoid.
+        digests = perceptual_values(hashes)
+        if len(digests) < 5:
+            return None, len(digests), "fewer than 5 perceptually hashed media items"
 
-        # Bucket by hash prefix: near-identical images share a prefix, so each
-        # bucket is one visual idea rather than one file.
-        clusters: Counter[str] = Counter(h[:12] for h in hashes)
+        # Single-linkage clustering in Hamming space. Prefix bucketing cannot do
+        # this job: perceptual hashes of near-identical images differ by a few
+        # bits in arbitrary positions, so any two of them almost never share a
+        # prefix and every image would read as its own cluster.
+        clusters: Counter[int] = Counter(cluster_by_distance(digests, self.cluster_distance))
         if len(clusters) < 2:
-            return 0.0, len(hashes), "all media perceptually identical"
+            return 0.0, len(digests), "all media perceptually identical"
 
         evenness = shannon_entropy(list(clusters.values()), normalize=True)
         breadth = saturating(float(len(clusters)), scale=8.0)
         # Both terms required: many clusters dominated by one, or two even
         # clusters, are each unimpressive. Their product is the real signal.
-        return evenness * breadth, len(hashes), (
-            f"{len(clusters)} visual clusters over {len(hashes)} items"
+        return evenness * breadth, len(digests), (
+            f"{len(clusters)} visual clusters over {len(digests)} items"
         )
 
 
@@ -199,19 +214,18 @@ class CrossPlatformPropagationLag(Metric):
         "produces almost no lift; genuine propagation shows several unrelated authors."
     )
 
-    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
-        if ctx.launch is None:
-            return None, 0, "no launch record"
-        team = _team_accounts(ctx)
-
-        origin_first: float | None = None
+    @staticmethod
+    def _origin_timestamp(ctx: MetricContext) -> float:
+        """When the token first showed up on a venue the team controls."""
         for p in sorted(ctx.posts, key=lambda x: x.as_of):
             if p.platform in TEAM_PLATFORMS:
-                origin_first = p.as_of.timestamp()
-                break
-        if origin_first is None:
-            origin_first = ctx.launch.created_at.timestamp()
+                return p.as_of.timestamp()
+        assert ctx.launch is not None
+        return ctx.launch.created_at.timestamp()
 
+    @staticmethod
+    def _organic_spread(ctx: MetricContext, team: set[str]) -> tuple[dict[Platform, set[str]], float | None]:
+        """Distinct non-team authors per off-platform venue, and the earliest such post."""
         organic_authors: dict[Platform, set[str]] = defaultdict(set)
         organic_first: float | None = None
         for p in sorted(ctx.posts, key=lambda x: x.as_of):
@@ -225,7 +239,14 @@ class CrossPlatformPropagationLag(Metric):
             organic_authors[p.platform].add(key)
             if organic_first is None:
                 organic_first = p.as_of.timestamp()
+        return organic_authors, organic_first
 
+    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
+        if ctx.launch is None:
+            return None, 0, "no launch record"
+
+        origin_first = self._origin_timestamp(ctx)
+        organic_authors, organic_first = self._organic_spread(ctx, _team_accounts(ctx))
         distinct_authors = sum(len(v) for v in organic_authors.values())
         if organic_first is None or distinct_authors < 2:
             # Not yet escaped. Bearish, but honestly so: report a large lag

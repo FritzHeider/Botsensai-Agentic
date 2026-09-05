@@ -128,6 +128,7 @@ class RiskSettings(BaseModel):
     trailing_stop_pct: float = 0.35
     max_hold_seconds: float = 60 * 60 * 4
     kill_switch: bool = False
+    expectancy_floor: float = -0.05
 
     @model_validator(mode="after")
     def _check_ladder(self) -> RiskSettings:
@@ -140,17 +141,20 @@ class RiskSettings(BaseModel):
 
 class ExecutionSettings(BaseModel):
     """Fill modeling. Used identically by the paper broker and the backtester so
-    that a paper result and a backtest result are directly comparable."""
+    that a paper result and a backtest result are directly comparable.
+    
+    Calibrated on empirical trade data (P3-04) to prevent optimistic fill assumptions.
+    """
 
-    base_latency_ms: float = 450.0
-    latency_jitter_ms: float = 250.0
+    base_latency_ms: float = 650.0
+    latency_jitter_ms: float = 350.0
     priority_fee_lamports: int = 1_000_000
     jito_tip_lamports: int = 1_000_000
     platform_fee_bps: int = 100
     lp_fee_bps: int = 30
-    fail_probability: float = 0.06
-    sandwich_probability: float = 0.10
-    sandwich_extra_bps: float = 150.0
+    fail_probability: float = 0.08
+    sandwich_probability: float = 0.25
+    sandwich_extra_bps: float = 350.0
     price_impact_model: str = Field(
         default="curve", description="curve | constant_product | depth_table"
     )
@@ -203,6 +207,34 @@ class MediaSettings(BaseModel):
     thread_template: str = "x_thread.md.j2"
 
 
+class MediaHashSettings(BaseModel):
+    """Budget for turning posted images into perceptual hashes.
+
+    Media is the only kilobyte-to-megabyte traffic in a sweep and the decoder is
+    pure Python, so every field here is a ceiling rather than a preference. The
+    defaults are sized so that a full sweep spends at most a few seconds and a
+    few tens of megabytes on imagery, which is the point at which the signal
+    stops being worth its displacement of on-chain calls.
+    """
+
+    enabled: bool = True
+    requests_per_minute: float = 120.0
+    max_concurrency: int = 4
+    timeout_seconds: float = 8.0
+    #: Enforced while streaming, not from `content-length`.
+    max_bytes: int = 2_000_000
+    #: Refuse to decode beyond this; cost is linear in pixels.
+    max_pixels: int = 4_000_000
+    max_images_per_post: int = 4
+    max_images_per_sweep: int = 60
+    deadline_seconds: float = 30.0
+    cache_entries: int = 4096
+    #: Hash the host's small variant. Perceptual hashes are scale-invariant, and
+    #: an X original measured 6590x4690 on 2026-08-04 — past `max_pixels` and no
+    #: more informative than the 688px variant it also publishes.
+    prefer_thumbnails: bool = True
+
+
 class BacktestSettings(BaseModel):
     start: str | None = None
     end: str | None = None
@@ -214,6 +246,21 @@ class BacktestSettings(BaseModel):
     min_trades_for_significance: int = 50
     bootstrap_samples: int = 2000
     seed: int = 1337
+
+
+class NotificationSettings(BaseModel):
+    """Notification endpoints and event triggers."""
+
+    enabled: bool = False
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+    discord_webhook_url: str | None = None
+    webhook_url: str | None = None
+    on_entry: bool = True
+    on_exit: bool = True
+    on_high_score: bool = True
+    min_score_alert: float = 0.68
+    on_integrity_alarm: bool = True
 
 
 class Settings(BaseSettings):
@@ -265,7 +312,9 @@ class Settings(BaseSettings):
     scoring: ScoringSettings = Field(default_factory=ScoringSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     media: MediaSettings = Field(default_factory=MediaSettings)
+    media_hash: MediaHashSettings = Field(default_factory=MediaHashSettings)
     backtest: BacktestSettings = Field(default_factory=BacktestSettings)
+    notifications: NotificationSettings = Field(default_factory=NotificationSettings)
     collectors: dict[str, CollectorSettings] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -315,6 +364,24 @@ class Settings(BaseSettings):
         self.collectors["telegram"].requests_per_minute = min(
             self.collectors["telegram"].requests_per_minute, 30
         )
+        # Measured 2026-08-04. TikTok's oembed endpoint took 20 consecutive
+        # requests in 5.2s (~230/min) with no throttling; 60 keeps a fivefold
+        # margin on a burst test. Instagram has no throughput worth budgeting —
+        # anonymous access is a login wall, not a rate limit — so it gets the
+        # smallest number that still lets a session-backed profile work.
+        self.collectors["tiktok"].requests_per_minute = min(
+            self.collectors["tiktok"].requests_per_minute, 60
+        )
+        self.collectors["instagram"].requests_per_minute = min(
+            self.collectors["instagram"].requests_per_minute, 6
+        )
+        # api.mainnet-beta.solana.com is documented at roughly 10 req/s and 429s
+        # well before that under load (docs/DATA_SOURCES.md). Funding resolution
+        # is the only caller and it is a background nicety, so it gets 2/s — far
+        # inside the published limit, and it never queues ahead of a sweep.
+        self.collectors["solana_rpc"].requests_per_minute = min(
+            self.collectors["solana_rpc"].requests_per_minute, 120
+        )
 
         if self.trading_mode is TradingMode.LIVE and not self.i_understand_the_risk:
             raise ValueError(
@@ -361,6 +428,61 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+def detect_unknown_yaml_keys(path: str | Path | None = None) -> list[str]:
+    """Inspect a YAML config file and return any unknown keys or typos."""
+    p = Path(config_path) if (config_path := path) else DEFAULT_CONFIG_PATH
+    if not p.exists():
+        return []
+    raw = _load_yaml(p)
+    if not isinstance(raw, dict):
+        return []
+
+    unknown: list[str] = []
+    valid_top = set(Settings.model_fields.keys())
+    for key, val in raw.items():
+        if key not in valid_top:
+            unknown.append(key)
+        elif isinstance(val, dict):
+            field_info = Settings.model_fields.get(key)
+            if field_info and field_info.annotation is not None and hasattr(field_info.annotation, "model_fields"):
+                sub_fields = set(field_info.annotation.model_fields.keys())
+                for sub_k in val:
+                    if sub_k not in sub_fields:
+                        unknown.append(f"{key}.{sub_k}")
+    return unknown
+
+
+def audit_capabilities(settings: Settings) -> dict[str, Any]:
+    """Summarize active vs optional capabilities based on settings & environment."""
+    import importlib.util
+
+    has_playwright = importlib.util.find_spec("playwright") is not None
+    has_sklearn = importlib.util.find_spec("sklearn") is not None
+    has_lightgbm = importlib.util.find_spec("lightgbm") is not None
+
+    return {
+        "trading_mode": settings.trading_mode.value,
+        "helius_rpc": bool(settings.helius_api_key),
+        "birdeye": bool(settings.birdeye_api_key),
+        "bitquery": bool(settings.bitquery_api_key),
+        "x_bearer": bool(settings.x_bearer_token),
+        "x_session": settings.x_session_enabled,
+        "telegram_api": bool(settings.telegram_api_id and settings.telegram_api_hash),
+        "reddit_api": bool(settings.reddit_client_id and settings.reddit_client_secret),
+        "youtube_api": bool(settings.youtube_api_key),
+        "notifications": bool(
+            settings.notifications.enabled
+            and (
+                settings.notifications.discord_webhook_url
+                or (settings.notifications.telegram_bot_token and settings.notifications.telegram_chat_id)
+                or settings.notifications.webhook_url
+            )
+        ),
+        "playwright_installed": has_playwright,
+        "ml_installed": has_sklearn and has_lightgbm,
+    }
+
+
 def load_settings(config_path: str | Path | None = None, **overrides: Any) -> Settings:
     """Build Settings from YAML, then environment, then explicit overrides."""
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
@@ -381,13 +503,17 @@ __all__ = [
     "CollectorSettings",
     "DEFAULT_CONFIG_PATH",
     "ExecutionSettings",
+    "MediaHashSettings",
     "MediaSettings",
     "MemorySettings",
+    "NotificationSettings",
     "REPO_ROOT",
     "RiskSettings",
     "ScoringSettings",
     "Settings",
     "TradingMode",
+    "audit_capabilities",
+    "detect_unknown_yaml_keys",
     "get_settings",
     "load_settings",
 ]

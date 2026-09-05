@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en" data-mode="static">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>botsensai — paper</title>
+<style>
+:root{--bg:#0b0d10;--panel:#12151a;--line:#232830;--text:#d7dde5;--dim:#7d8794;
+--ok:#4a9d6a;--warn:#c08a3e;--alarm:#c0553e;--accent:#5b8bb5;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header{border-bottom:1px solid var(--line);padding:10px 16px;display:flex;
+justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.banner{color:var(--warn);font-weight:600;letter-spacing:.05em}
+main{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);
+gap:16px;padding:16px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{border:1px solid var(--line);background:var(--panel);margin-bottom:16px}
+h2{margin:0;padding:8px 12px;border-bottom:1px solid var(--line);font-size:11px;
+letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.body{padding:10px 12px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;color:var(--dim);font-weight:500;font-size:11px;
+text-transform:uppercase;letter-spacing:.08em;padding:6px 8px;
+border-bottom:1px solid var(--line)}
+td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.veto{color:var(--alarm)}
+.tag{display:inline-block;border:1px solid var(--line);padding:0 5px;
+font-size:11px;color:var(--dim);white-space:nowrap}
+.tag.pre{color:var(--warn);border-color:var(--warn)}
+.flag{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.flag:last-child{border-bottom:0}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}
+.dot.alarm{background:var(--alarm)}
+.flag .h{font-weight:600}
+.flag .d{color:var(--dim)}
+.bar{height:6px;background:var(--line);position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);display:block}
+.dim{color:var(--dim)}
+footer{padding:10px 16px;color:var(--dim);border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">botsensai</span>
+  <span class="banner">paper &middot; UNVALIDATED &middot;
+    33463 labelled outcomes</span>
+  <span class="dim">generated 2026-08-25 21:38:41Z</span>
+</header>
+<main>
+<div>
+  <section>
+    <h2>Candidates</h2>
+    <div class="body">
+      <table>
+        <tr><th>token</th><th class="num">score</th><th class="num">coverage</th>
+            <th>state</th></tr>
+        <tr>
+          <td>HMTvBsyb3Cwu
+</td>
+          <td class="num">0.507</td>
+          <td class="num">62%</td>
+          <td>
+<span class="veto">mint_authority_live, freeze_authority_live, liquidity_below_floor</span>
+          </td>
+        </tr>
+        <tr>
+          <td>CynzGREXZCpQ
+</td>
+          <td class="num">0.465</td>
+          <td class="num">47%</td>
+          <td>
+<span class="veto">liquidity_below_floor</span>
+          </td>
+        </tr>
+        <tr>
+          <td>4qquA9WnmeAe
+</td>
+          <td class="num">0.598</td>
+          <td class="num">53%</td>
+          <td>
+<span class="veto">liquidity_below_floor</span>
+          </td>
+        </tr>
+        <tr>
+          <td>712fxGC7Hnrx
+</td>
+          <td class="num">0.747</td>
+          <td class="num">29%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>G6Qngtj11Hc6
+</td>
+          <td class="num">0.800</td>
+          <td class="num">21%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>4AGSToFoxV3X
+</td>
+          <td class="num">0.602</td>
+          <td class="num">47%</td>
+          <td>
+<span class="veto">liquidity_below_floor</span>
+          </td>
+        </tr>
+        <tr>
+          <td>2cZ5NYP9oqKZ
+</td>
+          <td class="num">0.617</td>
+          <td class="num">29%</td>
+          <td>
+<span class="veto">liquidity_below_floor</span>
+          </td>
+        </tr>
+        <tr>
+          <td>kEssYC42GEws
+</td>
+          <td class="num">0.827</td>
+          <td class="num">29%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>DRpHFTrYUNSi
+</td>
+          <td class="num">0.597</td>
+          <td class="num">47%</td>
+          <td>
+<span class="veto">liquidity_below_floor</span>
+          </td>
+        </tr>
+        <tr>
+          <td>3xYx4Y5TLWW2
+</td>
+          <td class="num">0.772</td>
+          <td class="num">29%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>D3Efp1SCsbho
+</td>
+          <td class="num">0.646</td>
+          <td class="num">85%</td>
+          <td>
+<span class="veto">mint_authority_live, freeze_authority_live</span>
+          </td>
+        </tr>
+        <tr>
+          <td>AamKo8naY4nR
+</td>
+          <td class="num">0.772</td>
+          <td class="num">29%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>FFQ58faaZPDj
+</td>
+          <td class="num">0.501</td>
+          <td class="num">56%</td>
+          <td>
+<span class="veto">mint_authority_live, freeze_authority_live, liquidity_below_floor</span>
+          </td>
+        </tr>
+        <tr>
+          <td>2ceb1uH3fnmw
+</td>
+          <td class="num">0.768</td>
+          <td class="num">29%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>7mWj1vTC2Y6f
+</td>
+          <td class="num">0.774</td>
+          <td class="num">29%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>4WThkLAjwFD1
+</td>
+          <td class="num">0.763</td>
+          <td class="num">29%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>Hq7U6bZMQRWh
+</td>
+          <td class="num">0.789</td>
+          <td class="num">29%</td>
+          <td>
+<span class="dim">refused &mdash; below threshold
+              0.68 / coverage 0.5</span>
+          </td>
+        </tr>
+        <tr>
+          <td>3hgMAwULr3Be
+</td>
+          <td class="num">0.768</td>
+          <td class="num">29%</td>
+          <td>
+<span class="veto">mint_authority_live, freeze_authority_live</span>
+          </td>
+        </tr>
+        <tr>
+          <td>5fCpyw9UDsR8
+</td>
+          <td class="num">0.701</td>
+          <td class="num">29%</td>
+          <td>
+<span class="veto">mint_authority_live, freeze_authority_live</span>
+          </td>
+        </tr>
+        <tr>
+          <td>9FeW4ymTvyXa
+</td>
+          <td class="num">0.767</td>
+          <td class="num">29%</td>
+          <td>
+<span class="veto">mint_authority_live, freeze_authority_live</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Metric coverage by family</h2>
+    <div class="body">
+      <table>
+        <tr><th>family</th><th class="num">measured</th><th>&nbsp;</th></tr>
+        <tr>
+          <td>social_authenticity</td>
+          <td class="num">8/10</td>
+          <td><span class="bar"><i style="width:80%"></i></span></td>
+        </tr>
+        <tr>
+          <td>community_production</td>
+          <td class="num">5/5</td>
+          <td><span class="bar"><i style="width:100%"></i></span></td>
+        </tr>
+        <tr>
+          <td>onchain_topology</td>
+          <td class="num">7/7</td>
+          <td><span class="bar"><i style="width:100%"></i></span></td>
+        </tr>
+        <tr>
+          <td>narrative</td>
+          <td class="num">5/5</td>
+          <td><span class="bar"><i style="width:100%"></i></span></td>
+        </tr>
+        <tr>
+          <td>team_credibility</td>
+          <td class="num">3/3</td>
+          <td><span class="bar"><i style="width:100%"></i></span></td>
+        </tr>
+        <tr>
+          <td>execution_quality</td>
+          <td class="num">2/4</td>
+          <td><span class="bar"><i style="width:50%"></i></span></td>
+        </tr>
+      </table>
+      <p class="dim">A family at 0 measured is reporting MISSING, not zero.</p>
+    </div>
+  </section>
+</div>
+
+<div>
+  <section>
+    <h2>Collection integrity</h2>
+    <div class="body">
+      <div class="flag">
+        <span class="dot warn"></span>
+        <span><span class="h">Some posts are unreachable</span><br>
+          <span class="d">27960 of 31630 posts carry a token_key.</span></span>
+      </div>
+      <div class="flag">
+        <span class="dot ok"></span>
+        <span><span class="h">Authors resolved</span><br>
+          <span class="d">3759 distinct authors across 31630 posts.</span></span>
+      </div>
+      <div class="flag">
+        <span class="dot warn"></span>
+        <span><span class="h">Sparse author creation dates</span><br>
+          <span class="d">5907 of 31630 posts carry author_created_at.</span></span>
+      </div>
+      <div class="flag">
+        <span class="dot ok"></span>
+        <span><span class="h">Session fields present</span><br>
+          <span class="d">views on 10693, bookmarks on 6683, of 31630 posts.</span></span>
+      </div>
+      <div class="flag">
+        <span class="dot alarm"></span>
+        <span><span class="h">5 surface(s) failed</span><br>
+          <span class="d">instagram: signed out: Instagram served a logged-out page (login wall or /popular/ SEO landing), not a hashtag feed (latched; restart after signing the profile in), pumpfun: enrich timed out, reddit: failed, tiktok: search results are login-gated (api item_list answers 403 anonymously, measured 2026-08-04); search not attempted, only linked videos resolved, x: failed</span></span>
+      </div>
+      <div class="flag">
+        <span class="dot ok"></span>
+        <span><span class="h">Metrics vary across tokens</span><br>
+          <span class="d">30 metrics.</span></span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Collector runs</h2>
+    <div class="body">
+      <table>
+        <tr><th>surface</th><th class="num">records</th><th>state</th></tr>
+        <tr>
+          <td>labeller<br>
+            <span class="dim">08-25 02:28:41Z</span></td>
+          <td class="num">23</td>
+          <td>
+<span class="dim">ok</span>
+          </td>
+        </tr>
+        <tr>
+          <td>tiktok<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">0</td>
+          <td>
+<span class="veto">degraded or timed out</span>
+<br><span class="dim">search results are login-gated (api item_list answers 403 anonymously, measured 2026-08-04); search not attempted, only linked videos resolved</span>          </td>
+        </tr>
+        <tr>
+          <td>instagram<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">0</td>
+          <td>
+<span class="veto">degraded or timed out</span>
+<br><span class="dim">signed out: Instagram served a logged-out page (login wall or /popular/ SEO landing), not a hashtag feed (latched; restart after signing the profile in)</span>          </td>
+        </tr>
+        <tr>
+          <td>telegram<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">1</td>
+          <td>
+<span class="dim">ok</span>
+          </td>
+        </tr>
+        <tr>
+          <td>fourchan<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">27</td>
+          <td>
+<span class="dim">ok</span>
+          </td>
+        </tr>
+        <tr>
+          <td>reddit<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">0</td>
+          <td>
+<span class="veto">degraded or timed out</span>
+          </td>
+        </tr>
+        <tr>
+          <td>x<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">0</td>
+          <td>
+<span class="veto">degraded or timed out</span>
+          </td>
+        </tr>
+        <tr>
+          <td>geckoterminal<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">23</td>
+          <td>
+<span class="dim">ok</span>
+          </td>
+        </tr>
+        <tr>
+          <td>dexscreener<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">40</td>
+          <td>
+<span class="dim">ok</span>
+          </td>
+        </tr>
+        <tr>
+          <td>pumpfun<br>
+            <span class="dim">08-25 02:24:01Z</span></td>
+          <td class="num">0</td>
+          <td>
+<span class="veto">degraded or timed out</span>
+<br><span class="dim">enrich timed out</span>          </td>
+        </tr>
+        <tr>
+          <td>labeller<br>
+            <span class="dim">08-25 02:23:40Z</span></td>
+          <td class="num">21</td>
+          <td>
+<span class="dim">ok</span>
+          </td>
+        </tr>
+        <tr>
+          <td>tiktok<br>
+            <span class="dim">08-25 02:20:59Z</span></td>
+          <td class="num">0</td>
+          <td>
+<span class="veto">degraded or timed out</span>
+<br><span class="dim">search results are login-gated (api item_list answers 403 anonymously, measured 2026-08-04); search not attempted, only linked videos resolved</span>          </td>
+        </tr>
+      </table>
+      <p class="dim">A surface that times out is recorded as not ok, so a partial
+        sweep can never be mistaken for a complete one.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Social posts by platform</h2>
+    <div class="body">
+      <table>
+        <tr><th>platform</th><th class="num">stored</th><th class="num">reachable</th>
+            <th class="num">authors</th><th class="num">aged</th></tr>
+        <tr>
+          <td>fourchan</td>
+          <td class="num">19140</td>
+          <td class="num">18771</td>
+          <td class="num">27</td>
+          <td class="num">0</td>
+        </tr>
+        <tr>
+          <td>pumpfun_chat</td>
+          <td class="num">246</td>
+          <td class="num">238</td>
+          <td class="num">97</td>
+          <td class="num">0</td>
+        </tr>
+        <tr>
+          <td>telegram</td>
+          <td class="num">5534</td>
+          <td class="num">2627</td>
+          <td class="num">143</td>
+          <td class="num">0</td>
+        </tr>
+        <tr>
+          <td>tiktok</td>
+          <td class="num">27</td>
+          <td class="num">27</td>
+          <td class="num">26</td>
+          <td class="num">0</td>
+        </tr>
+        <tr>
+          <td>x</td>
+          <td class="num">6683</td>
+          <td class="num">6297</td>
+          <td class="num">3466</td>
+          <td class="num">5907</td>
+        </tr>
+      </table>
+      <p class="dim">A stored post with no token_key is reachable by no metric:
+        every metric query filters on that column.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Store</h2>
+    <div class="body">
+      <table>
+        <tr><td class="dim">launches</td><td class="num">36286</td></tr>
+        <tr><td class="dim">market_snapshots</td><td class="num">177492</td></tr>
+        <tr><td class="dim">trades</td><td class="num">109223</td></tr>
+        <tr><td class="dim">holders</td><td class="num">4085</td></tr>
+        <tr><td class="dim">security_reports</td><td class="num">3385</td></tr>
+        <tr><td class="dim">social_posts</td><td class="num">31630</td></tr>
+        <tr><td class="dim">metric_values</td><td class="num">508058</td></tr>
+        <tr><td class="dim">scores</td><td class="num">14949</td></tr>
+        <tr><td class="dim">outcomes</td><td class="num">33463</td></tr>
+        <tr><td class="dim">wallet_funding</td><td class="num">1039</td></tr>
+      </table>
+    </div>
+  </section>
+</div>
+</main>
+<footer>
+  weights v0 &middot; unfitted priors &middot;
+  no edge is proven by anything on this page<br>
+  <span class="dim">Scores written before
+    2026-07-30 came from a collection
+    path with known-wrong author parsing, which penalised every token for
+    fabricated author concentration; those rows are marked in the candidates
+    table and are not a baseline. A family showing 0 measured is reporting
+    MISSING, not a zero score.</span>
+</footer>
+</body>
+</html>

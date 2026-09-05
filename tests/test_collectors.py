@@ -29,6 +29,7 @@ from botsensai.collectors.social import (
     x_tweet_token,
 )
 from botsensai.config import load_settings
+from botsensai.media.phash import perceptual_values
 from botsensai.models import Platform
 
 # --------------------------------------------------------------------------- #
@@ -171,7 +172,13 @@ def test_fast_follower_share_needs_both_fields():
 
 
 def test_fourchan_post_carries_native_md5():
-    """4chan gives an MD5 per image, so exact cross-surface matching is free."""
+    """4chan gives an MD5 per image, so exact cross-surface matching is free.
+
+    It is stored under the `md5:` namespace and not as a bare digest, because
+    `derivative_remix_depth` now clusters perceptual hashes in Hamming space: an
+    unlabelled MD5 in that column is 128 bits of noise that reads as a distinct
+    visual idea, so every plain re-upload of one image would count as a remix.
+    """
     collector = FourChanBizCollector()
     post = collector._post_to_social(
         {
@@ -186,7 +193,8 @@ def test_fourchan_post_carries_native_md5():
     )
     assert post is not None
     assert post.platform is Platform.FOURCHAN
-    assert post.media_hashes == ["Mx4k4ymW/t8kZXwZbDh8ZQ=="]
+    assert post.media_hashes == ["md5:Mx4k4ymW/t8kZXwZbDh8ZQ=="]
+    assert perceptual_values(post.media_hashes) == []
     assert post.mentioned_tokens == ["BONK"]
     assert post.parent_id == "100"
 
@@ -317,11 +325,17 @@ async def test_unverified_session_falls_back_and_marks_degraded():
     of the collector.
     """
     from botsensai.collectors.x_session import AuthenticatedXCollector
+    from botsensai.config import Settings
     from botsensai.models import Chain, TokenRef
 
-    collector = AuthenticatedXCollector()
-    # Short-circuit the browser so the fallback runs without launching Chromium;
-    # the assertion is about how the fallback is *reported*, not about network IO.
+    # Explicit defaults, not the on-disk config — same reason as the no-profile
+    # test above. Reading the operator's config made this assert the opposite of
+    # what it means to: on a machine where the session works, verification
+    # succeeds, no fallback happens, and the test fails. It only ever passed
+    # because the profile was not logged in.
+    collector = AuthenticatedXCollector(Settings())
+    # Short-circuit the public browser path too, so the fallback does no network
+    # IO; the assertion is about how the fallback is *reported*.
     collector._browser_failed = True
     collector.config.extra["handles"] = {}
     try:
@@ -349,6 +363,281 @@ def test_session_collector_registers_under_the_same_surface_name():
 
     assert AuthenticatedXCollector.name == XCollector.name == "x"
     assert issubclass(AuthenticatedXCollector, XCollector)
+
+
+def _search_timeline_envelope(text: str = "gm $CHEEMS", post_id: str = "1234567890") -> dict:
+    """A SearchTimeline payload shaped like the one X actually returns.
+
+    The nesting is the point of this fixture, not the contents: measured live,
+    tweet nodes sit at depth 12-14 inside this exact chain.
+    """
+    tweet = {
+        "rest_id": post_id,
+        "legacy": {
+            "id_str": post_id,
+            "full_text": text,
+            "created_at": "Wed Jul 29 18:00:00 +0000 2026",
+            "favorite_count": 3,
+            "reply_count": 1,
+            "retweet_count": 0,
+        },
+        "core": {"user_results": {"result": {"legacy": {"screen_name": "someone"}}}},
+    }
+    return {
+        "data": {
+            "search_by_raw_query": {
+                "search_timeline": {
+                    "timeline": {
+                        "instructions": [
+                            {
+                                "type": "TimelineAddEntries",
+                                "entries": [
+                                    {
+                                        "entryId": f"tweet-{post_id}",
+                                        "content": {
+                                            "entryType": "TimelineTimelineItem",
+                                            "itemContent": {
+                                                "itemType": "TimelineTweet",
+                                                "tweet_results": {"result": tweet},
+                                            },
+                                        },
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+
+def test_author_fields_parse_from_the_current_user_shape():
+    """Regression: X moved the user fields and we invented a shill signal.
+
+    X removed `legacy` from the user object, splitting it into core /
+    relationship_counts / tweet_counts / verification. `rest_id` still resolved,
+    so posts were built with author "unknown" rather than being dropped, and
+    `mention_author_diversity` then saw ONE distinct author across 390 posts and
+    returned raw=1.0 — maximum concentration, a shill fingerprint — at high
+    confidence. A parsing miss became fabricated evidence of manipulation, which
+    is worse than the MISSING it should have produced.
+    """
+    from botsensai.collectors.social import XCollector
+
+    node = {
+        "rest_id": "555",
+        "legacy": {
+            "id_str": "555",
+            "full_text": "$CHEEMS to the moon",
+            "created_at": "Wed Jul 29 18:00:00 +0000 2026",
+            "favorite_count": 5,
+        },
+        "core": {
+            "user_results": {
+                "result": {
+                    "rest_id": "777",
+                    # No `legacy` key at all — this is the current shape.
+                    "core": {
+                        "screen_name": "MEMEINSIGHTS1",
+                        "name": "1000X MEME INSIGHTS",
+                        "created_at": "Fri May 21 07:55:09 +0000 2010",
+                    },
+                    "relationship_counts": {"followers": 1172, "following": 1},
+                    "tweet_counts": {"tweets": 145271},
+                    "verification": {"verified": False},
+                }
+            }
+        },
+    }
+
+    post = XCollector()._parse_graphql_tweet(node)
+    assert post is not None
+    assert post.author == "MEMEINSIGHTS1", "handle must come from core.screen_name"
+    assert post.author != "unknown"
+    assert post.author_followers == 1172, "followers must come from relationship_counts"
+    assert post.author_created_at is not None, "engager_age_dispersion needs this"
+    assert post.author_created_at.year == 2010
+
+
+def test_author_fields_still_parse_from_the_legacy_user_shape():
+    """Other endpoints still serve the old shape; both must work."""
+    from botsensai.collectors.social import XCollector
+
+    node = {
+        "rest_id": "556",
+        "legacy": {
+            "id_str": "556",
+            "full_text": "$LOST",
+            "created_at": "Wed Jul 29 18:00:00 +0000 2026",
+        },
+        "core": {
+            "user_results": {
+                "result": {
+                    "rest_id": "778",
+                    "legacy": {
+                        "screen_name": "oldshape",
+                        "created_at": "Mon Jan 05 10:00:00 +0000 2015",
+                        "followers_count": 42,
+                    },
+                }
+            }
+        },
+    }
+    post = XCollector()._parse_graphql_tweet(node)
+    assert post is not None
+    assert post.author == "oldshape"
+    assert post.author_followers == 42
+    assert post.author_created_at is not None
+    assert post.author_created_at.year == 2015
+
+
+def test_unresolvable_author_stays_distinct_per_account():
+    """Two authorless posts must not collapse into one apparent author.
+
+    A shared placeholder is what turned a parse miss into a manufactured
+    single-account signal, so the fallback is the account id.
+    """
+    from botsensai.collectors.social import XCollector
+
+    def node(post_id: str, user_id: str) -> dict:
+        return {
+            "rest_id": post_id,
+            "legacy": {
+                "id_str": post_id,
+                "full_text": "hi",
+                "created_at": "Wed Jul 29 18:00:00 +0000 2026",
+            },
+            "core": {"user_results": {"result": {"rest_id": user_id}}},
+        }
+
+    collector = XCollector()
+    a = collector._parse_graphql_tweet(node("1", "aaa"))
+    b = collector._parse_graphql_tweet(node("2", "bbb"))
+    assert a is not None and b is not None
+    assert a.author != b.author, "distinct accounts must stay distinct"
+
+
+def test_collected_posts_reach_the_metric_that_needs_them(tmp_path):
+    """Regression: posts were stored with token_key NULL and were unreadable.
+
+    `pipeline.enrich` called `insert_posts([post])` without a token, and
+    `posts_as_of` filters on that column, so 494 posts accumulated in the table
+    while every social metric read MISSING. Complete data, zero reachability,
+    no error anywhere — the same silent-absence class as the walker depth and the
+    enrich timeout.
+
+    This asserts the whole path a real post travels: collector tags it, the store
+    writes it, and a per-token read finds it again.
+    """
+    from botsensai.collectors.base import tag_posts
+    from botsensai.models import Chain, Platform, SocialPost, TokenRef, utcnow
+    from botsensai.store.db import Database
+
+    token = TokenRef(chain=Chain.SOLANA, mint="9" * 44, symbol="ROUNDTRIP")
+    other = TokenRef(chain=Chain.SOLANA, mint="8" * 44, symbol="OTHER")
+    post = SocialPost(
+        platform=Platform.X,
+        post_id="99887766",
+        author="someone",
+        as_of=utcnow(),
+        text="$ROUNDTRIP looks interesting",
+        replies=4,
+        views=1000,
+        bookmarks=7,
+        source="x:graphql",
+    )
+    assert post.token_key is None, "a freshly parsed post does not know its token"
+
+    tagged = tag_posts([post], token.key)
+    assert tagged[0].token_key == token.key
+
+    store = Database(str(tmp_path / "rt.db"))
+    try:
+        assert store.insert_posts(tagged) == 1
+
+        found = store.posts_as_of(token.key, utcnow())
+        assert found, "a tagged post must be readable by the token it belongs to"
+        assert found[0].post_id == "99887766"
+        assert found[0].token_key == token.key
+        assert found[0].bookmarks == 7, "session-only fields must survive the round trip"
+
+        # And it must not leak into an unrelated token's context.
+        assert not store.posts_as_of(other.key, utcnow())
+    finally:
+        store.close()
+
+
+def test_tag_posts_does_not_overwrite_a_precise_attribution():
+    """A coarse caller must not steal a post another collector already attributed."""
+    from botsensai.collectors.base import tag_posts
+    from botsensai.models import Platform, SocialPost, utcnow
+
+    post = SocialPost(
+        platform=Platform.X,
+        post_id="1",
+        author="a",
+        as_of=utcnow(),
+        token_key="solana:already-attributed",
+    )
+    tag_posts([post], "solana:coarse-guess")
+    assert post.token_key == "solana:already-attributed"
+
+
+def test_session_enrich_budget_survives_a_headed_browser_pass():
+    """Regression: the default 20s timeout killed session enrich at 100s.
+
+    `run_enrich` aborts at `timeout_seconds * (max_retries + 2)`. One headed
+    search waits 5s and scrolls four times at 1400ms before page load counts, so
+    a single token costs tens of seconds and six cannot finish in 100s. Measured
+    live: enrich was killed at 100s having stored nothing, with a healthy session
+    and no error logged — indistinguishable downstream from "nobody is talking
+    about these tokens".
+
+    Asserts the budget is derived from the configured work, so raising
+    max_tokens_per_sweep cannot silently reintroduce the timeout.
+    """
+    from botsensai.collectors.x_session import AuthenticatedXCollector
+    from botsensai.config import Settings
+
+    settings = Settings()
+    settings.browser.user_data_dir = "/tmp/some-profile"
+    settings.x_session.max_tokens_per_sweep = 6
+    collector = AuthenticatedXCollector(settings)
+
+    effective = collector.config.timeout_seconds * (collector.config.max_retries + 2)
+    # Four page loads per token at ~10s of scripted waits each, before latency.
+    floor = 6 * 4 * 10.0
+    assert effective > floor, f"budget {effective:.0f}s cannot cover six tokens"
+
+    # And it must scale with the work, not be a hardcoded constant.
+    settings_more = Settings()
+    settings_more.browser.user_data_dir = "/tmp/some-profile"
+    settings_more.x_session.max_tokens_per_sweep = 24
+    bigger = AuthenticatedXCollector(settings_more)
+    assert bigger.config.timeout_seconds > collector.config.timeout_seconds
+
+
+def test_tweet_walker_reaches_the_real_search_envelope_depth():
+    """Regression: a depth cap of 10 silently returned zero tweets.
+
+    The walker gave up two levels short of where SearchTimeline actually puts
+    tweets, so every session-gated social metric read MISSING while the session
+    verified as healthy and no error was logged anywhere — the exact
+    silent-absence failure the module is built to prevent. Measured live: 22
+    tweet nodes at depths 12-14, of which a cap of 10 found none.
+    """
+    from botsensai.collectors.social import XCollector
+
+    payload = _search_timeline_envelope()
+    found = XCollector._walk_for_tweets(payload)
+    assert found, "walker must reach tweets nested at the real envelope depth"
+
+    collector = XCollector()
+    parsed = [p for p in (collector._parse_graphql_tweet(n) for n in found) if p]
+    assert parsed, "nodes the walker returns must survive parsing"
+    assert any(p.text == "gm $CHEEMS" for p in parsed)
+    assert any(p.post_id == "1234567890" for p in parsed)
 
 
 def test_pipeline_selects_the_collector_by_the_gate():

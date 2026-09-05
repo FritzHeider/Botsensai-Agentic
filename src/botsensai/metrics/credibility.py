@@ -11,10 +11,11 @@ produces a backtest that cannot be reproduced live.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from datetime import timedelta
 
 from botsensai.metrics.base import Metric, MetricContext
-from botsensai.models import Direction, Side
+from botsensai.models import Direction, HolderRecord, Side, Trade
 from botsensai.util.stats import clamp, saturating, wilson_lower_bound
 
 
@@ -198,14 +199,9 @@ class InsiderSupplyOverhang(Metric):
         "captured as sniping or bundling by the topology metrics."
     )
 
-    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
-        if ctx.launch is None:
-            return None, 0, "no launch record"
-        holders = [h for h in ctx.holders if h.share_of_supply > 0]
-        if len(holders) < 5:
-            return None, len(holders), "fewer than 5 holders"
-
-        deployer = ctx.launch.deployer
+    @staticmethod
+    def _linked_wallets(deployer: str | None, holders: Sequence[HolderRecord]) -> set[str]:
+        """Wallets attributable to the team: the deployer, its funding siblings, and labels."""
         deployer_funder = next(
             (h.funded_by for h in holders if deployer and h.wallet == deployer and h.funded_by),
             None,
@@ -217,26 +213,47 @@ class InsiderSupplyOverhang(Metric):
         for h in holders:
             if "insider" in h.labels or "team" in h.labels or "creator" in h.labels:
                 linked.add(h.wallet)
+        return linked
 
-        if not linked:
-            return 0.0, len(holders), "no deployer-linked wallets identified"
-
-        # Only count supply not accounted for by observed purchases.
+    @staticmethod
+    def _net_purchased(trades: Sequence[Trade], linked: set[str]) -> dict[str, float]:
         purchased: dict[str, float] = {}
-        for t in ctx.trades:
+        for t in trades:
             if t.wallet in linked:
                 delta = t.amount_token if t.side is Side.BUY else -t.amount_token
                 purchased[t.wallet] = purchased.get(t.wallet, 0.0) + delta
+        return purchased
 
+    @classmethod
+    def _overhang(
+        cls,
+        holders: Sequence[HolderRecord],
+        linked: set[str],
+        trades: Sequence[Trade],
+    ) -> float:
+        """Supply share held by linked wallets that no observed purchase explains."""
+        purchased = cls._net_purchased(trades, linked)
         overhang = 0.0
         for h in holders:
-            if h.wallet not in linked:
+            if h.wallet not in linked or h.balance <= 0:
                 continue
             bought = max(0.0, purchased.get(h.wallet, 0.0))
             unpurchased = max(0.0, h.balance - bought)
-            if h.balance > 0:
-                overhang += h.share_of_supply * (unpurchased / h.balance)
+            overhang += h.share_of_supply * (unpurchased / h.balance)
+        return overhang
 
+    def compute(self, ctx: MetricContext) -> tuple[float | None, int, str]:
+        if ctx.launch is None:
+            return None, 0, "no launch record"
+        holders = [h for h in ctx.holders if h.share_of_supply > 0]
+        if len(holders) < 5:
+            return None, len(holders), "fewer than 5 holders"
+
+        linked = self._linked_wallets(ctx.launch.deployer, holders)
+        if not linked:
+            return 0.0, len(holders), "no deployer-linked wallets identified"
+
+        overhang = self._overhang(holders, linked, ctx.trades)
         return overhang, len(holders), (
             f"{len(linked)} deployer-linked wallets hold {overhang:.1%} unpurchased supply"
         )

@@ -23,7 +23,7 @@ import math
 import sqlite3
 import uuid
 from collections.abc import Iterable, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -216,14 +216,6 @@ class MemoryStore:
             )
         return new_conf
 
-    def forget(self, memory_id: str, at: datetime | None = None) -> None:
-        """Close a memory's validity window. Never deletes."""
-        with self.conn:
-            self.conn.execute(
-                "UPDATE memories SET valid_until = ? WHERE id = ?",
-                (_ts(at or utcnow()), memory_id),
-            )
-
     # -- read --------------------------------------------------------------- #
 
     def get(self, memory_id: str) -> MemoryEntry | None:
@@ -317,9 +309,6 @@ class MemoryStore:
         ).fetchall()
         return [_row_to_entry(r) for r in rows]
 
-    def about(self, subject: str, as_of: datetime | None = None, limit: int = 10) -> list[MemoryEntry]:
-        return self.recall(subject=subject, as_of=as_of, limit=limit)
-
     def briefing(self, as_of: datetime | None = None, limit: int = 12) -> str:
         """Render active global heuristics and regime notes as prompt-ready text.
 
@@ -348,17 +337,6 @@ class MemoryStore:
             r["kind"]: {"count": int(r["c"]), "avg_confidence": round(float(r["avg_conf"]), 3)}
             for r in rows
         }
-
-    def prune(self, older_than_days: float = 180.0, max_confidence: float = 0.15) -> int:
-        """Close out stale low-confidence beliefs so retrieval stays sharp."""
-        cutoff = (utcnow() - timedelta(days=older_than_days)).timestamp()
-        with self.conn:
-            cur = self.conn.execute(
-                "UPDATE memories SET valid_until = ? "
-                "WHERE created_at < ? AND confidence <= ? AND valid_until IS NULL",
-                (utcnow().timestamp(), cutoff, max_confidence),
-            )
-            return cur.rowcount
 
 
 def _row_to_entry(row: sqlite3.Row) -> MemoryEntry:

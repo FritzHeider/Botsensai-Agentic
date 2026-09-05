@@ -24,7 +24,7 @@ Three non-negotiables, implemented rather than merely documented:
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,7 @@ from typing import Any
 from botsensai.config import MediaSettings, Settings, get_settings
 from botsensai.memory.store import MemoryStore
 from botsensai.metrics import MetricRegistry, build_registry
+from botsensai.metrics.base import Metric
 from botsensai.models import (
     ContentPiece,
     Launch,
@@ -157,6 +158,96 @@ class ContentGenerator:
             return "unremarkable"
         return "weak on the measures tracked here"
 
+    @staticmethod
+    def _split_evidence(evidence: Sequence[Evidence]) -> tuple[list[Evidence], list[Evidence]]:
+        """Evidence that argues for the token, and evidence that argues against."""
+        strong = [e for e in evidence if e.value is not None and e.value >= 0.6 and e.metric_id]
+        weak = [e for e in evidence if e.value is not None and e.value < 0.4 and e.metric_id]
+        return strong, weak
+
+    def _blog_opening(self, launch: Launch, score: Score, symbol: str, name: str) -> list[str]:
+        age_minutes = (score.as_of - launch.created_at).total_seconds() / 60.0
+        return [
+            f"# {name} (${symbol}): what the data actually says",
+            "",
+            f"This is an automated read of ${symbol}, taken {age_minutes:.0f} minutes after it "
+            f"launched on {launch.launchpad.value}. It is a description of measurements, not a "
+            f"recommendation, and the measurements are listed so you can disagree with them.",
+            "",
+            "## The short version",
+            "",
+            f"On a composite built from {len(score.metric_values)} signals, ${symbol} scores "
+            f"{score.composite:.2f} out of 1.00 and reads as {self._label(score)}. "
+            f"The market backdrop at the time of measurement was {score.regime}. "
+            f"Metric coverage was {score.coverage:.0%}, which is the fraction of signals that had "
+            f"enough underlying data to produce a value at all.",
+            "",
+        ]
+
+    @staticmethod
+    def _blog_vetoes(score: Score, symbol: str) -> list[str]:
+        if not score.vetoes:
+            return []
+        reasons = [v.value.replace("_", " ") for v in score.vetoes]
+        return [
+            "## Why it was rejected outright",
+            "",
+            "Some findings end the analysis rather than lowering a score. "
+            f"For ${symbol}: {', '.join(reasons)}. "
+            "These are structural facts about the token or its deployer rather than "
+            "judgements about its prospects, and no amount of positive signal elsewhere "
+            "offsets them.",
+            "",
+        ]
+
+    def _blog_findings(
+        self,
+        heading: str,
+        items: Sequence[Evidence],
+        limit: int,
+        render: Callable[[Metric, Evidence], str],
+    ) -> list[str]:
+        """One findings section. Evidence whose metric is unregistered is dropped."""
+        if not items:
+            return []
+        lines = [heading, ""]
+        for item in items[:limit]:
+            metric = self.registry.get(item.metric_id or "")
+            if metric is None:
+                continue
+            lines.append(render(metric, item))
+            lines.append("")
+        return lines
+
+    @staticmethod
+    def _blog_scepticism(score: Score) -> list[str]:
+        lines = [
+            "## How to read this sceptically",
+            "",
+            "Every measurement above can be gamed, and the ones that are cheapest to game are "
+            "the ones you should trust least. Engagement counts can be bought. Holder counts can "
+            "be manufactured by one person with a script. What is expensive to fake is unpaid "
+            "creative labour from unconnected accounts, and independent funding behind the "
+            "holder set — which is why those carry the most weight here.",
+            "",
+        ]
+        if score.coverage < 0.6:
+            lines.append(
+                f"This particular read is thin: only {score.coverage:.0%} of the signal set "
+                "produced a usable value, so treat the composite as a weak prior rather than "
+                "a conclusion."
+            )
+            lines.append("")
+        return lines
+
+    def _blog_learnings(self, score: Score) -> list[str]:
+        if self.memory is None:
+            return []
+        briefing = self.memory.briefing(as_of=score.as_of, limit=4)
+        if not briefing or briefing == "No prior learnings recorded yet.":
+            return []
+        return ["## What this system has learned recently", "", briefing, ""]
+
     def blog_post(
         self,
         launch: Launch,
@@ -168,95 +259,7 @@ class ContentGenerator:
         evidence = self.gather_evidence(score)
         symbol = launch.token.symbol or launch.token.mint[:8]
         name = launch.token.name or symbol
-        age_minutes = (score.as_of - launch.created_at).total_seconds() / 60.0
-
-        strong = [e for e in evidence if e.value is not None and e.value >= 0.6 and e.metric_id]
-        weak = [e for e in evidence if e.value is not None and e.value < 0.4 and e.metric_id]
-
-        lines: list[str] = []
-        lines.append(f"# {name} (${symbol}): what the data actually says")
-        lines.append("")
-        lines.append(
-            f"This is an automated read of ${symbol}, taken {age_minutes:.0f} minutes after it "
-            f"launched on {launch.launchpad.value}. It is a description of measurements, not a "
-            f"recommendation, and the measurements are listed so you can disagree with them."
-        )
-        lines.append("")
-
-        lines.append("## The short version")
-        lines.append("")
-        lines.append(
-            f"On a composite built from {len(score.metric_values)} signals, ${symbol} scores "
-            f"{score.composite:.2f} out of 1.00 and reads as {self._label(score)}. "
-            f"The market backdrop at the time of measurement was {score.regime}. "
-            f"Metric coverage was {score.coverage:.0%}, which is the fraction of signals that had "
-            f"enough underlying data to produce a value at all."
-        )
-        lines.append("")
-
-        if score.vetoes:
-            lines.append("## Why it was rejected outright")
-            lines.append("")
-            reasons = [v.value.replace("_", " ") for v in score.vetoes]
-            lines.append(
-                "Some findings end the analysis rather than lowering a score. "
-                f"For ${symbol}: {', '.join(reasons)}. "
-                "These are structural facts about the token or its deployer rather than "
-                "judgements about its prospects, and no amount of positive signal elsewhere "
-                "offsets them."
-            )
-            lines.append("")
-
-        if strong:
-            lines.append("## What is working")
-            lines.append("")
-            for item in strong[:5]:
-                metric = self.registry.get(item.metric_id or "")
-                if metric is None:
-                    continue
-                lines.append(
-                    f"**{metric.name}** — {metric.thesis} Measured at {item.value:.2f} with "
-                    f"{item.confidence} confidence, from {item.source}."
-                )
-                lines.append("")
-
-        if weak:
-            lines.append("## What is not")
-            lines.append("")
-            for item in weak[:4]:
-                metric = self.registry.get(item.metric_id or "")
-                if metric is None:
-                    continue
-                lines.append(
-                    f"**{metric.name}** — measured at {item.value:.2f}. {metric.thesis}"
-                )
-                lines.append("")
-
-        lines.append("## How to read this sceptically")
-        lines.append("")
-        lines.append(
-            "Every measurement above can be gamed, and the ones that are cheapest to game are "
-            "the ones you should trust least. Engagement counts can be bought. Holder counts can "
-            "be manufactured by one person with a script. What is expensive to fake is unpaid "
-            "creative labour from unconnected accounts, and independent funding behind the "
-            "holder set — which is why those carry the most weight here."
-        )
-        lines.append("")
-        if score.coverage < 0.6:
-            lines.append(
-                f"This particular read is thin: only {score.coverage:.0%} of the signal set "
-                "produced a usable value, so treat the composite as a weak prior rather than "
-                "a conclusion."
-            )
-            lines.append("")
-
-        if self.memory is not None:
-            briefing = self.memory.briefing(as_of=score.as_of, limit=4)
-            if briefing and briefing != "No prior learnings recorded yet.":
-                lines.append("## What this system has learned recently")
-                lines.append("")
-                lines.append(briefing)
-                lines.append("")
+        strong, weak = self._split_evidence(evidence)
 
         disclosure = self.media.disclosure_text
         if holds_position:
@@ -264,9 +267,33 @@ class ContentGenerator:
                 f"Position disclosure: the operator of this system holds or has recently held "
                 f"${symbol}. {disclosure}"
             )
-        lines.append("---")
-        lines.append("")
-        lines.append(f"*{disclosure}*")
+
+        lines = [
+            *self._blog_opening(launch, score, symbol, name),
+            *self._blog_vetoes(score, symbol),
+            *self._blog_findings(
+                "## What is working",
+                strong,
+                5,
+                lambda metric, item: (
+                    f"**{metric.name}** — {metric.thesis} Measured at {item.value:.2f} with "
+                    f"{item.confidence} confidence, from {item.source}."
+                ),
+            ),
+            *self._blog_findings(
+                "## What is not",
+                weak,
+                4,
+                lambda metric, item: (
+                    f"**{metric.name}** — measured at {item.value:.2f}. {metric.thesis}"
+                ),
+            ),
+            *self._blog_scepticism(score),
+            *self._blog_learnings(score),
+            "---",
+            "",
+            f"*{disclosure}*",
+        ]
 
         body = "\n".join(lines)
         piece = ContentPiece(

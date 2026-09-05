@@ -1,0 +1,1169 @@
+<!doctype html>
+<html lang="en" data-mode="{{ snap.mode }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Botsensai Live — {{ snap.trading_mode }}</title>
+<style>
+:root {
+  --bg: #0a0c10;
+  --panel: #11151c;
+  --panel-hover: #161b24;
+  --panel-card: rgba(17, 21, 28, 0.95);
+  --line: #222936;
+  --text: #e2e8f0;
+  --dim: #798699;
+  --accent: #38bdf8;
+  --accent-glow: rgba(56, 189, 248, 0.25);
+  --ok: #22c55e;
+  --ok-bg: rgba(34, 197, 94, 0.15);
+  --warn: #eab308;
+  --warn-bg: rgba(234, 179, 8, 0.15);
+  --alarm: #ef4444;
+  --alarm-bg: rgba(239, 68, 68, 0.15);
+  --purple: #a855f7;
+  --glass: rgba(17, 21, 28, 0.88);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+header {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+.brand-group { display: flex; align-items: center; gap: 12px; }
+.brand { font-weight: 700; letter-spacing: .15em; text-transform: uppercase; color: var(--accent); font-size: 15px; }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--ok-bg); color: var(--ok);
+  padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: pulse 2s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.stats-banner { color: var(--warn); font-weight: 600; font-size: 12px; letter-spacing: .05em; }
+.hdr-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
+kbd {
+  background: #1a202c;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.85fr) minmax(340px, 1.15fr);
+  gap: 20px;
+  padding: 20px;
+}
+@media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+
+section {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+h2 {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.body { padding: 14px; }
+
+/* Filter Controls */
+.controls-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.search-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+}
+.search-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  transition: border-color 0.15s;
+}
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.filter-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pill-btn {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+.pill-btn:hover { color: var(--text); border-color: var(--dim); }
+.pill-btn.active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Candidate Table */
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  color: var(--dim);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+tr.clickable { cursor: pointer; transition: background .15s; }
+tr.clickable:hover { background: var(--panel-hover); }
+tr.selected { background: rgba(56, 189, 248, 0.12); border-left: 3px solid var(--accent); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.score-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 11px;
+}
+.score-high { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+.score-mid { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
+.score-low { background: var(--alarm-bg); color: var(--alarm); border: 1px solid var(--alarm); }
+.veto-badge {
+  display: inline-block;
+  color: var(--alarm);
+  font-weight: 600;
+  font-size: 11px;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dim { color: var(--dim); }
+
+/* Radar & Breakdown */
+.radar-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px;
+}
+.radar-svg { width: 280px; height: 280px; }
+.radar-polygon {
+  transition: points 0.3s ease-out;
+}
+.metrics-breakdown {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.metric-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+.metric-lbl { display: flex; justify-content: space-between; color: var(--dim); }
+.metric-bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.metric-bar-fill { height: 100%; transition: width 0.3s; }
+
+/* Ticker Feed */
+.ticker-feed {
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ticker-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 4px;
+  border-bottom: 1px solid rgba(34, 41, 54, 0.5);
+  transition: background 0.15s;
+}
+.ticker-item:hover { background: var(--panel-hover); }
+
+/* Slide-Over Token Dossier Drawer */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 150;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.token-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(520px, 94vw);
+  height: 100vh;
+  background: #0f131a;
+  border-left: 1px solid var(--line);
+  z-index: 160;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 30px rgba(0,0,0,0.6);
+}
+.token-drawer.open { transform: translateX(0); }
+.drawer-hdr {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--panel);
+}
+.drawer-title-group { display: flex; align-items: center; gap: 10px; }
+.drawer-symbol { font-size: 18px; font-weight: 700; color: var(--accent); }
+.drawer-close {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.drawer-close:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+
+.drawer-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  background: rgba(17, 21, 28, 0.6);
+}
+.drawer-tab {
+  flex: 1;
+  padding: 10px 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.drawer-tab:hover { color: var(--text); }
+.drawer-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(56,189,248,0.05); }
+
+.drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Quick Actions Bar */
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.ext-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+.ext-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.copy-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.copy-box:hover { border-color: var(--accent); }
+
+/* Autopsy Timeline */
+.timeline-tape {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-left: 2px solid var(--line);
+  margin-left: 10px;
+  padding-left: 16px;
+}
+.timeline-event {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.timeline-event::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+.timeline-event.bullish::before { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.timeline-event.critical::before { background: var(--alarm); box-shadow: 0 0 6px var(--alarm); }
+.timeline-event.bearish::before { background: var(--warn); }
+.timeline-headline { font-weight: 700; font-size: 12px; }
+.timeline-detail { color: var(--dim); font-size: 11px; }
+
+/* Copilot Chat */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+.chat-history {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.chat-bubble {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.chat-user {
+  align-self: flex-end;
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: var(--text);
+  max-width: 85%;
+}
+.chat-bot {
+  align-self: flex-start;
+  background: #161c24;
+  border: 1px solid var(--line);
+  color: var(--text);
+  max-width: 90%;
+}
+.chat-citations {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  font-size: 11px;
+  color: var(--dim);
+}
+.chips-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  cursor: pointer;
+}
+.chip:hover { background: rgba(56,189,248,0.15); border-color: var(--accent); }
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.chat-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+}
+.chat-input:focus { outline: none; border-color: var(--accent); }
+.chat-send-btn {
+  background: var(--accent);
+  color: #0b0d12;
+  font-weight: 700;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  background: rgba(17, 21, 28, 0.95);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  padding: 10px 16px;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: slideIn 0.25s ease-out;
+  backdrop-filter: blur(8px);
+}
+.toast.high-score { border-left-color: var(--ok); }
+.toast.veto { border-left-color: var(--alarm); }
+@keyframes slideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+footer {
+  padding: 12px 20px;
+  color: var(--dim);
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand-group">
+    <span class="brand">Botsensai 2.0</span>
+    <span class="status-pill" id="live-status"><span class="pulse-dot"></span> LIVE STREAM</span>
+    <button class="hdr-btn" id="sound-toggle" onclick="toggleSound()">🔔 Sound: ON</button>
+  </div>
+  <div class="stats-banner">
+    {{ snap.trading_mode|upper }} &middot; {{ snap.labelled_outcomes }} LABELLED OUTCOMES &middot; {{ snap.weights_version }}
+  </div>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <span class="dim" style="font-size:11px;">Search: <kbd>/</kbd> &middot; Close: <kbd>ESC</kbd></span>
+    <div class="dim" id="clock">
+      {{ snap.generated_at.strftime('%Y-%m-%d %H:%M:%SZ') }}
+    </div>
+  </div>
+</header>
+
+<main>
+  <div>
+    <!-- Candidates Section -->
+    <section>
+      <h2>
+        <span>Live Candidates</span>
+        <span class="dim" style="font-size:11px;" id="candidate-count">{{ snap.candidates|length }} tokens</span>
+      </h2>
+      <div class="body">
+        <div class="controls-bar">
+          <div class="search-wrapper">
+            <input type="text" id="token-filter" class="search-input" placeholder="Filter ticker, mint, or veto reason... (Press '/' to focus)">
+          </div>
+          <div class="filter-pills">
+            <button class="pill-btn active" data-filter="all" onclick="setFilter('all', this)">All</button>
+            <button class="pill-btn" data-filter="eligible" onclick="setFilter('eligible', this)">Eligible Only</button>
+            <button class="pill-btn" data-filter="vetoed" onclick="setFilter('vetoed', this)">Vetoed</button>
+            <button class="pill-btn" data-filter="high" onclick="setFilter('high', this)">Score &ge; 0.68</button>
+          </div>
+        </div>
+        <table id="candidate-table">
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th class="num">Score</th>
+              <th class="num">Coverage</th>
+              <th>Status / Veto</th>
+              <th style="text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="candidate-tbody">
+            {% for c in snap.candidates %}
+            <tr class="clickable candidate-row" id="row-{{ c.mint }}" onclick="openDossier('{{ c.mint }}')">
+              <td>
+                <strong>${{ c.symbol }}</strong>
+                <div class="dim" style="font-size:10px;">{{ c.mint[:6] }}...{{ c.mint[-4:] }}</div>
+              </td>
+              <td class="num">
+                <span class="score-badge {% if c.composite >= 0.68 %}score-high{% elif c.composite >= 0.5 %}score-mid{% else %}score-low{% endif %}">
+                  {{ '%.3f'|format(c.composite) }}
+                </span>
+              </td>
+              <td class="num">{{ (c.coverage * 100)|round|int }}%</td>
+              <td>
+                {% if c.vetoes %}<span class="veto-badge" title="{{ c.vetoes|join(', ') }}">{{ c.vetoes[0] }}{% if c.vetoes|length > 1 %} +{{ c.vetoes|length - 1 }}{% endif %}</span>
+                {% elif c.refused %}<span class="dim">refused &mdash; below floor</span>
+                {% else %}<span style="color:var(--ok);font-weight:600;">eligible</span>{% endif %}
+              </td>
+              <td style="text-align:right;">
+                <button class="hdr-btn" style="padding:2px 6px; font-size:10px;" onclick="event.stopPropagation(); openDossier('{{ c.mint }}')">Dossier &rarr;</button>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="dim">No active candidates. Run discovery sweep.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Live Discovery Stream Section -->
+    <section>
+      <h2>
+        <span>Live Discovery & Mint Firehose</span>
+        <div style="display:flex; gap:6px;">
+          <button class="hdr-btn" style="padding:2px 6px; font-size:10px;" onclick="clearTicker()">Clear</button>
+        </div>
+      </h2>
+      <div class="body">
+        <div class="ticker-feed" id="ticker-feed">
+          <div class="dim" style="padding:4px 0;">Listening on PumpPortal WebSocket stream...</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div>
+    <!-- Signal Radar Breakdown -->
+    <section>
+      <h2>
+        <span>Signal Radar Breakdown</span>
+        <span class="dim" style="font-size:11px;" id="radar-badge">Active Universe</span>
+      </h2>
+      <div class="body">
+        <div style="text-align:center; font-weight:700; margin-bottom:6px; color:var(--accent);" id="radar-title">Universe Baseline</div>
+        <div class="radar-container">
+          <svg class="radar-svg" viewBox="0 0 280 280" id="radar-svg">
+            <!-- Polygon grid rings -->
+            <polygon points="140,40 226,90 226,190 140,240 54,190 54,90" fill="none" stroke="var(--line)" stroke-width="1"/>
+            <polygon points="140,70 200,105 200,175 140,210 80,175 80,105" fill="none" stroke="var(--line)" stroke-width="1"/>
+            <polygon points="140,100 174,120 174,160 140,180 106,160 106,120" fill="none" stroke="var(--line)" stroke-width="1"/>
+            <!-- Axis lines -->
+            <line x1="140" y1="140" x2="140" y2="40" stroke="var(--line)" stroke-dasharray="2,2"/>
+            <line x1="140" y1="140" x2="226" y2="90" stroke="var(--line)" stroke-dasharray="2,2"/>
+            <line x1="140" y1="140" x2="226" y2="190" stroke="var(--line)" stroke-dasharray="2,2"/>
+            <line x1="140" y1="140" x2="140" y2="240" stroke="var(--line)" stroke-dasharray="2,2"/>
+            <line x1="140" y1="140" x2="54" y2="190" stroke="var(--line)" stroke-dasharray="2,2"/>
+            <line x1="140" y1="140" x2="54" y2="90" stroke="var(--line)" stroke-dasharray="2,2"/>
+            <!-- Dynamic Data Polygon -->
+            <polygon id="radar-data-poly" class="radar-polygon" points="140,65 210,100 195,170 140,205 75,180 85,100" fill="rgba(56,189,248,0.25)" stroke="var(--accent)" stroke-width="2"/>
+            <!-- Labels -->
+            <text x="140" y="28" fill="var(--dim)" font-size="10" text-anchor="middle">Topology</text>
+            <text x="235" y="88" fill="var(--dim)" font-size="10" text-anchor="start">Social</text>
+            <text x="235" y="195" fill="var(--dim)" font-size="10" text-anchor="start">Community</text>
+            <text x="140" y="255" fill="var(--dim)" font-size="10" text-anchor="middle">Narrative</text>
+            <text x="45" y="195" fill="var(--dim)" font-size="10" text-anchor="end">Credibility</text>
+            <text x="45" y="88" fill="var(--dim)" font-size="10" text-anchor="end">Execution</text>
+          </svg>
+        </div>
+
+        <!-- Per-Family Signal Progress Bars -->
+        <div class="metrics-breakdown" id="metrics-breakdown">
+          <div class="metric-row">
+            <div class="metric-lbl"><span>Topology</span><strong id="val-topology">0.50</strong></div>
+            <div class="metric-bar"><div class="metric-bar-fill" id="bar-topology" style="width:50%; background:var(--accent);"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-lbl"><span>Social</span><strong id="val-social">0.50</strong></div>
+            <div class="metric-bar"><div class="metric-bar-fill" id="bar-social" style="width:50%; background:var(--accent);"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-lbl"><span>Community</span><strong id="val-community">0.50</strong></div>
+            <div class="metric-bar"><div class="metric-bar-fill" id="bar-community" style="width:50%; background:var(--accent);"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-lbl"><span>Narrative</span><strong id="val-narrative">0.50</strong></div>
+            <div class="metric-bar"><div class="metric-bar-fill" id="bar-narrative" style="width:50%; background:var(--accent);"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-lbl"><span>Credibility</span><strong id="val-credibility">0.50</strong></div>
+            <div class="metric-bar"><div class="metric-bar-fill" id="bar-credibility" style="width:50%; background:var(--accent);"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-lbl"><span>Execution</span><strong id="val-execution">0.50</strong></div>
+            <div class="metric-bar"><div class="metric-bar-fill" id="bar-execution" style="width:50%; background:var(--accent);"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Integrity Sentinel Section -->
+    <section>
+      <h2>System & Integrity Sentinel</h2>
+      <div class="body">
+        {% for f in snap.integrity %}
+        <div class="flag" style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
+          <span class="dot {{ f.level }}" style="width:8px; height:8px; border-radius:50%; margin-top:5px; flex:none; background:{% if f.level == 'ok' %}var(--ok){% elif f.level == 'warn' %}var(--warn){% else %}var(--alarm){% endif %}"></span>
+          <div>
+            <strong>{{ f.headline }}</strong><br>
+            <span class="dim">{{ f.detail }}</span>
+          </div>
+        </div>
+        {% else %}
+        <div class="dim">Integrity checks green. Store healthy.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- Slide-Over Token Dossier Drawer -->
+<div class="drawer-backdrop" id="drawer-backdrop" onclick="closeDossier()"></div>
+<div class="token-drawer" id="token-drawer">
+  <div class="drawer-hdr">
+    <div class="drawer-title-group">
+      <span class="drawer-symbol" id="drawer-symbol">$TOKEN</span>
+      <span class="score-badge" id="drawer-score-badge">0.000</span>
+    </div>
+    <button class="drawer-close" onclick="closeDossier()">&times;</button>
+  </div>
+
+  <div class="drawer-tabs">
+    <div class="drawer-tab active" data-tab="overview" onclick="switchDrawerTab('overview')">Overview & Vetoes</div>
+    <div class="drawer-tab" data-tab="autopsy" onclick="switchDrawerTab('autopsy')">Forensic Tape</div>
+    <div class="drawer-tab" data-tab="copilot" onclick="switchDrawerTab('copilot')">AI Copilot</div>
+  </div>
+
+  <div class="drawer-content">
+    <!-- Quick Actions -->
+    <div class="copy-box" onclick="copyMint()">
+      <div>
+        <div class="dim" style="font-size:10px; text-transform:uppercase;">Solana Mint Address</div>
+        <div id="drawer-mint" style="font-weight:700; word-break:break-all;">-</div>
+      </div>
+      <span id="copy-btn-text" style="color:var(--accent); font-weight:700; font-size:11px;">📋 COPY</span>
+    </div>
+
+    <div class="action-grid">
+      <a href="#" id="link-dexscreener" target="_blank" class="ext-btn">DexScreener ↗</a>
+      <a href="#" id="link-pumpfun" target="_blank" class="ext-btn">Pump.fun ↗</a>
+      <a href="#" id="link-solscan" target="_blank" class="ext-btn">Solscan ↗</a>
+      <a href="#" id="link-graph" target="_blank" class="ext-btn" style="border-color:var(--accent); color:var(--accent);">Topology 🕸️</a>
+    </div>
+
+    <!-- Tab 1: Overview & Vetoes -->
+    <div id="tab-overview" class="tab-pane">
+      <div style="font-weight:700; font-size:12px; margin-bottom:8px; color:var(--dim);">ANTI-RUG SAFETY GATES</div>
+      <div id="drawer-vetoes-list"></div>
+      
+      <div style="font-weight:700; font-size:12px; margin:16px 0 8px; color:var(--dim);">CONVICTION EXPLANATION</div>
+      <div id="drawer-explanation" class="dim" style="line-height:1.6; background:rgba(255,255,255,0.03); padding:10px; border-radius:6px; border:1px solid var(--line);"></div>
+    </div>
+
+    <!-- Tab 2: Forensic Autopsy Tape -->
+    <div id="tab-autopsy" class="tab-pane" style="display:none;">
+      <div style="font-weight:700; font-size:12px; margin-bottom:12px; color:var(--dim);">CHRONOLOGICAL EVENT TIMELINE</div>
+      <div id="autopsy-container">
+        <div class="dim">Loading forensic tape...</div>
+      </div>
+    </div>
+
+    <!-- Tab 3: AI Copilot -->
+    <div id="tab-copilot" class="tab-pane" style="display:none; height:100%;">
+      <div class="chat-container">
+        <div class="chips-row">
+          <button class="chip" onclick="askCopilotPrompt('Is this token a sybil bundle or funded by the same deployer?')">Sybil Check?</button>
+          <button class="chip" onclick="askCopilotPrompt('Why was this token vetoed or refused?')">Why Vetoed?</button>
+          <button class="chip" onclick="askCopilotPrompt('Analyze deployer history and bag behavior')">Deployer History</button>
+        </div>
+        <div class="chat-history" id="chat-history">
+          <div class="chat-bubble chat-bot">
+            👋 <strong>Botsensai Copilot online.</strong> Ask any question about this token's 34 adversarial metrics, funder links, or safety vetoes.
+          </div>
+        </div>
+        <div class="chat-input-row">
+          <input type="text" id="copilot-input" class="chat-input" placeholder="Ask copilot about this token..." onkeydown="if(event.key==='Enter') sendCopilotQuery()">
+          <button class="chat-send-btn" onclick="sendCopilotQuery()">Ask</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Floating Toast Notification Stack -->
+<div class="toast-container" id="toast-container"></div>
+
+<footer>
+  <span>Botsensai 2.0 Real-Time Intelligence &middot; 34 Adversarial Metric Engines</span>
+  <span class="dim">Zero-Signing Guarantee &middot; Paper Mode Enforced</span>
+</footer>
+
+<script>
+// Candidate Cache
+const candidatesData = {{ snap.candidates_json | safe }};
+let activeCandidates = [...candidatesData];
+let selectedCandidate = candidatesData.length > 0 ? candidatesData[0] : null;
+let currentFilter = 'all';
+let soundEnabled = localStorage.getItem('botsensai_sound') !== 'false';
+
+// Audio Synthesizer for High-Signal Alerts
+let audioCtx = null;
+function playAlertChime(isHighScore = true) {
+  if (!soundEnabled) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    const now = audioCtx.currentTime;
+    if (isHighScore) {
+      osc.frequency.setValueAtTime(587.33, now); // D5
+      osc.frequency.exponentialRampToValueAtTime(880.0, now + 0.15); // A5
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } else {
+      osc.frequency.setValueAtTime(320.0, now);
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    }
+  } catch(e) {}
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  localStorage.setItem('botsensai_sound', soundEnabled);
+  document.getElementById('sound-toggle').innerText = soundEnabled ? '🔔 Sound: ON' : '🔕 Sound: OFF';
+}
+
+function showToast(title, body, isHighScore = false) {
+  const container = document.getElementById('toast-container');
+  const div = document.createElement('div');
+  div.className = `toast ${isHighScore ? 'high-score' : ''}`;
+  div.innerHTML = `<div><strong>${title}</strong><div class="dim" style="font-size:11px;">${body}</div></div>`;
+  container.appendChild(div);
+  setTimeout(() => {
+    div.style.opacity = '0';
+    div.style.transform = 'translateY(10px)';
+    div.style.transition = 'all 0.3s';
+    setTimeout(() => div.remove(), 300);
+  }, 4500);
+}
+
+// Search & Filter Logic
+const searchInput = document.getElementById('token-filter');
+searchInput.addEventListener('input', () => applyTableFilters());
+
+function setFilter(filterType, btn) {
+  currentFilter = filterType;
+  document.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyTableFilters();
+}
+
+function applyTableFilters() {
+  const query = searchInput.value.toLowerCase().trim();
+  const rows = document.querySelectorAll('.candidate-row');
+  let visibleCount = 0;
+
+  activeCandidates.forEach(c => {
+    const row = document.getElementById(`row-${c.mint}`);
+    if (!row) return;
+
+    let matchesType = true;
+    if (currentFilter === 'eligible') matchesType = !c.refused && c.vetoes.length === 0;
+    else if (currentFilter === 'vetoed') matchesType = c.vetoes.length > 0;
+    else if (currentFilter === 'high') matchesType = c.composite >= 0.68;
+
+    const vetoStr = (c.vetoes || []).join(' ').toLowerCase();
+    const matchesSearch = !query || 
+      c.symbol.toLowerCase().includes(query) || 
+      c.mint.toLowerCase().includes(query) || 
+      vetoStr.includes(query);
+
+    if (matchesType && matchesSearch) {
+      row.style.display = '';
+      visibleCount++;
+    } else {
+      row.style.display = 'none';
+    }
+  });
+
+  document.getElementById('candidate-count').innerText = `${visibleCount} / ${activeCandidates.length} tokens`;
+}
+
+// Real 6-Axis Radar Render
+function updateRadar(candidate) {
+  if (!candidate) return;
+  const fs = candidate.family_scores || {
+    topology: candidate.composite,
+    social: candidate.composite,
+    community: candidate.composite,
+    narrative: candidate.composite,
+    credibility: candidate.composite,
+    execution: candidate.composite
+  };
+
+  document.getElementById('radar-title').innerText = `$${candidate.symbol} Signal Profile (${candidate.composite.toFixed(3)})`;
+  document.getElementById('radar-badge').innerText = candidate.refused ? 'REFUSED' : 'ELIGIBLE';
+
+  const cx = 140, cy = 140, maxR = 95;
+  const axes = [
+    { key: 'topology', angle: -Math.PI / 2 },
+    { key: 'social', angle: -Math.PI / 6 },
+    { key: 'community', angle: Math.PI / 6 },
+    { key: 'narrative', angle: Math.PI / 2 },
+    { key: 'credibility', angle: 5 * Math.PI / 6 },
+    { key: 'execution', angle: -5 * Math.PI / 6 },
+  ];
+
+  const points = axes.map(a => {
+    const rawVal = fs[a.key] !== undefined ? fs[a.key] : candidate.composite;
+    const val = Math.max(0.15, Math.min(1.0, rawVal));
+    const r = maxR * val;
+    const x = cx + r * Math.cos(a.angle);
+    const y = cy + r * Math.sin(a.angle);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  document.getElementById('radar-data-poly').setAttribute('points', points);
+
+  // Update Progress Bars
+  axes.forEach(a => {
+    const val = fs[a.key] !== undefined ? fs[a.key] : candidate.composite;
+    const elVal = document.getElementById(`val-${a.key}`);
+    const elBar = document.getElementById(`bar-${a.key}`);
+    if (elVal && elBar) {
+      elVal.innerText = val.toFixed(3);
+      elBar.style.width = `${Math.round(val * 100)}%`;
+      elBar.style.background = val >= 0.68 ? 'var(--ok)' : val >= 0.5 ? 'var(--warn)' : 'var(--alarm)';
+    }
+  });
+}
+
+// Slide-Over Dossier Drawer
+function openDossier(mint) {
+  const c = activeCandidates.find(item => item.mint === mint);
+  if (!c) return;
+  selectedCandidate = c;
+
+  // Highlight Table Row
+  document.querySelectorAll('.candidate-row').forEach(r => r.classList.remove('selected'));
+  const targetRow = document.getElementById(`row-${mint}`);
+  if (targetRow) targetRow.classList.add('selected');
+
+  updateRadar(c);
+
+  document.getElementById('drawer-symbol').innerText = `$${c.symbol}`;
+  const badge = document.getElementById('drawer-score-badge');
+  badge.innerText = c.composite.toFixed(3);
+  badge.className = `score-badge ${c.composite >= 0.68 ? 'score-high' : c.composite >= 0.5 ? 'score-mid' : 'score-low'}`;
+
+  document.getElementById('drawer-mint').innerText = c.mint;
+  document.getElementById('link-dexscreener').href = `https://dexscreener.com/solana/${c.mint}`;
+  document.getElementById('link-pumpfun').href = `https://pump.fun/${c.mint}`;
+  document.getElementById('link-solscan').href = `https://solscan.io/token/${c.mint}`;
+  document.getElementById('link-graph').href = `/tokens/${c.mint}/graph`;
+
+  // Vetoes
+  const vetoContainer = document.getElementById('drawer-vetoes-list');
+  if (c.vetoes && c.vetoes.length > 0) {
+    vetoContainer.innerHTML = c.vetoes.map(v => `
+      <div style="background:var(--alarm-bg); border:1px solid rgba(239,68,68,0.3); padding:8px 12px; border-radius:6px; margin-bottom:6px;">
+        <strong style="color:var(--alarm);">🚨 ${v}</strong>
+        <div class="dim" style="font-size:11px; margin-top:2px;">Hard Anti-Rug Gate triggered. Position entry permanently refused.</div>
+      </div>
+    `).join('');
+  } else {
+    vetoContainer.innerHTML = `
+      <div style="background:var(--ok-bg); border:1px solid rgba(34,197,94,0.3); padding:8px 12px; border-radius:6px; color:var(--ok); font-weight:600;">
+        ✓ All 7 Hard Anti-Rug Veto Gates Passed Cleanly
+      </div>
+    `;
+  }
+
+  document.getElementById('drawer-explanation').innerText = c.explanation || 'Composite weighted calibration over 34 adversarial features.';
+
+  // Open Drawer
+  document.getElementById('drawer-backdrop').classList.add('open');
+  document.getElementById('token-drawer').classList.add('open');
+
+  // Reset autopsy & chat
+  loadAutopsyTape(c.mint);
+}
+
+function closeDossier() {
+  document.getElementById('drawer-backdrop').classList.remove('open');
+  document.getElementById('token-drawer').classList.remove('open');
+}
+
+function copyMint() {
+  if (!selectedCandidate) return;
+  navigator.clipboard.writeText(selectedCandidate.mint).then(() => {
+    const text = document.getElementById('copy-btn-text');
+    text.innerText = '✓ COPIED!';
+    text.style.color = 'var(--ok)';
+    setTimeout(() => {
+      text.innerText = '📋 COPY';
+      text.style.color = 'var(--accent)';
+    }, 2000);
+  });
+}
+
+function switchDrawerTab(tabId) {
+  document.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.drawer-tab[data-tab="${tabId}"]`).classList.add('active');
+
+  document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+  const activePane = document.getElementById(`tab-${tabId}`);
+  if (activePane) activePane.style.display = 'block';
+}
+
+// Forensic Autopsy Fetcher
+async function loadAutopsyTape(mint) {
+  const container = document.getElementById('autopsy-container');
+  container.innerHTML = '<div class="dim">Reconstructing forensic event tape...</div>';
+  try {
+    const res = await fetch(`/api/tokens/${mint}/autopsy`);
+    const data = await res.json();
+    if (!data.events || data.events.length === 0) {
+      container.innerHTML = '<div class="dim">No telemetry events recorded yet.</div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="timeline-tape">
+        ${data.events.map(e => {
+          const s = e.elapsed_seconds;
+          const timeStr = s < 60 ? `+${Math.round(s)}s` : `+${(s / 60).toFixed(1)}m`;
+          return `
+            <div class="timeline-event ${e.impact}">
+              <div class="timeline-headline">${e.headline} <span class="dim" style="font-size:10px;">(${timeStr})</span></div>
+              <div class="timeline-detail">${e.detail}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  } catch(e) {
+    container.innerHTML = '<div class="dim">Unable to retrieve autopsy timeline.</div>';
+  }
+}
+
+// AI Copilot Integration
+async function askCopilotPrompt(question) {
+  document.getElementById('copilot-input').value = question;
+  await sendCopilotQuery();
+}
+
+async function sendCopilotQuery() {
+  const input = document.getElementById('copilot-input');
+  const question = input.value.trim();
+  if (!question || !selectedCandidate) return;
+
+  const history = document.getElementById('chat-history');
+  // Append User message
+  const userMsg = document.createElement('div');
+  userMsg.className = 'chat-bubble chat-user';
+  userMsg.innerText = question;
+  history.appendChild(userMsg);
+  input.value = '';
+
+  // Append Loading message
+  const botMsg = document.createElement('div');
+  botMsg.className = 'chat-bubble chat-bot';
+  botMsg.innerHTML = '<span class="dim">Analyzing evidence citations...</span>';
+  history.appendChild(botMsg);
+  history.scrollTop = history.scrollHeight;
+
+  try {
+    const res = await fetch(`/api/tokens/${selectedCandidate.mint}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: question })
+    });
+    const data = await res.json();
+
+    let citationsHtml = '';
+    if (data.citations && data.citations.length > 0) {
+      citationsHtml = `
+        <div class="chat-citations">
+          <strong>Ground Evidence:</strong><br>
+          ${data.citations.slice(0, 4).map(c => `• [${c.source_type}] ${c.fact}`).join('<br>')}
+        </div>
+      `;
+    }
+
+    botMsg.innerHTML = `<div>${data.answer}</div>${citationsHtml}`;
+  } catch (err) {
+    botMsg.innerHTML = '<div style="color:var(--alarm);">Error contacting Copilot service.</div>';
+  }
+  history.scrollTop = history.scrollHeight;
+}
+
+// Keyboard Hotkeys
+window.addEventListener('keydown', (e) => {
+  if (e.key === '/' && document.activeElement !== searchInput && document.activeElement !== document.getElementById('copilot-input')) {
+    e.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+  } else if (e.key === 'Escape') {
+    closeDossier();
+    searchInput.blur();
+  }
+});
+
+// WebSocket Live Stream Feed
+let ws;
+function connectWS() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/ws/live`;
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    document.getElementById('live-status').innerHTML = '<span class="pulse-dot"></span> LIVE STREAM';
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'mint_discovered') {
+        addTickerItem(`🚀 New Mint: $${msg.data.symbol || '?'} (${msg.data.mint.slice(0,8)}...)`, msg.timestamp);
+        showToast(`🚀 New Mint: $${msg.data.symbol || '?'}`, `Detected on ${msg.data.launchpad || 'pump.fun'}`);
+        playAlertChime(false);
+      } else if (msg.type === 'candidate_scored') {
+        const score = Number(msg.data.score);
+        const isHigh = score >= 0.68;
+        addTickerItem(`📊 Scored $${msg.data.symbol}: ${score.toFixed(3)}`, msg.timestamp);
+        if (isHigh) {
+          showToast(`🔥 High Conviction: $${msg.data.symbol}`, `Score: ${score.toFixed(3)} (Passed Veto Gates)`, true);
+          playAlertChime(true);
+        }
+      }
+    } catch (err) {}
+  };
+
+  ws.onclose = () => {
+    document.getElementById('live-status').innerHTML = '<span class="pulse-dot" style="background:var(--alarm)"></span> RECONNECTING';
+    setTimeout(connectWS, 3000);
+  };
+}
+
+function addTickerItem(text, ts) {
+  const feed = document.getElementById('ticker-feed');
+  const div = document.createElement('div');
+  div.className = 'ticker-item';
+  const timeStr = ts ? new Date(ts).toLocaleTimeString() : new Date().toLocaleTimeString();
+  div.innerHTML = `<span>${text}</span><span class="dim">${timeStr}</span>`;
+  feed.prepend(div);
+  if (feed.children.length > 30) feed.removeChild(feed.lastChild);
+}
+
+function clearTicker() {
+  document.getElementById('ticker-feed').innerHTML = '<div class="dim" style="padding:4px 0;">Stream feed cleared.</div>';
+}
+
+// Initial Setup
+if (selectedCandidate) {
+  updateRadar(selectedCandidate);
+}
+connectWS();
+</script>
+</body>
+</html>

@@ -39,11 +39,14 @@ import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
-from botsensai.collectors.base import CollectionResult, Collector
-from botsensai.collectors.browser import BrowserUnavailableError, get_driver
+from botsensai.collectors.base import CollectionResult, Collector, tag_posts
+from botsensai.collectors.browser import BrowserUnavailableError, WebUseDriver, get_driver
 from botsensai.config import Settings
+from botsensai.media.phash import exact_label
 from botsensai.models import (
+    ChannelRead,
     Platform,
     SocialAccount,
     SocialPost,
@@ -62,11 +65,31 @@ X_TIMELINE_HOST = "https://syndication.twitter.com"
 #: Live single-tweet endpoint. Different host, different (much looser) bucket.
 X_TWEET_HOST = "https://cdn.syndication.twimg.com"
 
-#: Measured: 12 requests then HTTP 429, still 429 at t+311s, recovered near
-#: t+600s. That is ~12 per 15 minutes, so under one request per minute.
-X_TIMELINE_RPM = 0.7
 #: Measured: 40/40 consecutive requests returned 200 with no throttling.
 X_TWEET_RPM = 40.0
+
+#: GraphQL operations worth capturing off the search page. Matched as URL
+#: substrings on captured responses, not as a path, because X renames the query
+#: id in the path on every deploy and never the operation name.
+X_SEARCH_PATTERN = r"(SearchTimeline|TweetDetail|TweetResultByRestId)"
+
+#: Posts one search harvest aims for before it stops scrolling. Set from what
+#: the metrics need rather than a round number: `engager_age_dispersion` needs 8
+#: accounts with known creation dates and `reply_template_ratio` needs 12
+#: replies, and on a live ticker feed only a minority of captured posts carry
+#: either. 200 clears both with room for the ones that carry neither.
+X_SEARCH_POST_TARGET = 200
+#: Ceiling on one authenticated search harvest. Reached only by a feed that
+#: keeps paying out; the idle-scroll stop ends a quiet ticker in seconds.
+X_SEARCH_DEADLINE_SECONDS = 180.0
+#: The anonymous path gets a much smaller ceiling on purpose. x.com/search
+#: serves a login wall to a logged-out visitor, so the scrolls after the first
+#: capture nothing, and spending three minutes discovering that once per token
+#: would cost the sweep more than the whole surface is worth without a session.
+X_PUBLIC_SEARCH_DEADLINE_SECONDS = 25.0
+X_SEARCH_MAX_SCROLLS = 40
+#: Consecutive scrolls that may return no new GraphQL before the harvest ends.
+X_SEARCH_IDLE_SCROLLS = 2
 
 #: These return HTTP 200 with a zero-byte body. Kept as a named constant so the
 #: next person to "helpfully" reintroduce one finds this note first.
@@ -86,7 +109,7 @@ REDDIT_BASE = "https://www.reddit.com"
 FOURCHAN_API = "https://a.4cdn.org"
 FOURCHAN_CDN = "https://i.4cdn.org"
 #: Documented hard rule: no more than one request per second.
-FOURCHAN_RPM = 55.0
+FOURCHAN_RPM = 55
 
 # --- Telegram ------------------------------------------------------------- #
 TELEGRAM_PREVIEW = "https://t.me/s"
@@ -142,6 +165,20 @@ def _iso(value: Any) -> datetime | None:
         # X's v1.1 format: "Fri Jul 24 22:40:18 +0000 2026"
         return datetime.strptime(str(value), "%a %b %d %H:%M:%S %z %Y")
     return None
+
+
+def _author_rank(post: SocialPost) -> int:
+    """How much of an author one parse of a post recovered.
+
+    The structural walker yields both a tweet node and that node's own `legacy`
+    sub-dict, and only the outer one carries the author. Both parse to the same
+    post id, so a dedupe that simply keeps whichever arrived first will
+    sometimes file a post under `unknown` with no creation date — turning a real
+    author distribution into a fabricated one and blinding
+    `engager_age_dispersion` for that post. Rank decides ties instead.
+    """
+    resolved = not (post.author == "unknown" or post.author.startswith("id:"))
+    return int(post.author_created_at is not None) + int(resolved)
 
 
 def _int(value: Any) -> int | None:
@@ -246,6 +283,9 @@ class XCollector(Collector):
     description = "X timelines, engagement velocity and engager metadata via live syndication"
     can_discover = False
     can_enrich = True
+    #: Seconds one search harvest may spend. The session subclass raises this;
+    #: see the constant for why the anonymous path is not given the same budget.
+    search_deadline_seconds = X_PUBLIC_SEARCH_DEADLINE_SECONDS
 
     def __init__(self, settings: Settings | None = None) -> None:
         super().__init__(settings)
@@ -407,42 +447,112 @@ class XCollector(Collector):
             source=f"{self.name}:syndication-timeline",
         )
 
-    # -- per-tweet velocity ------------------------------------------------- #
-
-    async def tweet_engagement(self, tweet_id: str) -> dict[str, Any] | None:
-        """Current engagement on one post, from the unthrottled host.
-
-        Only `favorite_count` and `conversation_count` are returned — verified by
-        a full key dump, this endpoint carries no retweet, quote or reply counts.
-        Its value is that it can be polled every few seconds without penalty,
-        which turns it into an engagement-*velocity* probe. The inter-arrival
-        regularity of that series is what `reply_rhythm_naturalness` consumes.
-        """
-        url = f"{X_TWEET_HOST}/tweet-result"
-        try:
-            payload = await self.tweets.get_json(
-                url,
-                params={"id": tweet_id, "token": x_tweet_token(tweet_id), "lang": "en"},
-                cache_ttl=15.0,
-            )
-            _require_body(payload, url)
-        except Exception as exc:
-            log.debug("x.tweet_result_failed", tweet_id=tweet_id, error=str(exc))
-            return None
-        if not isinstance(payload, dict):
-            return None
-        return {
-            "id": payload.get("id_str"),
-            "favorite_count": _int(payload.get("favorite_count")),
-            "conversation_count": _int(payload.get("conversation_count")),
-            "created_at": _iso(payload.get("created_at")),
-            "text": payload.get("text"),
-            "observed_at": utcnow(),
-        }
-
     # -- browser fallback --------------------------------------------------- #
 
-    async def search_via_browser(self, query: str, limit: int = 40) -> list[SocialPost]:
+    def search_budget(self) -> tuple[int, float]:
+        """How many posts one search aims for, and how long it may spend.
+
+        Both are overridable per surface through `collectors.x.extra` so an
+        operator can trade sweep latency for depth without editing code.
+        """
+        extra = self.config.extra
+        target = int(extra.get("search_post_target", X_SEARCH_POST_TARGET) or 0)
+        deadline = float(
+            extra.get("search_deadline_seconds", self.search_deadline_seconds) or 0.0
+        )
+        return max(1, target), max(0.0, deadline)
+
+    async def harvest_posts(
+        self,
+        driver: WebUseDriver,
+        url: str,
+        pattern: str,
+        *,
+        limit: int | None = None,
+        deadline_seconds: float | None = None,
+        requests_per_minute: float | None = None,
+        wait_ms: int = 5000,
+    ) -> list[SocialPost]:
+        """Scroll an X feed, absorbing its own GraphQL until the budget is spent.
+
+        One page of search GraphQL is roughly twenty posts, which is below the
+        evidence floor of every metric this feed exists to serve — so a single
+        capture reads as "not enough data" on a token that is in fact being
+        discussed heavily. Scrolling is what turns this surface from decorative
+        into usable.
+
+        Dedupe is by post id and is not optional: X re-serves the top of the
+        feed on nearly every scroll, so a naive concatenation counts the same
+        post four or five times. That inflates every count-based metric and,
+        worse, concentrates the apparent author distribution onto whoever posted
+        the item that keeps being re-served — which reads downstream as one
+        account dominating the conversation, a shill fingerprint we would have
+        manufactured ourselves.
+
+        Insertion order is preserved, so the cap keeps the posts the feed ranked
+        first rather than an arbitrary subset.
+        """
+        target, budget = self.search_budget()
+        cap = target if limit is None else max(1, limit)
+        posts: dict[str, SocialPost] = {}
+
+        def absorb(bodies: list[Any]) -> bool:
+            for body in bodies:
+                for node in self._walk_for_tweets(body):
+                    post = self._parse_graphql_tweet(node)
+                    if post is None:
+                        continue
+                    held = posts.get(post.post_id)
+                    if held is None or _author_rank(post) > _author_rank(held):
+                        posts[post.post_id] = post
+            return len(posts) < cap
+
+        await driver.harvest_json(
+            url,
+            pattern,
+            on_batch=absorb,
+            surface=self.name,
+            wait_ms=wait_ms,
+            scroll_pause_ms=1400,
+            max_scrolls=X_SEARCH_MAX_SCROLLS,
+            deadline_seconds=budget if deadline_seconds is None else deadline_seconds,
+            idle_scrolls=X_SEARCH_IDLE_SCROLLS,
+            requests_per_minute=(
+                float(self.config.requests_per_minute)
+                if requests_per_minute is None
+                else requests_per_minute
+            ),
+        )
+        return list(posts.values())[:cap]
+
+    async def harvest_search(
+        self,
+        driver: WebUseDriver,
+        query: str,
+        *,
+        pattern: str = X_SEARCH_PATTERN,
+        limit: int | None = None,
+        deadline_seconds: float | None = None,
+        requests_per_minute: float | None = None,
+    ) -> list[SocialPost]:
+        """Deep search for one query.
+
+        The query is percent-encoded rather than interpolated raw. A ticker is
+        operator-supplied text: an unencoded `#` truncates the URL at the
+        fragment and searches for something else entirely, and an unencoded `&`
+        appends a parameter — both of which return a plausible page of results
+        for the wrong query, which is worse than an error.
+        """
+        return await self.harvest_posts(
+            driver,
+            f"https://x.com/search?q={quote(query, safe='')}&f=live",
+            pattern,
+            limit=limit,
+            deadline_seconds=deadline_seconds,
+            requests_per_minute=requests_per_minute,
+        )
+
+    async def search_via_browser(self, query: str, limit: int | None = None) -> list[SocialPost]:
         """Load the X search page and capture the GraphQL it fetches for itself.
 
         Search is not available on any free unauthenticated path, and reply text
@@ -451,16 +561,11 @@ class XCollector(Collector):
         """
         if self._browser_failed:
             return []
-        driver = get_driver(self.settings.browser)
         try:
-            bodies = await driver.capture_json(
-                f"https://x.com/search?q={query}&f=live",
-                pattern=r"(SearchTimeline|TweetDetail|TweetResultByRestId)",
-                surface=self.name,
-                wait_ms=5000,
-                scrolls=2,
-                requests_per_minute=self.config.requests_per_minute,
-            )
+            # Inside the try: obtaining the driver is itself a step that can
+            # fail, and `enrich` must never raise out of this collector.
+            driver = get_driver(self.settings.browser)
+            return await self.harvest_search(driver, query, limit=limit)
         except BrowserUnavailableError as exc:
             self._browser_failed = True
             log.info("x.browser_unavailable", error=str(exc))
@@ -468,16 +573,6 @@ class XCollector(Collector):
         except Exception as exc:
             log.debug("x.browser_search_failed", query=query, error=str(exc))
             return []
-
-        posts: list[SocialPost] = []
-        for body in bodies:
-            for node in self._walk_for_tweets(body):
-                post = self._parse_graphql_tweet(node)
-                if post is not None:
-                    posts.append(post)
-                if len(posts) >= limit:
-                    return posts
-        return posts
 
     @staticmethod
     def _walk_for_tweets(payload: Any) -> list[dict[str, Any]]:
@@ -489,8 +584,19 @@ class XCollector(Collector):
         """
         found: list[dict[str, Any]] = []
 
+        # The cap has to clear the deepest envelope we actually receive, not a
+        # round number. SearchTimeline nests tweets at depth 12-14:
+        #   data > search_by_raw_query > search_timeline > timeline >
+        #   instructions[] > entries[] > content > itemContent > tweet_results >
+        #   result > legacy
+        # measured live against $CHEEMS: 22 tweet nodes at depths 12-14, and a
+        # cap of 10 returned ZERO of them while reporting no error. That is the
+        # silent-absence failure this module exists to avoid — every
+        # session-gated social metric read MISSING because the walker gave up
+        # two levels short of the data. 16 recovers all of them and saturates
+        # (20 and 24 find nothing further).
         def walk(node: Any, depth: int = 0) -> None:
-            if depth > 10 or len(found) > 600:
+            if depth > 16 or len(found) > 600:
                 return
             if isinstance(node, dict):
                 legacy = node.get("legacy")
@@ -507,8 +613,56 @@ class XCollector(Collector):
         walk(payload)
         return found
 
+    @staticmethod
+    def _user_fields(user_result: dict[str, Any]) -> dict[str, Any]:
+        """Author attributes, read across both X user-object shapes.
+
+        X removed `legacy` from the user object and split its contents into
+        `core` (screen_name, name, created_at), `relationship_counts` (followers,
+        following), `tweet_counts` (tweets) and `verification` (verified).
+
+        Reading only the old path did not degrade to MISSING — it degraded to a
+        confident falsehood. `rest_id` still resolved, so posts were created with
+        author "unknown", and `mention_author_diversity` then saw one distinct
+        author across 390 posts and reported maximum concentration — a shill
+        fingerprint — at high confidence. Fabricated evidence of manipulation is
+        strictly worse than absence, which is why both shapes are read here and
+        why the caller falls back to the account id rather than to a constant.
+
+        `fast_followers_count` has no home in the new shape at all, so
+        `purchased_follower_signal` stays MISSING on this path. That is the
+        correct outcome, not a gap to paper over.
+        """
+        def sub(key: str) -> dict[str, Any]:
+            value = user_result.get(key)
+            return value if isinstance(value, dict) else {}
+
+        legacy = sub("legacy")
+        core = sub("core")
+        counts = sub("relationship_counts")
+        tweets = sub("tweet_counts")
+        verification = sub("verification")
+        bio = sub("profile_bio")
+
+        def pick(new: Any, old: Any) -> Any:
+            return new if new is not None else old
+
+        return {
+            "screen_name": pick(core.get("screen_name"), legacy.get("screen_name")),
+            "created_at": pick(core.get("created_at"), legacy.get("created_at")),
+            "followers": pick(counts.get("followers"), legacy.get("followers_count")),
+            "following": pick(counts.get("following"), legacy.get("friends_count")),
+            "post_count": pick(tweets.get("tweets"), legacy.get("statuses_count")),
+            "verified": pick(verification.get("verified"), legacy.get("verified")),
+            "description": pick(bio.get("description"), legacy.get("description")),
+            # Present only on the old shape; absent upstream means absent here.
+            "fast_followers": legacy.get("fast_followers_count"),
+            "normal_followers": legacy.get("normal_followers_count"),
+        }
+
     def _parse_graphql_tweet(self, node: dict[str, Any]) -> SocialPost | None:
-        legacy = node.get("legacy") if isinstance(node.get("legacy"), dict) else node
+        raw_legacy = node.get("legacy")
+        legacy = raw_legacy if isinstance(raw_legacy, dict) else node
         post_id = str(legacy.get("id_str") or node.get("rest_id") or "").strip()
         created = _iso(legacy.get("created_at"))
         if not post_id or created is None:
@@ -519,8 +673,12 @@ class XCollector(Collector):
             if isinstance(node.get("core"), dict)
             else {}
         )
-        user_legacy = user_result.get("legacy") or {}
-        handle = user_legacy.get("screen_name") or "unknown"
+        author = self._user_fields(user_result if isinstance(user_result, dict) else {})
+        author_id = str(user_result.get("rest_id") or "") or None
+        # Falling back to the account id keeps distinct authors distinct. A shared
+        # placeholder collapses them into one, which reads downstream as a single
+        # account posting everything — a manufactured shill signal.
+        handle = author["screen_name"] or (f"id:{author_id}" if author_id else "unknown")
         text = str(legacy.get("full_text") or legacy.get("text") or "")
         views = node.get("views") or {}
 
@@ -528,7 +686,7 @@ class XCollector(Collector):
             platform=Platform.X,
             post_id=post_id,
             author=str(handle),
-            author_id=str(user_result.get("rest_id") or "") or None,
+            author_id=author_id,
             as_of=created,
             observed_at=utcnow(),
             text=text,
@@ -542,13 +700,62 @@ class XCollector(Collector):
             reposts=_int(legacy.get("retweet_count")),
             bookmarks=_int(legacy.get("bookmark_count")),
             views=_int(views.get("count")) if isinstance(views, dict) else None,
-            author_followers=_int(user_legacy.get("followers_count")),
-            author_created_at=_iso(user_legacy.get("created_at")),
+            author_followers=_int(author["followers"]),
+            author_created_at=_iso(author["created_at"]),
             mentioned_tokens=extract_cashtags(text),
             source=f"{self.name}:graphql",
         )
 
     # -- enrichment --------------------------------------------------------- #
+
+    async def _timeline_leg(self, handle: str, token: TokenRef, result: CollectionResult) -> list[SocialPost]:
+        """The named account's own timeline: the only free source of follower
+        counts and account ages, so its account object is kept even when the
+        posts are later filtered out as off-topic."""
+        posts, account = await self.profile_timeline(handle)
+        if account is None:
+            return posts
+        # Tagged here rather than at the store: this is the only place that
+        # knows the account came from the token's own published link, which is
+        # what makes it the promoter rather than one more engager. The timeline
+        # window is measured here for the same reason — `posts` is the whole
+        # profile timeline, and the caller is about to drop the off-topic half.
+        stamps = sorted(p.as_of for p in posts)
+        result.accounts.append(
+            account.model_copy(
+                update={
+                    "token_key": token.key,
+                    "role": "promoter",
+                    "timeline_posts": len(stamps),
+                    "timeline_oldest_at": stamps[0] if stamps else None,
+                    "timeline_newest_at": stamps[-1] if stamps else None,
+                }
+            )
+        )
+        if account.fast_follower_share is not None:
+            result.raw.setdefault("fast_follower_share", {})[token.key] = (
+                account.fast_follower_share
+            )
+        return posts
+
+    async def _search_leg(self, symbol: str, result: CollectionResult) -> list[SocialPost]:
+        posts = await self.search_via_browser(f"${symbol}" if symbol.isalnum() else symbol)
+        if self._browser_failed:
+            # Falling back to the syndication timeline is correct; doing it
+            # silently is not. Without the browser there is no reply text and no
+            # search breadth at all, so the social family reads thin — and a thin
+            # reading reported as healthy gets attributed to the token instead of
+            # to the collector.
+            result.degraded = True
+            result.raw["browser"] = "unavailable — syndication timeline only"
+        return posts
+
+    def _about_this_token(self, post: SocialPost, symbol: str) -> bool:
+        if not symbol:
+            return True
+        if symbol.upper() in [t.upper() for t in post.mentioned_tokens]:
+            return True
+        return contains_address(post.text) or symbol.lower() in post.text.lower()
 
     async def enrich(self, tokens: Sequence[TokenRef]) -> CollectionResult:
         result = self._empty()
@@ -560,30 +767,16 @@ class XCollector(Collector):
 
             handle = handles.get(token.key)
             if handle:
-                posts, account = await self.profile_timeline(handle)
-                collected.extend(posts)
-                if account is not None:
-                    result.accounts.append(account)
-                    if account.fast_follower_share is not None:
-                        result.raw.setdefault("fast_follower_share", {})[token.key] = (
-                            account.fast_follower_share
-                        )
-
+                collected.extend(await self._timeline_leg(handle, token, result))
             if symbol and len(symbol) >= 2:
-                collected.extend(
-                    await self.search_via_browser(f"${symbol}" if symbol.isalnum() else symbol)
-                )
+                collected.extend(await self._search_leg(symbol, result))
 
             if not collected:
                 result.degraded = True
                 continue
 
-            for post in collected:
-                mentions = [t.upper() for t in post.mentioned_tokens]
-                if symbol and symbol.upper() not in mentions:
-                    if not contains_address(post.text) and symbol.lower() not in post.text.lower():
-                        continue
-                result.posts.append(post)
+            on_topic = [p for p in collected if self._about_this_token(p, symbol)]
+            result.posts.extend(tag_posts(on_topic, token.key))
 
         return result
 
@@ -683,8 +876,28 @@ class RedditCollector(Collector):
                     continue
                 if symbol.upper() not in post.mentioned_tokens:
                     post.mentioned_tokens.append(symbol.upper())
-                result.posts.append(post)
+                result.posts.extend(tag_posts([post], token.key))
         return result
+
+
+def _catalog_matches(catalog: Any, symbols: set[str]) -> list[int]:
+    """Thread numbers whose subject or comment names a monitored ticker.
+
+    The catalog is scanned rather than the search endpoint because 4chan has no
+    search API; matching on the catalog blob is the only way to narrow 200-odd
+    threads to the handful worth a request each.
+    """
+    matches: list[int] = []
+    for page in catalog or []:
+        if not isinstance(page, dict):
+            continue
+        for thread in page.get("threads") or []:
+            if not isinstance(thread, dict):
+                continue
+            blob = f"{thread.get('sub') or ''} {thread.get('com') or ''}".upper()
+            if thread.get("no") and any(sym in blob for sym in symbols):
+                matches.append(int(thread["no"]))
+    return matches
 
 
 class FourChanBizCollector(Collector):
@@ -736,7 +949,10 @@ class FourChanBizCollector(Collector):
             media_urls.append(f"{FOURCHAN_CDN}/biz/{post['tim']}{post['ext']}")
             if post.get("md5"):
                 # Native MD5: exact-duplicate detection across surfaces for free.
-                media_hashes.append(str(post["md5"]))
+                # Namespaced, because it is not comparable with a perceptual hash
+                # and `derivative_remix_depth` clusters in Hamming space — an
+                # unlabelled MD5 in that column reads as a unique visual idea.
+                media_hashes.append(exact_label(str(post["md5"])))
 
         return SocialPost(
             platform=Platform.FOURCHAN,
@@ -774,20 +990,8 @@ class FourChanBizCollector(Collector):
             log.debug("fourchan.catalog_failed", error=str(exc))
             return result
 
-        interesting: list[int] = []
-        for page in catalog or []:
-            if not isinstance(page, dict):
-                continue
-            for thread in page.get("threads") or []:
-                if not isinstance(thread, dict):
-                    continue
-                blob = f"{thread.get('sub') or ''} {thread.get('com') or ''}".upper()
-                if any(sym in blob for sym in symbols):
-                    if thread.get("no"):
-                        interesting.append(int(thread["no"]))
-
         # Bounded: the catalog is 200+ threads and the etiquette is 1 req/sec.
-        for thread_no in interesting[:8]:
+        for thread_no in _catalog_matches(catalog, set(symbols))[:8]:
             try:
                 payload = await self.client.get_json(
                     f"{FOURCHAN_API}/biz/thread/{thread_no}.json", cache_ttl=60.0
@@ -800,18 +1004,41 @@ class FourChanBizCollector(Collector):
                 if not isinstance(post, dict):
                     continue
                 social = self._post_to_social(post, thread_no)
-                if social is None:
-                    continue
-                blob = social.text.upper()
-                matched = [sym for sym in symbols if sym in blob]
-                if not matched and not contains_address(social.text):
-                    continue
-                for sym in matched:
-                    if sym not in social.mentioned_tokens:
-                        social.mentioned_tokens.append(sym)
-                result.posts.append(social)
+                if social is not None:
+                    self._attribute_post(result, social, symbols)
 
         return result
+
+    @staticmethod
+    def _attribute_post(
+        result: CollectionResult, social: SocialPost, symbols: dict[str, TokenRef]
+    ) -> None:
+        """Attach a thread post to a monitored token, or drop it.
+
+        This board is scanned once for every ticker at a time, so a thread can
+        mention several. `social_posts` is keyed (platform, post_id,
+        observed_at) with token_key outside the key, so one post can only be
+        attributed to one token: the first ticker matched wins, and the rest
+        remain visible through `mentioned_tokens`. Fanning one post out to
+        several tokens would need the key widened, which is a schema migration.
+        """
+        blob = social.text.upper()
+        matched = [sym for sym in symbols if sym in blob]
+        if not matched and not contains_address(social.text):
+            return
+        for sym in matched:
+            if sym not in social.mentioned_tokens:
+                social.mentioned_tokens.append(sym)
+
+        owner = symbols.get(matched[0]) if matched else None
+        if owner is not None:
+            result.posts.extend(tag_posts([social], owner.key))
+        else:
+            # Matched only by mint address, so which token is not known here.
+            # Left untagged deliberately rather than guessed: attributing it to
+            # the wrong token would corrupt that token's social metrics, which
+            # is worse than one lost post.
+            result.posts.append(social)
 
 
 class TelegramChannelCollector(Collector):
@@ -833,6 +1060,13 @@ class TelegramChannelCollector(Collector):
     can_discover = False
     can_enrich = True
 
+    #: How many curated call channels one sweep reads. Each is a single
+    #: `t.me/s/<name>` fetch against a 30/min pacing, and the sweep also owes a
+    #: fetch to every token that published a room of its own, so the watchlist
+    #: gets a fixed share rather than the remainder. `botsensai.watchlist`
+    #: ranks candidates so that this cap spends itself on the best six.
+    max_call_channels = 6
+
     async def health_check(self) -> bool:
         if not self.config.enabled:
             return False
@@ -841,17 +1075,36 @@ class TelegramChannelCollector(Collector):
             return "tgme_widget_message" in (html or "")
         return False
 
-    async def channel_messages(self, channel: str, limit: int = 20) -> list[SocialPost]:
+    async def read_channel(
+        self, channel: str, limit: int = 20
+    ) -> tuple[list[SocialPost], ChannelRead]:
+        """The messages, plus a record of the attempt itself.
+
+        The record is the point. An unreadable channel and an unreachable network
+        are opposite facts: the first says this handle is not a readable
+        channel, the second says the network had a bad minute. Measured
+        2026-08-04, an unreadable handle is *always* the first shape here —
+        `t.me/s/pisklauren` and a handle nobody has registered both answer HTTP
+        200 with a real page and zero messages — so a transport failure carries
+        no information about the channel at all and must never evict one.
+        """
         channel = channel.strip().lstrip("@").rstrip("/").split("/")[-1]
         if not channel:
-            return []
+            return [], ChannelRead(channel="", fetched=False, error="empty handle")
+        # Lowercased because `t.me` is case-insensitive and the handle arrives
+        # in whichever casing a launch published. `watchlist.normalize_channel`
+        # lowercases too; if these two ever disagree, a channel accumulates its
+        # history under one key and is looked up under another.
+        record = ChannelRead(channel=channel.lower())
         url = f"{TELEGRAM_PREVIEW}/{channel}"
         try:
             html = await self.client.get_text(url, cache_ttl=45.0)
             _require_body(html, url)
         except Exception as exc:
             log.debug("telegram.fetch_failed", channel=channel, error=str(exc))
-            return []
+            record.fetched = False
+            record.error = str(exc)[:200]
+            return [], record
 
         posts: list[SocialPost] = []
         for match in _TG_MESSAGE_RE.finditer(html):
@@ -883,31 +1136,40 @@ class TelegramChannelCollector(Collector):
             )
             if len(posts) >= limit:
                 break
-        return posts
+        record.messages = len(posts)
+        return posts, record
 
     async def enrich(self, tokens: Sequence[TokenRef]) -> CollectionResult:
         """Read each token's own channel, plus any curated call channels."""
         result = self._empty()
         channels: dict[str, str] = self.config.extra.get("channels", {})
         watchlist: list[str] = self.config.extra.get("call_channels", [])
+        # Every attempt is reported, including the token rooms: the pipeline
+        # writes them to `channel_reads` and `watchlist` drops a handle that has
+        # answered with nothing often enough. Reported rather than written here
+        # because a collector has no store — the pipeline is the only path in.
+        reads: list[ChannelRead] = []
+        result.raw["channel_reads"] = reads
 
         for token in list(tokens)[:8]:
             channel = channels.get(token.key)
             if not channel:
                 continue
-            posts = await self.channel_messages(channel)
+            posts, record = await self.read_channel(channel)
+            reads.append(record)
             if not posts:
                 result.degraded = True
                 continue
             for post in posts:
                 if token.symbol and token.symbol.upper() not in post.mentioned_tokens:
                     post.mentioned_tokens.append(token.symbol.upper())
-                result.posts.append(post)
+                result.posts.extend(tag_posts([post], token.key))
 
         # Call channels are token-agnostic: read them once and let the caller
         # match mints out of the message text.
-        for channel in watchlist[:6]:
-            posts = await self.channel_messages(channel)
+        for channel in watchlist[: self.max_call_channels]:
+            posts, record = await self.read_channel(channel)
+            reads.append(record)
             result.posts.extend(p for p in posts if contains_address(p.text) or p.mentioned_tokens)
 
         return result
@@ -963,7 +1225,7 @@ class PumpFunChatCollector(Collector):
                 continue
 
             for body in page.json_matching(r"(livechat|replies|messages)"):
-                result.posts.extend(self._parse_messages(body, token))
+                result.posts.extend(tag_posts(self._parse_messages(body, token), token.key))
 
         return result
 
@@ -1011,6 +1273,12 @@ __all__ = [
     "REDDIT_BASE",
     "TELEGRAM_PREVIEW",
     "X_DEAD_ENDPOINTS",
+    "X_PUBLIC_SEARCH_DEADLINE_SECONDS",
+    "X_SEARCH_DEADLINE_SECONDS",
+    "X_SEARCH_IDLE_SCROLLS",
+    "X_SEARCH_MAX_SCROLLS",
+    "X_SEARCH_PATTERN",
+    "X_SEARCH_POST_TARGET",
     "X_TIMELINE_HOST",
     "X_TWEET_HOST",
     "EmptySuccessError",

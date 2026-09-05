@@ -12,7 +12,7 @@ Three capabilities matter here and none of them are available from plain HTTP:
   backend. Watching the network tab gives us that JSON in its native shape,
   already authenticated by the page's own session, without reverse-engineering
   or forging request signatures. This is the single highest-value technique in
-  the file and `capture_json` implements it.
+  the file and `json_matching` implements it.
 * **Session reuse.** Pointing `user_data_dir` at a logged-in Chrome profile lets
   the collector see what the operator can see, and nothing more.
 * **Rendered text.** For surfaces with no usable XHR, the DOM after hydration is
@@ -27,7 +27,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -90,11 +90,70 @@ class PageResult:
         """Bodies of every captured response whose URL matches `pattern`."""
         return [c.body for c in self.captured if c.matches(pattern) and c.body is not None]
 
-    def first_json(self, pattern: str) -> Any | None:
-        for c in self.captured:
-            if c.matches(pattern) and c.body is not None:
-                return c.body
-        return None
+
+def _response_listener(
+    url: str, capture_patterns: Sequence[str], captured: list[CapturedResponse]
+) -> Callable[[Any], Coroutine[Any, Any, None]]:
+    """Build the response handler that fills `captured`.
+
+    Attached before navigation so the app's own bootstrap fetches are seen —
+    which is where the data actually lives. It swallows everything: a listener
+    that raises would kill the visit that is still loading.
+    """
+
+    async def on_response(response: Any) -> None:
+        try:
+            if capture_patterns and not any(re.search(p, response.url) for p in capture_patterns):
+                return
+            ctype = (response.headers or {}).get("content-type", "")
+            if "json" not in ctype and capture_patterns == ():
+                return
+            body: Any = None
+            if "json" in ctype:
+                with contextlib.suppress(Exception):
+                    body = await response.json()
+            if body is None:
+                with contextlib.suppress(Exception):
+                    body = await response.text()
+            captured.append(
+                CapturedResponse(
+                    url=response.url,
+                    status=response.status,
+                    body=body,
+                    method=response.request.method,
+                    resource_type=response.request.resource_type,
+                )
+            )
+        except Exception as exc:  # never let a listener kill the visit
+            log.debug("browser.capture_error", url=url, error=str(exc))
+
+    return on_response
+
+
+def _drain(captured: list[CapturedResponse]) -> list[Any]:
+    """Take every body captured so far, leaving the buffer empty.
+
+    Draining rather than reading is what makes a harvest incremental: each round
+    sees only what the last scroll produced, so the decision to keep scrolling is
+    made on new evidence instead of on the same bodies counted again. A reader
+    that never empties the buffer cannot tell a feed that is still paying out
+    from one that has stopped.
+    """
+    batch = [c.body for c in captured if c.body is not None]
+    captured.clear()
+    return batch
+
+
+def _route_blocker(blocked: set[str]) -> Callable[[Any], Coroutine[Any, Any, None]]:
+    """Build the route handler that aborts the blocked resource types."""
+
+    async def route_handler(route: Any) -> None:
+        if route.request.resource_type in blocked:
+            await route.abort()
+        else:
+            await route.continue_()
+
+    return route_handler
 
 
 class WebUseDriver:
@@ -236,74 +295,25 @@ class WebUseDriver:
             captured: list[CapturedResponse] = []
             console: list[str] = []
 
-            async def on_response(response: Any) -> None:
-                try:
-                    if capture_patterns and not any(
-                        re.search(p, response.url) for p in capture_patterns
-                    ):
-                        return
-                    ctype = (response.headers or {}).get("content-type", "")
-                    if "json" not in ctype and capture_patterns == ():
-                        return
-                    body: Any = None
-                    if "json" in ctype:
-                        with contextlib.suppress(Exception):
-                            body = await response.json()
-                    if body is None:
-                        with contextlib.suppress(Exception):
-                            body = await response.text()
-                    captured.append(
-                        CapturedResponse(
-                            url=response.url,
-                            status=response.status,
-                            body=body,
-                            method=response.request.method,
-                            resource_type=response.request.resource_type,
-                        )
-                    )
-                except Exception as exc:  # never let a listener kill the visit
-                    log.debug("browser.capture_error", url=url, error=str(exc))
-
+            on_response = _response_listener(url, capture_patterns, captured)
             page.on("response", lambda r: asyncio.create_task(on_response(r)))
             page.on("console", lambda m: console.append(f"{m.type}: {m.text}"[:500]))
 
             if self.settings.block_resources:
-                blocked = set(self.settings.block_resources)
-
-                async def route_handler(route: Any) -> None:
-                    if route.request.resource_type in blocked:
-                        await route.abort()
-                    else:
-                        await route.continue_()
-
-                await page.route("**/*", route_handler)
+                await page.route("**/*", _route_blocker(set(self.settings.block_resources)))
 
             try:
-                response = await page.goto(url, wait_until="domcontentloaded")
-                result.status = response.status if response else 0
-                result.final_url = page.url
-
-                if wait_selector:
-                    with contextlib.suppress(Exception):
-                        await page.wait_for_selector(wait_selector, timeout=self.settings.nav_timeout_ms)
-                if click_selector:
-                    with contextlib.suppress(Exception):
-                        await page.click(click_selector, timeout=5000)
-                if wait_ms:
-                    await page.wait_for_timeout(wait_ms)
-
-                for _ in range(scrolls):
-                    with contextlib.suppress(Exception):
-                        await page.mouse.wheel(0, 4000)
-                        await page.wait_for_timeout(scroll_pause_ms)
-
-                if extract_text:
-                    with contextlib.suppress(Exception):
-                        result.text = await page.inner_text("body")
-                if extract_html:
-                    with contextlib.suppress(Exception):
-                        result.html = await page.content()
-
+                await self._drive_page(
+                    page,
+                    result,
+                    wait_selector=wait_selector,
+                    click_selector=click_selector,
+                    wait_ms=wait_ms,
+                    scrolls=scrolls,
+                    scroll_pause_ms=scroll_pause_ms,
+                    extract_text=extract_text,
+                    extract_html=extract_html,
+                )
                 pacer.breaker.record_success()
             except Exception as exc:
                 result.error = str(exc)
@@ -319,28 +329,172 @@ class WebUseDriver:
 
         return result
 
-    async def capture_json(
+    async def _drive_page(
+        self,
+        page: Any,
+        result: PageResult,
+        *,
+        wait_selector: str | None,
+        click_selector: str | None,
+        wait_ms: int,
+        scrolls: int,
+        scroll_pause_ms: int,
+        extract_text: bool,
+        extract_html: bool,
+    ) -> None:
+        """Navigate and work the page. Navigation failure raises; every optional
+        step after it is suppressed, because a missing selector or a body that
+        will not serialise is not a reason to lose the responses already
+        captured."""
+        response = await page.goto(result.url, wait_until="domcontentloaded")
+        result.status = response.status if response else 0
+        result.final_url = page.url
+
+        if wait_selector:
+            with contextlib.suppress(Exception):
+                await page.wait_for_selector(wait_selector, timeout=self.settings.nav_timeout_ms)
+        if click_selector:
+            with contextlib.suppress(Exception):
+                await page.click(click_selector, timeout=5000)
+        if wait_ms:
+            await page.wait_for_timeout(wait_ms)
+
+        for _ in range(scrolls):
+            with contextlib.suppress(Exception):
+                await page.mouse.wheel(0, 4000)
+                await page.wait_for_timeout(scroll_pause_ms)
+
+        # Re-read the URL now that the page has actually run. The first read
+        # happens at `domcontentloaded` so that a page which dies mid-visit
+        # still records where it got to, but a great many redirects — every
+        # login wall on a single-page app among them — are performed by the
+        # app's own JavaScript *after* hydration. Reporting the pre-hydration
+        # URL as `final_url` made a collector that checks for a sign-in
+        # redirect miss it whenever the redirect lost the race with
+        # `domcontentloaded`, which it does intermittently: measured against
+        # Instagram, the same URL reported `/accounts/login/` on one visit and
+        # the original path on the next.
+        with contextlib.suppress(Exception):
+            result.final_url = page.url
+
+        if extract_text:
+            with contextlib.suppress(Exception):
+                result.text = await page.inner_text("body")
+        if extract_html:
+            with contextlib.suppress(Exception):
+                result.html = await page.content()
+
+    async def harvest_json(
         self,
         url: str,
         pattern: str,
         *,
+        on_batch: Callable[[list[Any]], bool] | None = None,
         surface: str = "browser",
-        wait_ms: int = 3000,
-        scrolls: int = 0,
-        **kwargs: Any,
+        wait_ms: int = 4000,
+        scroll_pause_ms: int = 1200,
+        max_scrolls: int = 40,
+        deadline_seconds: float = 180.0,
+        idle_scrolls: int = 2,
+        requests_per_minute: float = 30.0,
     ) -> list[Any]:
-        """Convenience: visit `url` and return every JSON body whose request URL
-        matched `pattern`. The workhorse for launchpad and analytics collectors."""
-        result = await self.visit(
-            url,
-            surface=surface,
-            capture_patterns=[pattern],
-            wait_ms=wait_ms,
-            scrolls=scrolls,
-            extract_text=False,
-            **kwargs,
-        )
-        return result.json_matching(pattern)
+        """Scroll an infinite feed, handing each round's JSON to `on_batch`.
+
+        `visit` answers "what did this page fetch on load"; this answers
+        "keep scrolling until I have enough". The difference matters for exactly
+        one reason: an infinite feed pays out a page of results per scroll, and
+        the caller is the only one that knows when it has enough of them.
+        `on_batch` returns False to stop.
+
+        Three independent stops, because each guards a different failure:
+        `on_batch` (we have what we came for), `deadline_seconds` (a feed that
+        keeps paying out forever must not own the sweep), and `idle_scrolls` (a
+        feed that has stopped paying out — exhausted, throttled, or behind a
+        login wall — must not be scrolled at for the rest of the budget). Only
+        the first is success; the other two are worth logging, and are.
+        """
+        await self.start()
+        pacer = Pacer.get(surface, requests_per_minute, self.settings.max_pages)
+        pacer.breaker.check()
+        await pacer.bucket.acquire()
+
+        captured: list[CapturedResponse] = []
+        bodies: list[Any] = []
+        on_response = _response_listener(url, [pattern], captured)
+
+        async with self._page_semaphore:
+            page = await self._context.new_page()
+            page.on("response", lambda r: asyncio.create_task(on_response(r)))
+            if self.settings.block_resources:
+                await page.route("**/*", _route_blocker(set(self.settings.block_resources)))
+            try:
+                await page.goto(url, wait_until="domcontentloaded")
+                if wait_ms:
+                    await page.wait_for_timeout(wait_ms)
+                await self._scroll_and_drain(
+                    page,
+                    captured,
+                    bodies,
+                    on_batch=on_batch,
+                    max_scrolls=max_scrolls,
+                    scroll_pause_ms=scroll_pause_ms,
+                    deadline_seconds=deadline_seconds,
+                    idle_scrolls=idle_scrolls,
+                )
+                pacer.breaker.record_success()
+            except Exception as exc:
+                pacer.breaker.record_failure()
+                log.warning("browser.harvest_failed", url=url, error=str(exc))
+            finally:
+                # Responses in flight during the last pause are still evidence.
+                await asyncio.sleep(0.2)
+                bodies.extend(_drain(captured))
+                with contextlib.suppress(Exception):
+                    await page.close()
+
+        log.debug("browser.harvest", url=url, bodies=len(bodies))
+        return bodies
+
+    async def _scroll_and_drain(
+        self,
+        page: Any,
+        captured: list[CapturedResponse],
+        bodies: list[Any],
+        *,
+        on_batch: Callable[[list[Any]], bool] | None,
+        max_scrolls: int,
+        scroll_pause_ms: int,
+        deadline_seconds: float,
+        idle_scrolls: int,
+    ) -> None:
+        """Drain, ask the caller whether to continue, scroll, repeat.
+
+        The first drain happens before the first scroll, so a budget too small to
+        scroll at all still returns what the page loaded by itself. Returning
+        empty because the clock was tight would be indistinguishable from a token
+        nobody is posting about, and those two must never look alike.
+        """
+        loop = asyncio.get_running_loop()
+        stop_at = loop.time() + max(0.0, deadline_seconds)
+        idle = 0
+
+        # Counts down to the last *scroll*, and the round after it still drains:
+        # `max_scrolls=0` means one capture and no scrolling, not one scroll.
+        for remaining in range(max(0, max_scrolls), -1, -1):
+            batch = _drain(captured)
+            bodies.extend(batch)
+            idle = 0 if batch else idle + 1
+            if on_batch is not None and not on_batch(batch):
+                return
+            if idle >= max(1, idle_scrolls):
+                log.debug("browser.harvest_idle", idle_rounds=idle)
+                return
+            if remaining == 0 or loop.time() >= stop_at:
+                log.debug("browser.harvest_exhausted", bodies=len(bodies), scrolls_left=remaining)
+                return
+            with contextlib.suppress(Exception):
+                await page.mouse.wheel(0, 4000)
+                await page.wait_for_timeout(scroll_pause_ms)
 
     async def evaluate(self, url: str, script: str, *, surface: str = "browser", wait_ms: int = 2000) -> Any:
         """Load a page and run JS in it. Used for reading state the DOM exposes

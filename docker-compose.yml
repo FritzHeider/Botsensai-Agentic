@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  botsensai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: botsensai-daemon
+    restart: unless-stopped
+    command: ["run", "--autolabel"]
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    env_file:
+      - .env
+    environment:
+      - BOTSENSAI_LOG_LEVEL=INFO
+      - BOTSENSAI_TRADING_MODE=paper
+      - BOTSENSAI_DB_PATH=/app/data/botsensai.db
+    ports:
+      - "8080:8080"

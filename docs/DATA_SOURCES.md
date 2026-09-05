@@ -117,8 +117,41 @@ proprietary labels for your core signal means your edge is on loan.
 
 - `wss://pumpportal.fun/api/data` — send `{"method":"subscribeNewToken"}` or
   `{"method":"subscribeMigration"}`. No auth for those two; an API key is
-  required for per-token and per-account trade streams. New-mint events carry
-  `signature`, `mint`, `traderPublicKey`, `txType`, `initialBuy`, `solAmount`.
+  required for per-token and per-account trade streams. Each subscription is
+  acknowledged with a `{"message": "..."}` frame before any data arrives.
+
+  Full create-event shape, captured live 2026-07-30 — the last eight fields are
+  not in pumpportal's own documentation:
+
+  ```json
+  {"signature": "4Lhz…", "mint": "97QU…pump", "traderPublicKey": "HpAR…",
+   "txType": "create", "initialBuy": 27534883.660147, "solAmount": 0.790123455,
+   "bondingCurveKey": "Cm7t…", "vTokensInBondingCurve": 1045465116.339853,
+   "vSolInBondingCurve": 30.790123454, "marketCapSol": 29.451124646,
+   "name": "Smooth Like Butter", "symbol": "SLB", "uri": "https://ipfs.io/…",
+   "is_mayhem_mode": false, "pool": "pump"}
+  ```
+
+  **There is no timestamp in the frame.** No `created_timestamp`, no
+  `blockTime`, nothing. A stream-discovered launch can therefore only record its
+  receipt time as `created_at`, which is an upper bound on the mint time;
+  `frontend-api-v3/coins` remains the only source of the authoritative
+  `created_timestamp`. `Database.upsert_launch` keeps the minimum of the two so
+  the approximation is corrected as soon as a sweep corroborates it, and
+  `Database.observation_latency()` reports corroborated rows separately from the
+  total so an uncorroborated zero is never averaged in as a measurement.
+
+  `solAmount` on a create event is the deployer buying their own token in the
+  mint transaction — this is the cheapest source of `dev_buy_sol` in the system,
+  and the REST listing does not carry it at all. `vTokensInBondingCurve` is a
+  *virtual reserve* and is not a supply figure; do not populate
+  `initial_supply` from it. Every number in the frame is denominated in SOL.
+
+  Measured value, 2026-07-30, over 57 mints taken off the socket and then
+  corroborated by one REST sweep: **median 1.31s from mint to first observation,
+  p90 1.73s**, against **88.6s median** for the same store's 887 poller-first
+  launches. All 57 were novel — the socket beat the poller every time.
+  Rate: roughly 30 create events per minute. Read by `botsensai stream`.
 - `wss://livechat.pump.fun/socket.io/?EIO=4&transport=websocket` — Socket.IO v4.
   **This is the reply/comment system**; the old REST `/replies/{mint}` is gone.
   Aggressive per-IP connection throttling was observed: a second connection
@@ -283,6 +316,49 @@ Two field-level traps, both verified:
   exactly what a purchased package produces. It is about as close to a direct
   bought-follower oracle as any public source offers, and it is far better
   evidence than inferring the same thing from an engagement ratio.
+- **A dead handle answers 200, like everything else on this stack.** MEASURED
+  2026-08-04: `@elonmusk` returns 365,918 bytes with 40 posts, `post_count`
+  106,633 and a 2009 join date; `@SPIDORKMEME`, published as the X link of a
+  real launch in the store, returns **2,227 bytes** — a valid page with
+  `__NEXT_DATA__` present, no user object and no posts. So a token publishing an
+  X link is not a token with an X account, and the parse must return `None`
+  rather than an empty account. Of the four newest launches in the store with
+  handle-shaped links, four resolved to nothing.
+- **`statuses_count` is the account's lifetime post total** and is the second
+  half of `identity_discontinuity`. The endpoint returns only the head of a
+  timeline (40 posts), so "gap since the oldest post we can see" is ~100% for
+  every account alive; what separates a wiped archive from an ordinary retrieval
+  limit is how much of `statuses_count` those 40 posts *account for*. 40 of
+  106,633 is a normal glimpse of a real archive; 40 of 45 is the whole life of a
+  five-year-old account.
+
+**Search is a third path, and it is scrolled rather than fetched.** X's own web
+app pays out one page of `SearchTimeline` GraphQL per scroll — roughly twenty
+posts — which is below the evidence floor of every metric the feed exists to
+serve (`engager_age_dispersion` wants 8 known creation dates,
+`reply_template_ratio` wants 12 replies). `WebUseDriver.harvest_json` therefore
+drains the captured responses *between* scrolls and lets the collector say when
+it has enough, with three independent stops:
+
+```
+posts     200 unique post ids          — the target; the only stop that is success
+time      180s authenticated / 25s anonymous
+idle      2 consecutive scrolls with no new GraphQL
+```
+
+MEASURED 2026-08-04, anonymous, headless: `$CHEEMS` search returned **0 posts in
+9.0s** — X serves a logged-out visitor a login wall, the scrolls after the first
+capture nothing, and the idle stop ends it two scrolls in. That measurement is
+why the anonymous ceiling is 25s and not the full three minutes: spending three
+minutes per token to rediscover the login wall would cost more than the whole
+surface is worth without a session. Depth on this path is only real with
+`x_session` configured (see `docs/X_SESSION.md`).
+
+Dedupe by post id is not optional here. X re-serves the head of the feed on
+nearly every scroll, so concatenating pages counts the same posts repeatedly —
+which inflates every count-based metric and concentrates the apparent author
+distribution onto whoever posted the re-served item, manufacturing the shill
+fingerprint we are trying to detect.
 
 Also verified: some accounts return `{"entries": []}` with HTTP 200. That is
 genuine absence for that handle, not an error, and is treated as such. The
@@ -318,8 +394,10 @@ GET https://a.4cdn.org/biz/thread/{no}.json   → full thread
 
 One documented rule: no more than one request per second, and use
 `If-Modified-Since`. Tickers surface here before they surface anywhere with a
-moderation team. Every image post carries a native **`md5`**, which makes
-exact cross-surface image identity free rather than requiring a perceptual hash.
+moderation team. Every image post carries a native **`md5`**, which makes exact
+cross-surface image identity free — but exact identity is a different question
+from visual identity, so it is stored under the `md5:` namespace and never
+compared against a perceptual hash. See *Posted media* below.
 
 ### Telegram — the web preview
 
@@ -339,19 +417,109 @@ will be banned for precisely this behaviour.
 Call channels front-run retail by minutes, so reading them at the moment they
 post is one of the few genuinely timing-sensitive edges available.
 
+### Posted media — the image endpoints, and what they actually serve
+
+`derivative_remix_depth` needs pixels, not URLs. Two hosts supply them, and both
+publish a small variant that a perceptual hash cannot tell from the original.
+
+```
+https://pbs.twimg.com/media/{id}?format=jpg&name=small   → ~688px, 14-40 KB
+https://pbs.twimg.com/media/{id}?format=jpg&name=orig    → up to 6590x4690 (!)
+https://i.4cdn.org/{board}/{tim}s.jpg                    → 250px thumbnail
+https://i.4cdn.org/{board}/{tim}{ext}                    → the original upload
+```
+
+Measured 2026-08-04:
+
+* **Every image `pbs.twimg.com` served was a progressive JPEG** (SOF2), across
+  every sample taken. A baseline-only decoder reads exactly none of them. This
+  is the single most important fact on this page for anyone touching image code.
+* `name=orig` returned a **6590x4690** image for one NASA post — 31 megapixels.
+  Fetching originals is not a bandwidth question, it is a decode-budget one.
+* The `small` and `orig` variants of the same X media are **not** scaled copies
+  of one another: their perceptual hashes land **4-6 bits apart**. Inside the
+  10-bit clustering threshold, but do not assume cross-variant identity.
+* 4chan thumbnails are **always JPEG** regardless of the original's extension,
+  including for `.png` and `.gif` uploads. 39 of 40 live catalog images hashed
+  in 2.7s; the one failure was a 404 on a deleted post.
+* Unrelated real /biz/ images sit **16-44 bits apart** (median 32), with **0 of
+  741 pairs** inside the clustering threshold — so the threshold does not
+  manufacture clusters out of unrelated imagery.
+
 ### One trap shared by 4chan and Telegram
 
 Both encode `$` as `&#036;`. Strip tags without decoding entities and the
 cashtag regex matches nothing at all — every mention-based metric silently reads
 zero on both surfaces while appearing to work.
 
-### TikTok, Instagram, YouTube
+### TikTok — measured 2026-08-04
 
-`https://www.tiktok.com/oembed?url=...` works unauthenticated and returns the
-full caption including hashtags. Everything richer needs either the Research API
-(application and research proposal required) or a signed web request. Instagram
-and YouTube are queued in `@fix_plan.md` phase 2. All go through the browser
-driver against public pages only.
+**One path works and it is the only one.**
+
+```
+https://www.tiktok.com/oembed?url=<video url>     → 200 JSON, full caption
+```
+
+20 consecutive calls returned 200 in **5.2 s (~230/min) with no throttling**, and
+a bogus video id returns a clean **400** rather than a hollow 200. `Settings`
+clamps `collectors.tiktok` to **60/min**, a fifth of what held; that is a margin
+on a burst test, not a limit to widen. The response carries `title` (the full
+caption including hashtags), `author_name`, `author_unique_id` and
+`thumbnail_url`. It carries **no timestamp** — see the snowflake note below.
+
+Everything token-scoped is shut to an anonymous visitor:
+
+| path | result |
+|---|---|
+| `/tag/{tag}` → `api/challenge/detail/` | **403**, so the page never requests an item list at all |
+| `/search?q=…` → `api/prefetch/explore/item_list/` | **403**; the page's own rehydration blob carries a `searchVideoForLoggedin` flag |
+| `/explore` → `api/explore/item_list/` | **one** 200 with 7 items per *fresh browser context*, then **50 consecutive 403s**; 0 payouts on a second visit in the same context |
+
+The 403s are identical under a real Chrome user-agent and under Playwright's
+own, so this is not user-agent sniffing and stealth settings do not change it.
+
+**TikTok video ids are snowflakes: `id >> 32` is unix seconds.** Verified —
+`6718335390845095173` decodes to 2019-07-27, matching that video's real age. A
+post's creation time therefore comes out of its URL with no request, which is
+what makes a propagation lag computable from a link alone. Ids below `2^32` are
+not snowflakes and must be refused rather than shifted into 1970.
+
+Because search is shut, the working route to TikTok evidence is *other people's
+posts*: `Pipeline._follow_offplatform_links` extracts `tiktok.com` links from the
+X, Telegram, 4chan and pump.fun-chat text already collected and resolves each
+through oembed, budgeted at 12 per sweep.
+
+### Instagram — measured 2026-08-04
+
+**Anonymous access is refused, in two disguises, and the second one is the
+dangerous one.**
+
+| URL | signed-out result |
+|---|---|
+| `/explore/tags/memecoin/` | redirects to `/accounts/login/`, 830 bytes of login form, **0** captured JSON |
+| `/explore/tags/wif/` | redirects to `/popular/wif/?utm_source=explore_tag` — **HTTP 200, 15 KB of readable prose about Wi-Fi**, the wireless standard, **0** posts |
+| `api/v1/tags/web_info/?tag_name=…` (with the public `x-ig-app-id`) | **HTTP 200, `content-type: text/html`, 605 KB** — the login shell, not JSON |
+
+Both redirect shapes were live in the same run. The `/popular/` landing is worse
+than the login wall precisely because it does not look like a failure: it is a
+200 carrying plausible content, and anything that ever falls back to rendered
+text would file an encyclopedia entry on wireless networking as social evidence
+for the token $WIF. `collectors.longtail.is_signed_out` knows all three shapes.
+
+One further trap, found by a live run rather than by reading: **`PageResult.final_url`
+used to be read at `domcontentloaded`**, before the app's own JavaScript had run.
+Instagram redirects after hydration, so whether the redirect was visible depended
+on a race — the same collector saw `/accounts/login/` on one visit and the
+original path on the next. `_drive_page` now re-reads the URL after the waits.
+
+Instagram becomes a real data path only with `browser.user_data_dir` pointed at a
+logged-in profile — the same opt-in `XSessionSettings` documents. Without one the
+collector degrades *without opening a page*, because ten seconds per token to
+rediscover a measured wall displaces collection that works.
+
+### YouTube
+
+Queued in `@fix_plan.md` phase 2. Browser driver, public pages only.
 
 ## On-chain
 
@@ -361,6 +529,22 @@ Helius, Triton or QuickNode. Yellowstone gRPC / Geyser (or Helius LaserStream)
 is the right answer for sub-slot streaming if latency becomes the binding
 constraint; `transaction.index` within a slot is the field that makes bundle
 contiguity and sniper ordering computable.
+
+**Measured 2026-08-04** against `api.mainnet-beta.solana.com`, resolving funding
+sources for 162 wallets: **234 calls in 241.9 s at 120 req/min (2/s) with no
+429**, i.e. one fifth of the published ceiling holds comfortably. That is the
+figure `Settings` clamps `collectors.solana_rpc` to; it is not a licence to
+widen it, because the same endpoint serves the sweep.
+
+Two calls answer a wallet: `getSignaturesForAddress` for the oldest signature,
+then `getTransaction`. **There is no cheap query for "oldest transaction" on a
+busy address** — `getSignaturesForAddress` pages newest-first, so a wallet with
+more than one 1000-signature page costs a call per page to walk. `onchain/funding.py`
+stops rather than paying that, and records the wallet as *unresolved*, never as
+unfunded. On the current corpus that is **101 of 175 holder wallets (58%)**: the
+resolvable population is skewed toward fresh wallets, which is the population
+these metrics care about, but it is a real coverage ceiling and a paid provider
+with an enhanced-history endpoint is what lifts it.
 
 Four correctness traps that silently corrupt holder analysis:
 
@@ -409,5 +593,5 @@ from one wallet last Tuesday; whether anyone unconnected to the team has made a
 single original meme about it; or how much of the position you are contemplating
 could actually be sold.
 
-Those are the questions the 32 metrics answer, and they are answered by
+Those are the questions the 34 metrics answer, and they are answered by
 recombining these feeds rather than by finding a feed that reports them.

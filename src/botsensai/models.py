@@ -300,6 +300,20 @@ class SecurityReport(Base):
 class SocialAccount(Base):
     platform: Platform
     handle: str
+    token_key: str | None = Field(
+        default=None,
+        description="Which token this account was collected for. Same reachability "
+        "rule as SocialPost.token_key: accounts_as_of filters on this column, so an "
+        "untagged account is stored complete and invisible to every metric.",
+    )
+    role: str = Field(
+        default="engager",
+        description="Why this account was collected. 'promoter' is the token's own "
+        "named account, taken from the launch metadata; 'engager' is somebody who "
+        "engaged with a post about it. The two answer different questions and must "
+        "not be pooled — identity_discontinuity asks about the promoter's history, "
+        "and the largest engager fleet is not it.",
+    )
     account_id: str | None = None
     created_at: datetime | None = None
     followers: int | None = None
@@ -317,6 +331,17 @@ class SocialAccount(Base):
     fast_followers: int | None = None
     normal_followers: int | None = None
 
+    # What the profile timeline actually returned when we read it, recorded
+    # before any topic filtering. `identity_discontinuity` compares this window
+    # against `post_count` over the account's whole life, and it has to be the
+    # unfiltered window: dropping the account's off-topic posts would shorten
+    # the span and move the oldest stamp forward, which is the same shape as a
+    # wiped archive. The distinction is only available at collection time, so it
+    # is recorded here rather than recomputed from stored posts.
+    timeline_posts: int | None = None
+    timeline_oldest_at: datetime | None = None
+    timeline_newest_at: datetime | None = None
+
     @property
     def fast_follower_share(self) -> float | None:
         if self.fast_followers is None or not self.followers:
@@ -333,6 +358,13 @@ class SocialPost(Base):
 
     platform: Platform
     post_id: str
+    token_key: str | None = Field(
+        default=None,
+        description="Which token this post was collected for. Without it a post is "
+        "unreachable: metrics read posts via Store.posts_as_of(token_key, ...), which "
+        "filters on this column, so an untagged post is invisible to every social "
+        "metric no matter how complete its contents are.",
+    )
     author: str
     author_id: str | None = None
     as_of: datetime = Field(description="When the post was created")
@@ -368,6 +400,38 @@ class SocialPost(Base):
         return sum(v or 0 for v in (self.likes, self.replies, self.reposts, self.quotes))
 
 
+class ChannelRead(Base):
+    """One attempt to read one public channel, and what came back.
+
+    `collector_runs` is per *surface*, so it can say the Telegram collector ran
+    and cannot say that one channel on the watchlist has returned nothing for a
+    week. That is the gap this record closes: a handle several launches published
+    is discovered, seeded, and then spends a fetch every sweep forever even
+    though `t.me/s/<handle>` holds no messages at all — measured 2026-08-04,
+    `t.me/s/pisklauren` answers HTTP 200 with an 11 KB "View @pisklauren" page
+    and zero messages, and so does a handle nobody has ever registered.
+
+    `fetched` is the whole discrimination. Both shapes above are a page that
+    *arrived*, which is evidence about the channel; a timeout or an open circuit
+    is evidence about us, and evicting a channel for it would empty the whole
+    watchlist on one bad night.
+
+    Only `observed_at` is carried, and deliberately: this records when we looked,
+    which is the only time it has. There is no separate event time to bound a
+    point-in-time read on, exactly as with `collector_runs`.
+    """
+
+    channel: str = Field(description="Lowercased handle, no @ and no t.me/ prefix")
+    observed_at: datetime = Field(default_factory=utcnow)
+    messages: int = Field(default=0, description="Messages the page held, not messages kept")
+    fetched: bool = Field(
+        default=True, description="The page arrived; False means we never saw one"
+    )
+    error: str | None = None
+
+    _v_read = field_validator("observed_at")(_ensure_utc)
+
+
 class SocialBundle(Base):
     """Everything social collected for one token in one sweep."""
 
@@ -381,9 +445,6 @@ class SocialBundle(Base):
     )
 
     _v_bundle = field_validator("as_of", "observed_at")(_ensure_utc)
-
-    def by_platform(self, platform: Platform) -> list[SocialPost]:
-        return [p for p in self.posts if p.platform == platform]
 
 
 # --------------------------------------------------------------------------- #
@@ -582,14 +643,6 @@ class MemoryEntry(Base):
 
     _v_mem = field_validator("created_at", "valid_from")(_ensure_utc)
 
-    def active_at(self, t: datetime) -> bool:
-        t = _ensure_utc(t)
-        if t < self.valid_from:
-            return False
-        if self.valid_until is not None and t >= _ensure_utc(self.valid_until):
-            return False
-        return True
-
 
 # --------------------------------------------------------------------------- #
 # Content
@@ -629,6 +682,7 @@ def content_hash(obj: Any) -> str:
 __all__ = [
     "Base",
     "Chain",
+    "ChannelRead",
     "Confidence",
     "ContentPiece",
     "CurveStage",

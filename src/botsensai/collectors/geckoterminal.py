@@ -85,6 +85,28 @@ def _pool_token_address(pool: dict[str, Any], side: str = "base") -> str | None:
     return address or None
 
 
+#: Matched as substrings against the pool's `dex` relationship id, first hit
+#: wins. GeckoTerminal spells the same venue several ways ("pumpswap",
+#: "pump-fun-amm"), so a fragment match is more durable than an exact table.
+_LAUNCHPAD_BY_DEX_FRAGMENT: tuple[tuple[str, Launchpad], ...] = (
+    ("pump", Launchpad.PUMPSWAP),
+    ("moon", Launchpad.MOONSHOT),
+    ("meteora", Launchpad.METEORA_DBC),
+    ("launchlab", Launchpad.RAYDIUM_LAUNCHLAB),
+)
+
+
+def _launchpad_from_pool(pool: dict[str, Any]) -> Launchpad:
+    """Infer the launchpad from the pool's dex relationship."""
+    dex_block = ((pool.get("relationships") or {}).get("dex") or {}).get("data") or {}
+    raw = dex_block.get("id")
+    dex_id = raw.lower() if isinstance(raw, str) else ""
+    for fragment, launchpad in _LAUNCHPAD_BY_DEX_FRAGMENT:
+        if fragment in dex_id:
+            return launchpad
+    return Launchpad.UNKNOWN
+
+
 class GeckoTerminalCollector(Collector):
     """New-pool discovery and token-level safety screening."""
 
@@ -123,23 +145,9 @@ class GeckoTerminalCollector(Collector):
         created = _iso_to_dt(attributes.get("pool_created_at"))
         launch: Launch | None = None
         if created is not None:
-            dex_id = ""
-            relationships = pool.get("relationships") or {}
-            dex_block = (relationships.get("dex") or {}).get("data") or {}
-            if isinstance(dex_block.get("id"), str):
-                dex_id = dex_block["id"].lower()
-            launchpad = Launchpad.UNKNOWN
-            if "pump" in dex_id:
-                launchpad = Launchpad.PUMPSWAP
-            elif "moon" in dex_id:
-                launchpad = Launchpad.MOONSHOT
-            elif "meteora" in dex_id:
-                launchpad = Launchpad.METEORA_DBC
-            elif "launchlab" in dex_id:
-                launchpad = Launchpad.RAYDIUM_LAUNCHLAB
             launch = Launch(
                 token=token,
-                launchpad=launchpad,
+                launchpad=_launchpad_from_pool(pool),
                 created_at=created,
                 observed_at=utcnow(),
                 source=self.name,
@@ -294,75 +302,104 @@ class GeckoTerminalCollector(Collector):
             return result
 
         for start in range(0, len(solana), 30):
-            batch = solana[start : start + 30]
-            addresses = ",".join(t.mint for t in batch)
-            try:
-                payload = await self.client.get_json(
-                    f"{BASE}/networks/{NETWORK}/tokens/multi/{addresses}", cache_ttl=15.0
-                )
-                for entry in (payload or {}).get("data", []) or []:
-                    if not isinstance(entry, dict):
-                        continue
-                    attributes = entry.get("attributes") or {}
-                    address = attributes.get("address")
-                    if not address:
-                        continue
-                    token = TokenRef(
-                        chain=Chain.SOLANA,
-                        mint=address,
-                        symbol=attributes.get("symbol"),
-                        name=attributes.get("name"),
-                    )
-                    result.snapshots.append(
-                        MarketSnapshot(
-                            token=token,
-                            as_of=utcnow(),
-                            observed_at=utcnow(),
-                            price_usd=_f(attributes.get("price_usd")),
-                            fdv_usd=_f(attributes.get("fdv_usd")),
-                            market_cap_usd=_f(attributes.get("market_cap_usd")),
-                            liquidity_usd=_f(attributes.get("total_reserve_in_usd")),
-                            volume_24h_usd=_f((attributes.get("volume_usd") or {}).get("h24")),
-                            source=f"{self.name}:tokens-multi",
-                        )
-                    )
-            except Exception as exc:
-                result.degraded = True
-                log.debug("geckoterminal.tokens_multi_failed", error=str(exc))
+            await self._enrich_batch(result, solana[start : start + 30])
 
         for token in solana[:8]:
-            try:
-                info = await self.client.get_json(
-                    f"{BASE}/networks/{NETWORK}/tokens/{token.mint}/info", cache_ttl=300.0
-                )
-                if not isinstance(info, dict):
-                    continue
-                security = self._info_to_security(token, info)
-                if security is not None:
-                    result.security.append(security)
-                attributes = (info.get("data") or {}).get("attributes") or {}
-                gt_score = _f(attributes.get("gt_score"))
-                if gt_score is not None:
-                    result.raw.setdefault("gt_scores", {})[token.key] = {
-                        "gt_score": gt_score,
-                        "details": attributes.get("gt_score_details"),
-                        "is_honeypot": attributes.get("is_honeypot"),
-                    }
-            except Exception as exc:
-                log.debug("geckoterminal.token_info_failed", token=token.key, error=str(exc))
+            await self._enrich_token_info(result, token)
 
         return result
+
+    async def _enrich_batch(self, result: CollectionResult, batch: Sequence[TokenRef]) -> None:
+        """One tokens/multi call for up to thirty tokens."""
+        addresses = ",".join(t.mint for t in batch)
+        try:
+            payload = await self.client.get_json(
+                f"{BASE}/networks/{NETWORK}/tokens/multi/{addresses}", cache_ttl=15.0
+            )
+            for entry in (payload or {}).get("data", []) or []:
+                snapshot = self._entry_to_snapshot(entry)
+                if snapshot is not None:
+                    result.snapshots.append(snapshot)
+        except Exception as exc:
+            result.degraded = True
+            log.debug("geckoterminal.tokens_multi_failed", error=str(exc))
+
+    def _entry_to_snapshot(self, entry: Any) -> MarketSnapshot | None:
+        """One tokens/multi entry as a snapshot, or None if it names no token."""
+        if not isinstance(entry, dict):
+            return None
+        attributes = entry.get("attributes") or {}
+        address = attributes.get("address")
+        if not address:
+            return None
+        token = TokenRef(
+            chain=Chain.SOLANA,
+            mint=address,
+            symbol=attributes.get("symbol"),
+            name=attributes.get("name"),
+        )
+        return MarketSnapshot(
+            token=token,
+            as_of=utcnow(),
+            observed_at=utcnow(),
+            price_usd=_f(attributes.get("price_usd")),
+            fdv_usd=_f(attributes.get("fdv_usd")),
+            market_cap_usd=_f(attributes.get("market_cap_usd")),
+            liquidity_usd=_f(attributes.get("total_reserve_in_usd")),
+            volume_24h_usd=_f((attributes.get("volume_usd") or {}).get("h24")),
+            source=f"{self.name}:tokens-multi",
+        )
+
+    async def _enrich_token_info(self, result: CollectionResult, token: TokenRef) -> None:
+        """Safety screening for one token: one request against a 30/min budget."""
+        try:
+            info = await self.client.get_json(
+                f"{BASE}/networks/{NETWORK}/tokens/{token.mint}/info", cache_ttl=300.0
+            )
+            if not isinstance(info, dict):
+                return
+            security = self._info_to_security(token, info)
+            if security is not None:
+                result.security.append(security)
+            attributes = (info.get("data") or {}).get("attributes") or {}
+            gt_score = _f(attributes.get("gt_score"))
+            if gt_score is not None:
+                result.raw.setdefault("gt_scores", {})[token.key] = {
+                    "gt_score": gt_score,
+                    "details": attributes.get("gt_score_details"),
+                    "is_honeypot": attributes.get("is_honeypot"),
+                }
+        except Exception as exc:
+            log.debug("geckoterminal.token_info_failed", token=token.key, error=str(exc))
 
     # -- extras ------------------------------------------------------------- #
 
     async def ohlcv(
-        self, pool_address: str, timeframe: str = "minute", aggregate: int = 1, limit: int = 100
+        self,
+        pool_address: str,
+        timeframe: str = "minute",
+        aggregate: int = 1,
+        limit: int = 100,
+        before_timestamp: int | None = None,
     ) -> list[dict[str, Any]]:
-        """OHLCV candles for one pool. Used to build outcome labels after the fact."""
+        """OHLCV candles for one pool. Used to build outcome labels after the fact.
+
+        Candles are USD-denominated. `currency=token` is available and returns a
+        figure that does not reconcile with spot SOL (measured 2026-07-31: 73x
+        the USD price against a ~150 USD/SOL market), so it is not used.
+
+        `before_timestamp` walks backwards from a chosen instant. Without it the
+        API returns the newest hundred candles, which for a token that died on
+        its first day is a hundred flat minutes at the wrong end of its life —
+        the labeller needs the *first* hour, not the last.
+        """
+        params: dict[str, Any] = {"aggregate": aggregate, "limit": limit}
+        if before_timestamp is not None:
+            params["before_timestamp"] = int(before_timestamp)
         try:
             payload = await self.client.get_json(
                 f"{BASE}/networks/{NETWORK}/pools/{pool_address}/ohlcv/{timeframe}",
-                params={"aggregate": aggregate, "limit": limit},
+                params=params,
                 cache_ttl=60.0,
             )
         except Exception as exc:

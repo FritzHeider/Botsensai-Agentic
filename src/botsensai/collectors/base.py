@@ -16,7 +16,6 @@ from __future__ import annotations
 import abc
 import asyncio
 import time
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -279,8 +278,28 @@ class CollectorRegistry:
         combined.finished_at = utcnow()
         return combined
 
-    def new_run_id(self) -> str:
-        return uuid.uuid4().hex[:12]
+
+def tag_posts(posts: Sequence[SocialPost], token_key: str) -> list[SocialPost]:
+    """Stamp the token a batch of posts was collected for.
+
+    Every social collector must call this before adding posts to a result.
+    Metrics read posts through `Store.posts_as_of(token_key, ...)`, which filters
+    on that column, so an untagged post is stored *unreachable* — present in the
+    table, complete in its contents, and invisible to every metric that needs
+    it. That is not a hypothetical: 494 posts accumulated with `token_key` NULL
+    and the entire social family read MISSING for the life of the project.
+
+    Only the collector knows the association, because it is the only place that
+    holds the token and the post at the same time. Nothing downstream can
+    recover it.
+
+    Already-tagged posts are left alone, so a collector that tags precisely (one
+    token per matched ticker) is not overwritten by a coarser caller.
+    """
+    for post in posts:
+        if not post.token_key:
+            post.token_key = token_key
+    return list(posts)
 
 
-__all__ = ["CollectionResult", "Collector", "CollectorRegistry"]
+__all__ = ["CollectionResult", "Collector", "CollectorRegistry", "tag_posts"]

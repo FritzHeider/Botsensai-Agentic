@@ -99,18 +99,6 @@ class CurveState:
         new_x = k / new_y
         return max(0.0, x - new_x)
 
-    def apply_buy(self, sol_in: float) -> float:
-        tokens = self.tokens_out_for_sol_in(sol_in)
-        self.real_sol += sol_in
-        self.real_tokens += tokens
-        return tokens
-
-    def apply_sell(self, tokens_in: float) -> float:
-        sol = self.sol_out_for_tokens_in(tokens_in)
-        self.real_sol -= sol
-        self.real_tokens -= tokens_in
-        return sol
-
     @classmethod
     def from_snapshot(
         cls, snapshot: MarketSnapshot, native_price_usd: float = 150.0
@@ -176,10 +164,6 @@ class FillSimulator:
     def __init__(self, settings: ExecutionSettings | None = None, seed: int = 1337) -> None:
         self.settings = settings or ExecutionSettings()
         self.rng = random.Random(seed)
-
-    def reset(self, seed: int | None = None) -> None:
-        """Reset the RNG so a backtest is bit-for-bit reproducible."""
-        self.rng = random.Random(self.settings.__dict__.get("seed", seed or 1337))
 
     # -- components --------------------------------------------------------- #
 

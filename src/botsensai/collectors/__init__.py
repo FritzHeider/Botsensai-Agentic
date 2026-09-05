@@ -4,6 +4,7 @@ from botsensai.collectors.base import CollectionResult, Collector, CollectorRegi
 from botsensai.collectors.browser import WebUseDriver, get_driver, shutdown_driver
 from botsensai.collectors.dexscreener import DexscreenerCollector
 from botsensai.collectors.geckoterminal import GeckoTerminalCollector
+from botsensai.collectors.longtail import InstagramCollector, TikTokCollector
 from botsensai.collectors.pumpfun import PumpFunCollector
 from botsensai.collectors.social import (
     FourChanBizCollector,
@@ -24,6 +25,8 @@ ALL_COLLECTORS = (
     FourChanBizCollector,
     TelegramChannelCollector,
     PumpFunChatCollector,
+    InstagramCollector,
+    TikTokCollector,
 )
 
 __all__ = [
@@ -35,10 +38,12 @@ __all__ = [
     "DexscreenerCollector",
     "FourChanBizCollector",
     "GeckoTerminalCollector",
+    "InstagramCollector",
     "PumpFunChatCollector",
     "PumpFunCollector",
     "RedditCollector",
     "TelegramChannelCollector",
+    "TikTokCollector",
     "WebUseDriver",
     "XCollector",
     "get_driver",

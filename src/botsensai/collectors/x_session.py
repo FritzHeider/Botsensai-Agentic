@@ -47,9 +47,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from botsensai.collectors.base import CollectionResult
+from botsensai.collectors.base import CollectionResult, tag_posts
 from botsensai.collectors.browser import BrowserUnavailableError, PageResult, WebUseDriver
-from botsensai.collectors.social import XCollector, _int, _iso
+from botsensai.collectors.social import (
+    X_SEARCH_DEADLINE_SECONDS,
+    XCollector,
+    _int,
+    _iso,
+)
 from botsensai.config import BrowserSettings, Settings
 from botsensai.models import Platform, SocialAccount, SocialPost, TokenRef
 from botsensai.util.logging import get_logger
@@ -68,6 +73,13 @@ OP_USER = r"UserByScreenName"
 OP_VIEWER = r"Viewer"
 
 CAPTURE_ALL = rf"({OP_SEARCH}|{OP_TWEET_DETAIL}|{OP_FAVORITERS}|{OP_RETWEETERS}|{OP_USER})"
+
+#: A thread harvest gets its own, much smaller ceiling than a search. One post's
+#: replies are a bounded set — `reply_template_ratio` speaks at twelve of them —
+#: and the search leg has already spent most of the token's budget by the time
+#: this runs, so letting a thread inherit the three-minute ceiling would double
+#: the worst case that `_enrich_budget_seconds` has to cover.
+CONVERSATION_DEADLINE_SECONDS = 60.0
 
 #: Conservative default. GraphQL limits are per-account, per-endpoint, in
 #: 15-minute windows; historically a few hundred requests per window. Twenty a
@@ -136,6 +148,9 @@ class AuthenticatedXCollector(XCollector):
 
     name = "x"
     description = "X search, reply text and engager metadata via a logged-in browser profile"
+    #: A session is the only case where scrolling search keeps paying out, so it
+    #: gets the full ceiling instead of the anonymous path's login-wall budget.
+    search_deadline_seconds = X_SEARCH_DEADLINE_SECONDS
 
     def __init__(self, settings: Settings | None = None) -> None:
         super().__init__(settings)
@@ -146,6 +161,42 @@ class AuthenticatedXCollector(XCollector):
         # collector runs its own driver rather than sharing the global one.
         self.rpm = float(self.session_settings.requests_per_minute or AUTHENTICATED_RPM)
         self.config.requests_per_minute = max(self.config.requests_per_minute, int(self.rpm))
+        # The base class kills an op at timeout_seconds * (max_retries + 2). The
+        # default 20s allows 100s, and a session enrich cannot finish in that: a
+        # single headed search waits 5s then scrolls four times at 1400ms before
+        # page load is even counted. Measured on a live sweep: enrich was killed
+        # at 100s having stored nothing, while the session verified healthy and
+        # no collector error was logged — the same silent-absence failure as the
+        # walker depth bug, one layer up.
+        self.config.timeout_seconds = max(
+            self.config.timeout_seconds, self._enrich_budget_seconds()
+        )
+
+    def _enrich_budget_seconds(self) -> float:
+        """Per-attempt seconds the base class must allow for a full enrich pass.
+
+        Sized from the work actually configured rather than a round number, so
+        raising `max_tokens_per_sweep` cannot silently reintroduce the timeout.
+
+        Because enrich surfaces run concurrently under `asyncio.gather`, this
+        budget sets the floor on total sweep duration whenever session
+        collection is active — `max_tokens_per_sweep` is the latency dial.
+        """
+        tokens = max(1, int(self.session_settings.max_tokens_per_sweep))
+        # Worst case per token: search, then the thread, then two engager lists.
+        loads_per_token = 4
+        # The search leg is now bounded by its own deadline rather than by a
+        # fixed scroll count, so the budget has to be read from that deadline.
+        # Leaving the old flat 45s here would reintroduce the timeout it was
+        # written to prevent the moment the harvest used its full ceiling: the
+        # base class would kill enrich mid-sweep with nothing stored and nothing
+        # logged, which is the silent-absence failure again, one layer up.
+        _, search_seconds = self.search_budget()
+        seconds_per_token = search_seconds + CONVERSATION_DEADLINE_SECONDS + 2 * 20.0
+        pacing = (tokens * loads_per_token) / max(self.rpm, 1.0) * 60.0
+        verify = 15.0
+        total = verify + tokens * seconds_per_token + pacing
+        return total / max(int(self.config.max_retries) + 2, 1)
 
     # -- profile and driver ------------------------------------------------- #
 
@@ -315,40 +366,30 @@ class AuthenticatedXCollector(XCollector):
 
     # -- collection --------------------------------------------------------- #
 
-    async def search(self, query: str, limit: int = 120, scrolls: int = 4) -> list[SocialPost]:
-        """Live search for a ticker, with reply text where the page loads it."""
+    async def search(self, query: str, limit: int | None = None) -> list[SocialPost]:
+        """Live search for a ticker, with reply text where the page loads it.
+
+        The depth comes from `XCollector.harvest_search`, which is shared with
+        the anonymous path so that both dedupe and both stop on the same three
+        conditions. What differs here is only the budget: a session is the one
+        case where scrolling keeps paying out, so it is given the full ceiling.
+        """
         status = await self.verify_session()
         if not status.authenticated:
             return []
 
         driver = await self.driver()
         try:
-            page = await driver.visit(
-                f"https://x.com/search?q={query}&f=live",
-                surface=self.name,
-                capture_patterns=[CAPTURE_ALL],
-                wait_ms=5000,
-                scrolls=scrolls,
-                scroll_pause_ms=1400,
-                extract_text=False,
+            return await self.harvest_search(
+                driver,
+                query,
+                pattern=CAPTURE_ALL,
+                limit=limit,
                 requests_per_minute=self.rpm,
             )
         except Exception as exc:
             log.warning("x.authenticated_search_failed", query=query, error=str(exc))
             return []
-
-        seen: set[str] = set()
-        posts: list[SocialPost] = []
-        for body in page.json_matching(CAPTURE_ALL):
-            for node in self._walk_for_tweets(body):
-                post = self._parse_graphql_tweet(node)
-                if post is None or post.post_id in seen:
-                    continue
-                seen.add(post.post_id)
-                posts.append(post)
-                if len(posts) >= limit:
-                    return posts
-        return posts
 
     async def conversation(self, post_id: str, author: str = "i") -> list[SocialPost]:
         """Reply text for one post — the thing no free path provides.
@@ -363,36 +404,27 @@ class AuthenticatedXCollector(XCollector):
 
         driver = await self.driver()
         try:
-            page = await driver.visit(
+            harvested = await self.harvest_posts(
+                driver,
                 f"https://x.com/{author}/status/{post_id}",
-                surface=self.name,
-                capture_patterns=[OP_TWEET_DETAIL],
-                wait_ms=4500,
-                scrolls=3,
-                scroll_pause_ms=1200,
-                extract_text=False,
+                OP_TWEET_DETAIL,
+                deadline_seconds=CONVERSATION_DEADLINE_SECONDS,
                 requests_per_minute=self.rpm,
+                wait_ms=4500,
             )
         except Exception as exc:
             log.debug("x.conversation_failed", post_id=post_id, error=str(exc))
             return []
 
         replies: list[SocialPost] = []
-        seen: set[str] = set()
-        for body in page.json_matching(OP_TWEET_DETAIL):
-            for node in self._walk_for_tweets(body):
-                post = self._parse_graphql_tweet(node)
-                if post is None or post.post_id in seen:
-                    continue
-                seen.add(post.post_id)
-                if post.post_id == post_id:
-                    replies.append(post)
-                    continue
-                # Mark it as a reply even when the GraphQL node omits the
-                # in_reply_to field, which it does for nested replies.
-                if post.parent_id is None:
-                    post = post.model_copy(update={"parent_id": post_id})
-                replies.append(post)
+        for post in harvested:
+            # Mark it as a reply even when the GraphQL node omits the
+            # in_reply_to field, which it does for nested replies. The root post
+            # is left alone: it is not a reply to itself, and `ctx.replies`
+            # selects on exactly this field.
+            if post.post_id != post_id and post.parent_id is None:
+                post = post.model_copy(update={"parent_id": post_id})
+            replies.append(post)
         return replies
 
     async def engagers(self, post_id: str, author: str = "i") -> list[SocialAccount]:
@@ -432,23 +464,30 @@ class AuthenticatedXCollector(XCollector):
         return list(accounts.values())
 
     def _parse_graphql_user(self, node: dict[str, Any]) -> SocialAccount | None:
-        legacy = node.get("legacy") if isinstance(node.get("legacy"), dict) else node
-        handle = legacy.get("screen_name")
+        # Same reshape as the tweet author path: X split the user `legacy` blob
+        # into core / relationship_counts / tweet_counts / verification, so
+        # reading `legacy` alone yields no handle and drops the account silently.
+        # `_user_fields` reads both shapes; see its docstring for why the old
+        # behaviour was worse than a plain miss.
+        raw_legacy = node.get("legacy")
+        legacy = raw_legacy if isinstance(raw_legacy, dict) else node
+        fields = self._user_fields(node)
+        handle = fields["screen_name"]
         if not handle:
             return None
         return SocialAccount(
             platform=Platform.X,
             handle=str(handle),
             account_id=str(node.get("rest_id") or legacy.get("id_str") or "") or None,
-            created_at=_iso(legacy.get("created_at")),
-            followers=_int(legacy.get("followers_count")),
-            following=_int(legacy.get("friends_count")),
-            post_count=_int(legacy.get("statuses_count")),
-            verified=bool(legacy.get("verified") or node.get("is_blue_verified")),
+            created_at=_iso(fields["created_at"]),
+            followers=_int(fields["followers"]),
+            following=_int(fields["following"]),
+            post_count=_int(fields["post_count"]),
+            verified=bool(fields["verified"] or node.get("is_blue_verified")),
             verified_type=node.get("verified_type") or legacy.get("verified_type"),
-            bio=legacy.get("description"),
-            fast_followers=_int(legacy.get("fast_followers_count")),
-            normal_followers=_int(legacy.get("normal_followers_count")),
+            bio=fields["description"],
+            fast_followers=_int(fields["fast_followers"]),
+            normal_followers=_int(fields["normal_followers"]),
         )
 
     # -- enrichment --------------------------------------------------------- #
@@ -472,6 +511,7 @@ class AuthenticatedXCollector(XCollector):
 
         result = self._empty()
         result.raw["session"] = status.explain()
+        handles: dict[str, str] = self.config.extra.get("handles", {})
 
         for token in list(tokens)[: self.session_settings.max_tokens_per_sweep]:
             symbol = (token.symbol or "").strip()
@@ -479,22 +519,40 @@ class AuthenticatedXCollector(XCollector):
                 continue
             query = f"${symbol}" if symbol.isalnum() else symbol
 
+            # The promoter profile still comes from the public syndication host
+            # even here, and that is not a fallback. GraphQL's user object has
+            # no `fast_followers_count` at all (see `_user_fields`), so the
+            # authenticated path is the *weaker* source for the one field this
+            # collector exists to get. It is a different host with its own
+            # limit — the client paces it at under one request per minute — so
+            # it displaces nothing in the session budget.
+            # Its posts are deliberately dropped: `search` below is a strictly
+            # richer source for this token on this path, and the profile is
+            # being read for the profile. The account object it appends to
+            # `result` is the whole point of the call.
+            handle = handles.get(token.key)
+            if handle:
+                await self._timeline_leg(handle, token, result)
+
             posts = await self.search(query)
             if not posts:
                 result.degraded = True
                 continue
-            result.posts.extend(posts)
+            result.posts.extend(tag_posts(posts, token.key))
 
             # Deepen only the single post most likely to carry the conversation.
             top = max(posts, key=lambda p: (p.replies or 0, p.engagement))
             if (top.replies or 0) >= self.session_settings.reply_threshold:
                 replies = await self.conversation(top.post_id, top.author)
-                result.posts.extend(replies)
+                result.posts.extend(tag_posts(replies, token.key))
                 result.raw.setdefault("reply_text_available", []).append(token.key)
 
             if top.engagement >= self.session_settings.engager_threshold:
                 accounts = await self.engagers(top.post_id, top.author)
-                result.accounts.extend(accounts)
+                result.accounts.extend(
+                    a.model_copy(update={"token_key": token.key, "role": "engager"})
+                    for a in accounts
+                )
                 fleet = [a for a in accounts if a.fast_follower_share is not None]
                 if fleet:
                     result.raw.setdefault("fast_follower_share", {})[token.key] = max(
@@ -532,12 +590,27 @@ def _walk_for_users(payload: Any, depth: int = 0) -> list[dict[str, Any]]:
     """
     found: list[dict[str, Any]] = []
 
+    # Same depth trap as _walk_for_tweets, same fix. The Favoriters/Retweeters
+    # envelope wraps users in the same instructions/entries/itemContent chain
+    # that buried tweets at depth 12-14, so a cap of 10 cannot reach them
+    # either. Not measured live (it needs a post with enough engagers to load
+    # those lists), so this is the tweet-side measurement applied to an
+    # identically-shaped envelope rather than an independently verified number.
     def walk(node: Any, level: int = 0) -> None:
-        if level > 10 or len(found) > 600:
+        if level > 16 or len(found) > 600:
             return
         if isinstance(node, dict):
             legacy = node.get("legacy")
-            if isinstance(legacy, dict) and "screen_name" in legacy or "screen_name" in node and "created_at" in node:
+            core = node.get("core")
+            looks_like_user = (
+                # Current shape: handle and creation date live under `core`.
+                (isinstance(core, dict) and "screen_name" in core)
+                # Older shape, still served by some endpoints.
+                or (isinstance(legacy, dict) and "screen_name" in legacy)
+                # Flattened payloads.
+                or ("screen_name" in node and "created_at" in node)
+            )
+            if looks_like_user:
                 found.append(node)
             for value in node.values():
                 walk(value, level + 1)
