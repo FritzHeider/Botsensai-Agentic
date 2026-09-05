@@ -60,3 +60,31 @@ async def test_broadcaster_event_dispatch() -> None:
     await broadcaster.broadcast("test_event", {"hello": "world"})
     # Asserts that broadcasting with zero connections executes cleanly without exception
     assert True
+
+
+def test_api_token_autopsy_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/tokens/TestMint11111111111111111111111111111111111/autopsy")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "token_key" in data
+    assert "events" in data
+    assert isinstance(data["events"], list)
+
+
+def test_api_token_ask_endpoint(client: TestClient) -> None:
+    resp = client.post(
+        "/api/tokens/TestMint11111111111111111111111111111111111/ask",
+        json={"question": "What are the primary risks?"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "answer" in data
+    assert "query" in data
+    assert "citations" in data
+
+
+def test_api_snapshot_has_family_scores_and_candidates_json(client: TestClient) -> None:
+    resp = client.get("/api/snapshot")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "candidates_json" in data

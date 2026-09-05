@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -38,23 +39,64 @@ def build_snapshot(settings: Settings, db: Database) -> dict[str, Any]:
     runs = db.recent_runs()
     spread = db.metric_raw_spread()
 
-    candidates = [
-        {
-            "token_key": row["token_key"],
-            "symbol": row["token_key"].split(":")[-1][:12],
-            "composite": row["composite"],
-            "coverage": row["coverage"],
-            "regime": row["regime"],
-            "vetoes": list(row["vetoes"] or []),
-            "refused": bool(row["vetoes"])
-            or row["composite"] < settings.scoring.entry_threshold
-            or row["coverage"] < settings.scoring.min_coverage,
-            "as_of": row["as_of"],
-            "contaminated": row["as_of"] < CONTAMINATED_BEFORE,
-            "explanation": row["explanation"],
+    candidates = []
+    for row in scores:
+        token_key = row["token_key"]
+        as_of = row["as_of"]
+        mint = token_key.split(":")[-1]
+
+        launch = db.launch(token_key)
+        symbol = launch.token.symbol if launch and launch.token.symbol else mint[:12]
+
+        family_scores: dict[str, float] = {
+            "topology": float(row["composite"]),
+            "social": float(row["composite"]),
+            "community": float(row["composite"]),
+            "narrative": float(row["composite"]),
+            "credibility": float(row["composite"]),
+            "execution": float(row["composite"]),
         }
-        for row in scores
-    ]
+
+        metric_values = db.metric_values_as_of(token_key, as_of)
+        if metric_values:
+            family_buckets: dict[str, list[float]] = {}
+            for mv in metric_values:
+                if mv.normalized is not None:
+                    m_def = registry.get(mv.metric_id)
+                    if m_def:
+                        fam = m_def.family
+                        key = (
+                            "topology" if "topology" in fam
+                            else "social" if "social" in fam
+                            else "community" if "community" in fam
+                            else "narrative" if "narrative" in fam
+                            else "credibility" if "credibility" in fam
+                            else "execution" if "execution" in fam
+                            else fam
+                        )
+                        family_buckets.setdefault(key, []).append(float(mv.normalized))
+            for k, vals in family_buckets.items():
+                if vals and k in family_scores:
+                    family_scores[k] = round(sum(vals) / len(vals), 3)
+
+        candidates.append(
+            {
+                "token_key": token_key,
+                "mint": mint,
+                "symbol": symbol,
+                "composite": row["composite"],
+                "coverage": row["coverage"],
+                "regime": row["regime"],
+                "vetoes": list(row["vetoes"] or []),
+                "refused": bool(row["vetoes"])
+                or row["composite"] < settings.scoring.entry_threshold
+                or row["coverage"] < settings.scoring.min_coverage,
+                "as_of": row["as_of"],
+                "contaminated": row["as_of"] < CONTAMINATED_BEFORE,
+                "explanation": row["explanation"],
+                "family_scores": family_scores,
+            }
+        )
 
     families: dict[str, dict[str, Any]] = {}
     for family, metric_ids in registry.families().items():
@@ -71,6 +113,7 @@ def build_snapshot(settings: Settings, db: Database) -> dict[str, Any]:
         "mode": "static",
         "trading_mode": settings.trading_mode.value,
         "candidates": candidates,
+        "candidates_json": json.dumps(candidates, default=str),
         "families": families,
         "integrity": [f.__dict__ for f in check_integrity(posts, runs, spread)],
         "posts": posts,

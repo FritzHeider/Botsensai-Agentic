@@ -125,7 +125,7 @@ def build_meme_lineage(token_key: str, db: Database) -> MemeLineageReport:
 
 
 def render_meme_gallery_html(report: MemeLineageReport) -> str:
-    """Render a standalone HTML meme lineage and cluster gallery."""
+    """Render a standalone interactive HTML meme lineage and cluster gallery."""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -133,38 +133,122 @@ def render_meme_gallery_html(report: MemeLineageReport) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meme Lineage Gallery — {report.token_key}</title>
 <style>
-body {{ margin:0; background:#0b0d12; color:#e2e8f0; font-family:ui-monospace,monospace; padding:24px; }}
-header {{ border-bottom:1px solid #222936; padding-bottom:16px; margin-bottom:24px; }}
-h1 {{ margin:0; font-size:18px; color:#38bdf8; }}
-.stats {{ display:flex; gap:16px; margin-top:8px; font-size:12px; color:#798699; }}
-.grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px; }}
-.card {{ background:#11151c; border:1px solid #222936; border-radius:6px; padding:12px; }}
-.card-header {{ font-weight:700; color:#38bdf8; font-size:12px; display:flex; justify-content:space-between; }}
-.hash {{ font-size:10px; color:#798699; margin:6px 0; word-break:break-all; }}
-.tag {{ display:inline-block; padding:2px 6px; border-radius:4px; font-size:10px; background:rgba(56,189,248,0.15); color:#38bdf8; }}
+:root {{
+  --bg: #0a0c10;
+  --panel: #11151c;
+  --line: #222936;
+  --text: #e2e8f0;
+  --dim: #798699;
+  --accent: #38bdf8;
+  --ok: #22c55e;
+  --warn: #eab308;
+  --alarm: #ef4444;
+}}
+* {{ box-sizing: border-box; }}
+body {{ margin:0; background:var(--bg); color:var(--text); font-family:ui-monospace,monospace; padding:24px; }}
+header {{
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}}
+h1 {{ margin:0; font-size:18px; color:var(--accent); letter-spacing:0.05em; }}
+.stats {{ display:flex; gap:16px; margin-top:8px; font-size:12px; color:var(--dim); flex-wrap:wrap; }}
+.stat-pill {{ background:rgba(255,255,255,0.04); border:1px solid var(--line); padding:4px 8px; border-radius:4px; }}
+.stat-val {{ color:var(--text); font-weight:700; }}
+.filter-bar {{ display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }}
+.filter-btn {{
+  background:var(--panel); border:1px solid var(--line); color:var(--dim);
+  padding:6px 12px; border-radius:6px; font:inherit; font-size:11px; cursor:pointer; font-weight:600;
+  transition:all 0.15s;
+}}
+.filter-btn:hover {{ border-color:var(--accent); color:var(--text); }}
+.filter-btn.active {{ background:rgba(56,189,248,0.15); border-color:var(--accent); color:var(--accent); }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:16px; }}
+.card {{
+  background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px;
+  display:flex; flex-direction:column; gap:10px; transition:border-color 0.15s, transform 0.15s;
+}}
+.card:hover {{ border-color:var(--accent); transform:translateY(-2px); }}
+.card.is-root {{ border-left:3px solid var(--accent); }}
+.card-header {{ font-weight:700; color:var(--accent); font-size:12px; display:flex; justify-content:space-between; align-items:center; }}
+.identicon-box {{
+  height:90px; background:#161c24; border-radius:6px; border:1px solid var(--line);
+  display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;
+}}
+.identicon-svg {{ width:100%; height:100%; }}
+.hash {{ font-size:10px; color:var(--dim); word-break:break-all; background:var(--bg); padding:4px 6px; border-radius:4px; border:1px solid var(--line); }}
+.desc {{ font-size:11px; color:var(--text); font-weight:600; }}
+.orig-bar {{ height:5px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:2px; }}
+.orig-fill {{ height:100%; border-radius:3px; }}
+.tag {{ display:inline-block; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:700; width:fit-content; }}
+.tag-root {{ background:rgba(56,189,248,0.15); color:var(--accent); border:1px solid rgba(56,189,248,0.3); }}
+.tag-deriv {{ background:rgba(234,179,8,0.15); color:var(--warn); border:1px solid rgba(234,179,8,0.3); }}
 </style>
 </head>
 <body>
 <header>
-  <h1>Meme Lineage & Perceptual Hash Gallery</h1>
-  <div class="stats">
-    <span>Token: {report.token_key}</span>
-    <span>Images: {report.total_images}</span>
-    <span>Clusters: {report.distinct_clusters}</span>
-    <span>Originality: {report.originality_index:.1%}</span>
+  <div>
+    <h1>Meme Lineage & Perceptual Hash Gallery</h1>
+    <div class="stats">
+      <span class="stat-pill">Token: <span class="stat-val">{report.token_key}</span></span>
+      <span class="stat-pill">Assets: <span class="stat-val">{report.total_images}</span></span>
+      <span class="stat-pill">Clusters: <span class="stat-val">{report.distinct_clusters}</span></span>
+      <span class="stat-pill">Originality Index: <span class="stat-val">{report.originality_index:.1%}</span></span>
+    </div>
   </div>
 </header>
+
+<div class="filter-bar">
+  <button class="filter-btn active" onclick="filterGallery('all', this)">All Memes ({len(report.nodes)})</button>
+  <button class="filter-btn" onclick="filterGallery('root', this)">Root Templates Only</button>
+  <button class="filter-btn" onclick="filterGallery('derivative', this)">Derivatives</button>
+</div>
+
 <div class="grid">
-  {"".join(f'''<div class="card">
+  {"".join(f'''<div class="card {'is-root' if n.is_root else ''}" data-type="{'root' if n.is_root else 'derivative'}">
     <div class="card-header">
       <span>Cluster #{n.cluster_id}</span>
-      <span>{n.originality_score:.2f}</span>
+      <span class="tag {'tag-root' if n.is_root else 'tag-deriv'}">{'ROOT TEMPLATE' if n.is_root else 'DERIVATIVE'}</span>
+    </div>
+    <div class="identicon-box">
+      <svg class="identicon-svg" viewBox="0 0 100 50">
+        <rect width="100" height="50" fill="#{n.hash_value[:6] if len(n.hash_value)>=6 else '222936'}" opacity="0.3"/>
+        <circle cx="50" cy="25" r="{12 + (n.cluster_id % 12)}" fill="#{n.hash_value[-6:] if len(n.hash_value)>=6 else '38bdf8'}" opacity="0.6"/>
+        <text x="50" y="29" fill="#e2e8f0" font-size="10" font-family="monospace" text-anchor="middle">pHash #{n.cluster_id}</text>
+      </svg>
     </div>
     <div class="hash">{n.hash_value}</div>
-    <div style="font-size:11px;margin-bottom:6px;">{n.description}</div>
-    <span class="tag">{n.tags[0] if n.tags else "meme"}</span>
+    <div class="desc">{n.description}</div>
+    <div>
+      <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--dim);">
+        <span>Originality Score</span>
+        <span style="color:var(--text); font-weight:700;">{n.originality_score:.2f}</span>
+      </div>
+      <div class="orig-bar">
+        <div class="orig-fill" style="width:{int(min(1.0, n.originality_score) * 100)}%; background:{'var(--ok)' if n.originality_score >= 0.7 else 'var(--warn)'};"></div>
+      </div>
+    </div>
   </div>''' for n in report.nodes)}
 </div>
+
+<script>
+function filterGallery(type, btn) {{
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.card').forEach(c => {{
+    if (type === 'all' || c.getAttribute('data-type') === type) {{
+      c.style.display = 'flex';
+    }} else {{
+      c.style.display = 'none';
+    }}
+  }});
+}}
+</script>
 </body>
 </html>"""
 

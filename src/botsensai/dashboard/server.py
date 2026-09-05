@@ -17,8 +17,11 @@ from typing import Any
 from fastapi import APIRouter, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader
+from pydantic import BaseModel
 
+from botsensai.autopsy import build_autopsy_timeline
 from botsensai.config import Settings, get_settings
+from botsensai.copilot import ask_copilot
 from botsensai.dashboard.data import build_snapshot
 from botsensai.dashboard.graph import build_topology_graph, render_topology_html
 from botsensai.metrics import metric_catalogue
@@ -160,6 +163,70 @@ async def view_token_graph(request: Request, mint: str) -> str:
         return render_topology_html(graph)
     finally:
         db.close()
+
+
+@router.get("/api/tokens/{mint}/autopsy")
+async def get_token_autopsy(request: Request, mint: str) -> dict[str, Any]:
+    settings = _get_active_settings(request)
+    token_key = f"solana:{mint}" if not mint.startswith("solana:") else mint
+    db = Database(settings.path(settings.db_path))
+    try:
+        events = build_autopsy_timeline(token_key, db)
+        return {
+            "token_key": token_key,
+            "mint": token_key.split(":")[-1],
+            "events": [
+                {
+                    "timestamp": e.timestamp.isoformat() if hasattr(e.timestamp, "isoformat") else str(e.timestamp),
+                    "elapsed_seconds": e.elapsed_seconds,
+                    "category": e.category,
+                    "headline": e.headline,
+                    "detail": e.detail,
+                    "impact": e.impact,
+                }
+                for e in events
+            ],
+        }
+    finally:
+        db.close()
+
+
+class CopilotAskPayload(BaseModel):
+    question: str
+
+
+@router.post("/api/tokens/{mint}/ask")
+async def post_token_ask(request: Request, mint: str, payload: CopilotAskPayload) -> dict[str, Any]:
+    settings = _get_active_settings(request)
+    resp = await ask_copilot(payload.question, mint, settings)
+    return {
+        "query": resp.query,
+        "token_symbol": resp.token_symbol,
+        "token_mint": resp.token_mint,
+        "composite_score": resp.composite_score,
+        "answer": resp.answer,
+        "citations": [
+            {"source_type": c.source_type, "source_id": c.source_id, "fact": c.fact}
+            for c in resp.citations
+        ],
+    }
+
+
+@router.get("/api/tokens/{mint}/ask")
+async def get_token_ask(request: Request, mint: str, q: str = "Explain score and key risks") -> dict[str, Any]:
+    settings = _get_active_settings(request)
+    resp = await ask_copilot(q, mint, settings)
+    return {
+        "query": resp.query,
+        "token_symbol": resp.token_symbol,
+        "token_mint": resp.token_mint,
+        "composite_score": resp.composite_score,
+        "answer": resp.answer,
+        "citations": [
+            {"source_type": c.source_type, "source_id": c.source_id, "fact": c.fact}
+            for c in resp.citations
+        ],
+    }
 
 
 @router.get("/api/health")

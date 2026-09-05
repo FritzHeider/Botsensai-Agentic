@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Botsensai EC2 Deployment Template. Provisions a t3.medium instance with Ubuntu 24.04, installs all dependencies, and sets up the daily cron jobs.'
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t3.medium
+    AllowedValues: [t3.small, t3.medium, t3.large, t3.xlarge]
+    ConstraintDescription: must be a valid EC2 instance type.
+  RepositoryUrl:
+    Description: The Git URL of your Botsensai repository (e.g., https://github.com/yourusername/Botsensai.git)
+    Type: String
+
+Mappings:
+  RegionMap:
+    # Ubuntu 24.04 LTS AMIs (x86_64) - Note: You may need to update these AMI IDs to the latest for your specific region
+    us-east-1:
+      AMI: ami-04b70fa74e45c3917 
+    us-east-2:
+      AMI: ami-0cb91c7de36eed2cb
+    us-west-1:
+      AMI: ami-025442cebb7bf5b50
+    us-west-2:
+      AMI: ami-00c257e12d6828491
+    eu-west-1:
+      AMI: ami-00385a401487aefa4
+    eu-central-1:
+      AMI: ami-0a628e1e89aaedf80
+
+Resources:
+  BotsensaiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  BotsensaiInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      SecurityGroupIds:
+        - !Ref BotsensaiSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Log output
+          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+          
+          echo "Starting Botsensai setup..."
+          
+          # Update and install dependencies
+          apt-get update -y
+          apt-get install -y python3-pip python3-venv git tmux jq curl
+          
+          # Switch to ubuntu user to clone and install
+          su - ubuntu -c '
+          cd /home/ubuntu
+          
+          # NOTE: If your repo is private, you will need to replace this with a git clone
+          # using an access token or SSH key, OR copy the files over manually.
+          git clone ${RepositoryUrl} Botsensai
+          cd Botsensai
+          
+          # Create python venv
+          python3 -m venv .venv
+          source .venv/bin/activate
+          
+          # Install botsensai with browser and ml extras
+          pip install -e ".[browser,ml]"
+          
+          # Install Playwright dependencies
+          playwright install chromium --with-deps
+          
+          # Create directories for data if they don't exist
+          mkdir -p data/content docs
+          
+          # Setup Crontab for daily maintenance
+          (crontab -l 2>/dev/null; echo "0 2 * * * cd /home/ubuntu/Botsensai && /home/ubuntu/Botsensai/.venv/bin/botsensai label --min-age-hours 24 >> data/cron.log 2>&1") | crontab -
+          (crontab -l 2>/dev/null; echo "0 3 * * * cd /home/ubuntu/Botsensai && /home/ubuntu/Botsensai/.venv/bin/botsensai fit --min-samples 200 >> data/cron.log 2>&1") | crontab -
+          (crontab -l 2>/dev/null; echo "0 4 * * * cd /home/ubuntu/Botsensai && /home/ubuntu/Botsensai/.venv/bin/botsensai track-record --out docs/TRACK_RECORD.md >> data/cron.log 2>&1") | crontab -
+          
+          echo "Botsensai setup complete!"
+          '
+          
+Outputs:
+  InstanceIPAddress:
+    Description: The public IP address of the Botsensai server
+    Value: !GetAtt BotsensaiInstance.PublicIp
+  SSHCommand:
+    Description: Command to SSH into the instance
+    Value: !Sub 'ssh -i <path-to-your-key.pem> ubuntu@${BotsensaiInstance.PublicIp}'
