@@ -13,24 +13,13 @@ Parameters:
     AllowedValues: [t3.small, t3.medium, t3.large, t3.xlarge]
     ConstraintDescription: must be a valid EC2 instance type.
   RepositoryUrl:
-    Description: The Git URL of your Botsensai repository (e.g., https://github.com/yourusername/Botsensai.git)
+    Description: The Git URL of your Botsensai repository
     Type: String
-
-Mappings:
-  RegionMap:
-    # Ubuntu 24.04 LTS AMIs (x86_64) - Note: You may need to update these AMI IDs to the latest for your specific region
-    us-east-1:
-      AMI: ami-04b70fa74e45c3917 
-    us-east-2:
-      AMI: ami-0cb91c7de36eed2cb
-    us-west-1:
-      AMI: ami-025442cebb7bf5b50
-    us-west-2:
-      AMI: ami-00c257e12d6828491
-    eu-west-1:
-      AMI: ami-00385a401487aefa4
-    eu-central-1:
-      AMI: ami-0a628e1e89aaedf80
+    Default: 'https://github.com/FritzHeider/Botsensai-Agentic.git'
+  LatestUbuntuAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id'
+    Description: Fetches the latest Ubuntu 24.04 AMI ID dynamically from AWS Systems Manager.
 
 Resources:
   BotsensaiSecurityGroup:
@@ -48,7 +37,7 @@ Resources:
     Properties:
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyName
-      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      ImageId: !Ref LatestUbuntuAmiId
       SecurityGroupIds:
         - !Ref BotsensaiSecurityGroup
       BlockDeviceMappings:
