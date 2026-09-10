@@ -58,6 +58,7 @@ def test_generate_track_record_markdown() -> None:
     assert "Bootstrap 95% Confidence Interval" in md
     assert "test_token_k" in md
     assert "take profit at 1.2x" in md
+    assert "| **Total Return** | +0.50% |" in md
 
 
 def test_build_track_record_synthetic() -> None:

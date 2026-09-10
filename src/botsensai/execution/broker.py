@@ -419,6 +419,7 @@ class PaperBroker:
         closed = self.account.closed
         wins = [p for p in closed if p.realized_pnl_native > 0]
         return {
+            "starting_native": round(self.account.starting_native, 6),
             "equity_native": round(self.account.equity_native, 6),
             "cash_native": round(self.account.cash_native, 6),
             "realized_pnl_native": round(self.account.realized_pnl_native, 6),

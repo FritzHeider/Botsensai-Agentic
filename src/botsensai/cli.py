@@ -1044,8 +1044,7 @@ def _backtest_tapes(
     """
     if not synthetic:
         db = Database(settings.path(settings.db_path))
-        tapes = Backtester.tapes_from_database(db, start, end)
-        usable = [t for t in tapes if len(t.snapshots) >= 3]
+        usable = Backtester.tapes_from_database(db, start, end, limit=universe)
         if len(usable) >= 10:
             return usable, False
         console.print(
