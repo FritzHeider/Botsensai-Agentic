@@ -250,12 +250,12 @@ def show_paper_trades():
         console.print(Panel(track_file.read_text(encoding="utf-8").strip(), title="Latest Track Record (docs/TRACK_RECORD.md)", border_style="green"))
     else:
         console.print("[yellow]Local docs/TRACK_RECORD.md not found. Querying instance...[/yellow]")
-        cmd = "sudo -u ubuntu -i bash -c 'cd /home/ubuntu/Botsensai && .venv/bin/botsensai track-record --days 2'"
+        cmd = "sudo -u ubuntu -i bash -c 'cd /home/ubuntu/Botsensai && .venv/bin/botsensai track-record --days 7.0'"
         code, out, err = run_ssm_command(cmd, "Generating track record on EC2")
         console.print(out or err)
 
     if Confirm.ask("\nRe-evaluate rolling track record on EC2 now?", default=False):
-        days = Prompt.ask("History window in days", default="2.0")
+        days = Prompt.ask("History window in days (e.g. 7.0 for 1 week, 30.0 for 1 month)", default="7.0")
         cmd = f"sudo -u ubuntu -i bash -c 'cd /home/ubuntu/Botsensai && .venv/bin/botsensai track-record --days {days} --out docs/TRACK_RECORD.md && cat docs/TRACK_RECORD.md'"
         code, out, err = run_ssm_command(cmd, f"Evaluating paper track record over last {days} days")
         if out:

@@ -1780,7 +1780,7 @@ def recap(
 @app.command(name="track-record")
 def track_record(
     config: str = typer.Option(None, help="Path to a config YAML."),
-    days: float = typer.Option(2.0, help="Window of history to evaluate in days."),
+    days: float = typer.Option(7.0, help="Window of history to evaluate in days."),
     synthetic: bool = typer.Option(
         False, "--synthetic", help="Force a synthetic run instead of using the store."
     ),
