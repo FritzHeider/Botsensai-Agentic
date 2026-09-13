@@ -45,7 +45,7 @@ risk:
   max_concurrent_positions: 8
   max_daily_loss_native: 1.0
   max_trades_per_hour: 20
-  min_liquidity_usd: 5000
+  min_liquidity_usd: 1500
   min_token_age_seconds: 45
   max_token_age_seconds: 21600
   max_slippage_bps: 800
