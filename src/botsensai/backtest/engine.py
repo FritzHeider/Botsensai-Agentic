@@ -404,6 +404,7 @@ class Backtester:
         start: datetime,
         end: datetime,
         limit: int | None = None,
+        min_snapshots: int = 0,
     ) -> list[TokenTape]:
         """Load a replayable universe from persisted collection data."""
         tapes: list[TokenTape] = []
@@ -413,7 +414,7 @@ class Backtester:
             key = launch.token.key
             horizon = end
             snapshots = db.snapshots_as_of(key, horizon)
-            if len(snapshots) < 3:
+            if min_snapshots > 0 and len(snapshots) < min_snapshots:
                 continue
 
             tape = TokenTape(

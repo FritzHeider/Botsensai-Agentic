@@ -378,13 +378,14 @@ def trigger_sweep():
 
 
 def pull_database():
-    """Downloads remote database from S3 or triggers a fresh backup."""
+    """Downloads remote database from Cloudflare R2 or S3."""
     console.print(Panel(
-        "[bold green]Database Sync (S3 -> Local)[/bold green]\n"
-        "This will download the latest database snapshot from Amazon S3\n"
-        f"([cyan]s3://{DEFAULT_BUCKET}/latest/botsensai.db[/cyan]) to your local workspace\n"
-        "at [yellow]data/botsensai_remote.db[/yellow] for offline backtesting and evaluation.",
-        border_style="green"
+        "[bold green]Database Sync (Multi-Cloud -> Local)[/bold green]\n"
+        "Downloads the latest database snapshot to your local workspace at\n"
+        "[yellow]data/botsensai_remote.db[/yellow] for offline backtesting and evaluation.\n"
+        "Automatically routes through [cyan]Cloudflare R2 (zero egress bandwidth fees)[/cyan]\n"
+        "when configured, with fallback to Amazon S3.",
+        title="Sync Remote Database", border_style="green"
     ))
 
     if Confirm.ask("Download latest snapshot now?", default=True):
@@ -393,16 +394,16 @@ def pull_database():
 
 
 def trigger_s3_backup():
-    """Forces an immediate atomic backup on the remote instance to S3."""
+    """Forces an immediate atomic backup on the remote instance mirrored across clouds."""
     console.print(Panel(
         "Triggers an atomic `.backup` snapshot of `data/botsensai.db` on EC2\n"
-        f"and uploads it to `s3://{DEFAULT_BUCKET}/latest/` and `daily/`.",
-        title="Trigger Remote S3 Backup", border_style="magenta"
+        "and mirrors it to [bold cyan]Amazon S3[/bold cyan] and [bold green]Cloudflare R2 (Zero Egress)[/bold green].",
+        title="Trigger Multi-Cloud Database Backup", border_style="magenta"
     ))
 
     if Confirm.ask("Run atomic backup on EC2 now?", default=True):
-        cmd = "sudo -u ubuntu -i bash -c 'cd /home/ubuntu/Botsensai && /usr/bin/python3 scripts/backup_db.py'"
-        code, out, err = run_ssm_command(cmd, "Executing atomic database backup to S3")
+        cmd = "sudo -u ubuntu -i bash -c 'cd /home/ubuntu/botsensai && /usr/bin/python3 scripts/backup_db.py'"
+        code, out, err = run_ssm_command(cmd, "Executing atomic database backup to S3 + R2")
         console.print(out or "Backup script finished.")
         if err:
             console.print(f"[yellow]{err}[/yellow]")
@@ -525,8 +526,8 @@ def main():
         menu_tbl.add_row("7", "🖥 Open HTML Dashboard in Browser", "Self-contained visual report with candidate rankings")
         menu_tbl.add_row("8", "📟 Launch Live TUI Terminal Dashboard", "Split-pane full-screen streaming interface on EC2")
         menu_tbl.add_row("9", "📜 View Service Logs", "Tail journalctl logs for botsensai-serve.service")
-        menu_tbl.add_row("10", "📥 Download Database (S3 -> Local)", "Pull 28k+ launches database to local data/ for testing")
-        menu_tbl.add_row("11", "💾 Trigger Remote S3 Backup", "Force immediate atomic SQLite backup to Amazon S3")
+        menu_tbl.add_row("10", "📥 Download Database (R2/S3 -> Local)", "Pull database snapshot (zero egress fees via Cloudflare R2)")
+        menu_tbl.add_row("11", "💾 Trigger Multi-Cloud Backup", "Force immediate atomic SQLite backup to S3 & Cloudflare R2")
         menu_tbl.add_row("12", "🔄 Service Lifecycle & Updates", "Restart daemon, pull git updates, or view cron jobs")
         menu_tbl.add_row("13", "💻 Interactive SSM Terminal", "Open zero-SSH terminal session directly on Ubuntu")
         menu_tbl.add_row("14", "🚨 Emergency Kill Switch", "Soft-stop background daemon or power off EC2 instance")

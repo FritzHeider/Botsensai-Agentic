@@ -113,3 +113,30 @@ backtest:
   initial_capital_native: 10.0
   min_trades_for_significance: 50
   bootstrap_samples: 2000
+
+# Multi-Cloud snapshot mirroring.
+# Secrets (Access keys & secret keys) are NOT stored in this file; provide them
+# via environment variables (e.g. BOTSENSAI_BACKUP_R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY).
+backup:
+  enabled: true
+  cron_schedule: "0 */6 * * *"
+  update_latest: true
+  s3:
+    enabled: true
+    bucket: "botsensai-backups-538471157365"
+    region: "us-east-1"
+    prefix: "backups"
+  r2:
+    # Cloudflare R2 (S3-compatible with ZERO egress bandwidth fees)
+    enabled: true
+    bucket: "botsensai-backups"
+    account_id: ""             # Or set BOTSENSAI_BACKUP_R2_ACCOUNT_ID
+    endpoint_url: ""           # Optional: https://<account_id>.r2.cloudflarestorage.com
+    prefix: "backups"
+  b2:
+    # Backblaze B2 (S3-compatible alternative)
+    enabled: false
+    bucket: "botsensai-backups"
+    region: "us-east-005"
+    prefix: "backups"
+
