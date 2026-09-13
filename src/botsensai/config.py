@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -282,15 +282,30 @@ class Settings(BaseSettings):
     seed: int = 1337
 
     # --- chains and rpc -----------------------------------------------------
-    solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
-    solana_ws_url: str | None = None
-    helius_api_key: str | None = None
-    birdeye_api_key: str | None = None
+    solana_rpc_url: str = Field(
+        default="https://api.mainnet-beta.solana.com",
+        validation_alias=AliasChoices("BOTSENSAI_SOLANA_RPC_URL", "SOLANA_RPC_URL", "solana_rpc_url"),
+    )
+    solana_ws_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_SOLANA_WS_URL", "SOLANA_WS_URL", "solana_ws_url"),
+    )
+    helius_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_API_KEY", "HELIUS_API_KEY", "helius_api_key"),
+    )
+    birdeye_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_BIRDEYE_API_KEY", "BIRDEYE_API_KEY", "birdeye_api_key"),
+    )
     bitquery_api_key: str | None = None
     jito_block_engine_url: str | None = None
 
     # --- social credentials (all optional; collectors degrade without them) --
-    x_bearer_token: str | None = None
+    x_bearer_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_X_BEARER_TOKEN", "X_BEARER_TOKEN", "x_bearer_token"),
+    )
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None
     reddit_user_agent: str = "botsensai/0.1 (research)"
