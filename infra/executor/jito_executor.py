@@ -106,12 +106,18 @@ class JitoExecutor:
         self.private_key_b58 = os.environ.get("SOLANA_PRIVATE_KEY", "")
         self.public_key_b58 = os.environ.get("SOLANA_PUBLIC_KEY", "")
 
-        if not self.dry_run and not self.private_key_b58:
-            log.error(
-                "Dry run is False, but SOLANA_PRIVATE_KEY is not set in environment. "
-                "Use asm-exec to resolve secrets at runtime."
-            )
-            sys.exit(1)
+        if not self.dry_run:
+            if not self.private_key_b58:
+                log.error(
+                    "Dry run is False, but SOLANA_PRIVATE_KEY is not set in environment. "
+                    "Use asm-exec to resolve secrets at runtime."
+                )
+                sys.exit(1)
+            if not self.public_key_b58:
+                from solders.keypair import Keypair
+
+                keypair = Keypair.from_base58_string(self.private_key_b58)
+                self.public_key_b58 = str(keypair.pubkey())
 
     def get_db(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -167,25 +173,28 @@ class JitoExecutor:
             )
             conn.commit()
 
-    def build_pumpfun_trade_local(
+    def build_pumpfun_jito_bundle(
         self,
         mint: str,
         action: str,
         amount_sol: float,
         slippage_bps: int,
         tip_lamports: int,
-    ) -> bytes | None:
-        """Call PumpPortal local trade endpoint to generate unsigned swap transaction."""
-        payload = {
-            "publicKey": self.public_key_b58,
-            "action": action.lower(),
-            "mint": mint,
-            "amount": amount_sol,
-            "denominatedInSol": "true",
-            "slippage": max(1, round(slippage_bps / 100)),
-            "priorityFee": 0.00005,
-            "pool": "pump",
-        }
+    ) -> list[str] | None:
+        """Call PumpPortal trade-local with bundle list format to receive unsigned transactions."""
+        tip_sol = max(tip_lamports / 1_000_000_000.0, 0.0001)
+        payload = [
+            {
+                "publicKey": self.public_key_b58,
+                "action": action.lower(),
+                "mint": mint,
+                "denominatedInSol": "true" if action.lower() == "buy" else "false",
+                "amount": amount_sol if action.lower() == "buy" else "100%",
+                "slippage": max(1, round(slippage_bps / 100)),
+                "priorityFee": tip_sol,
+                "pool": "pump",
+            }
+        ]
         url = "https://pumpportal.fun/api/trade-local"
         req = urllib.request.Request(
             url,
@@ -195,19 +204,26 @@ class JitoExecutor:
         )
         try:
             with urllib.request.urlopen(req, timeout=10.0) as resp:
-                return resp.read()
+                data = json.loads(resp.read().decode("utf-8"))
+                if isinstance(data, list):
+                    return data
+                elif isinstance(data, dict) and "error" in data:
+                    log.error(f"PumpPortal bundle error: {data['error']}")
+                    return None
+                log.error(f"Unexpected PumpPortal response: {data}")
+                return None
         except Exception as e:
-            log.error(f"Failed to build trade via PumpPortal: {e}")
+            log.error(f"Failed to build trade bundle via PumpPortal: {e}")
             return None
 
-    def submit_jito_bundle(self, signed_tx_b58: str) -> str | None:
+    def submit_jito_bundle(self, encoded_signed_txs: list[str]) -> str | None:
         """Submit a signed transaction bundle to Jito Block Engine."""
         endpoint = random.choice(JITO_BLOCK_ENGINES)
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "sendBundle",
-            "params": [[signed_tx_b58]],
+            "params": [encoded_signed_txs],
         }
         req = urllib.request.Request(
             endpoint,
@@ -218,7 +234,12 @@ class JitoExecutor:
         try:
             with urllib.request.urlopen(req, timeout=10.0) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-                return result.get("result")
+                bundle_id = result.get("result")
+                if bundle_id:
+                    return bundle_id
+                if "error" in result:
+                    log.error(f"Jito Block Engine returned error: {result['error']}")
+                return None
         except Exception as e:
             log.error(f"Failed to submit bundle to Jito: {e}")
             return None
@@ -237,39 +258,46 @@ class JitoExecutor:
         )
 
         if self.dry_run:
-            simulated_tx = f"simulated_tx_{signal_id}_{int(time.time())}"
+            simulated_tx = f"simulated_bundle_{signal_id}_{int(time.time())}"
             log.info(f"[DRY RUN] Would execute swap via Jito bundle. Assigned tx: {simulated_tx}")
             self.update_signal(signal_id, status="SIMULATED", tx_hash=simulated_tx)
             return
 
-        unsigned_tx_bytes = self.build_pumpfun_trade_local(
+        unsigned_tx_b58_list = self.build_pumpfun_jito_bundle(
             mint=mint,
             action=side,
             amount_sol=size_sol,
             slippage_bps=signal["max_slippage_bps"],
             tip_lamports=tip,
         )
-        if not unsigned_tx_bytes:
-            self.update_signal(signal_id, status="FAILED", error="Failed to construct transaction")
+        if not unsigned_tx_b58_list:
+            self.update_signal(signal_id, status="FAILED", error="Failed to construct transaction bundle")
             return
 
         try:
-            # Sign transaction with solana-py if available, or base58 broadcast
-            import nacl.signing
+            from solders.keypair import Keypair
+            from solders.transaction import VersionedTransaction
 
-            seed = b58decode(self.private_key_b58)[:32]
-            signing_key = nacl.signing.SigningKey(seed)
-            signed = signing_key.sign(unsigned_tx_bytes)
-            signed_b58 = b58encode(signed.message)
+            keypair = Keypair.from_base58_string(self.private_key_b58)
+            encoded_signed_txs: list[str] = []
+            first_sig: str = ""
 
-            bundle_id = self.submit_jito_bundle(signed_b58)
+            for raw_b58 in unsigned_tx_b58_list:
+                raw_bytes = b58decode(raw_b58)
+                msg = VersionedTransaction.from_bytes(raw_bytes).message
+                signed_tx = VersionedTransaction(msg, [keypair])
+                encoded_signed_txs.append(b58encode(bytes(signed_tx)))
+                if not first_sig:
+                    first_sig = str(signed_tx.signatures[0])
+
+            bundle_id = self.submit_jito_bundle(encoded_signed_txs)
             if bundle_id:
-                log.info(f"Jito bundle submitted successfully: {bundle_id}")
+                log.info(f"Jito bundle submitted successfully! Bundle ID: {bundle_id}, Tx Sig: {first_sig}")
                 self.update_signal(signal_id, status="SUBMITTED", tx_hash=bundle_id)
             else:
                 self.update_signal(signal_id, status="FAILED", error="Jito bundle rejected")
         except Exception as e:
-            log.error(f"Failed to sign or submit: {e}")
+            log.error(f"Failed to sign or submit bundle: {e}")
             self.update_signal(signal_id, status="FAILED", error=str(e))
 
     def run_loop(self, poll_interval: float = 1.0) -> None:
