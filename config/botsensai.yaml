@@ -68,9 +68,8 @@ execution:
   sandwich_extra_bps: 50
 
 scoring:
-  weights_version: v0
   weights_path: config/weights.json
-  min_coverage: 0.5                  # refuse to act on a thin read
+  min_coverage: 0.25                 # allow early bonding curve metrics while blocking thin reads (<9 metrics)
   entry_threshold: 0.55
   exit_threshold: 0.35
   veto_top10_share: 0.55             # relaxed by +0.30 pre-graduation, where concentration is structural
