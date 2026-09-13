@@ -40,10 +40,10 @@ x_session:
   verify_every_sweep: false
 
 risk:
-  max_position_native: 0.25          # SOL per position
-  max_portfolio_exposure_native: 2.0
+  max_position_native: 0.05          # SOL per position (canary micro-size)
+  max_portfolio_exposure_native: 0.5
   max_concurrent_positions: 8
-  max_daily_loss_native: 1.0
+  max_daily_loss_native: 0.25
   max_trades_per_hour: 20
   min_liquidity_usd: 1500
   min_token_age_seconds: 45
