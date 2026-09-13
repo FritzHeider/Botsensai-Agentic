@@ -15,7 +15,6 @@ Secret Safety:
 from __future__ import annotations
 
 import argparse
-import base58
 import json
 import logging
 import os
@@ -26,6 +25,42 @@ import time
 from typing import Any
 import urllib.error
 import urllib.request
+
+# Pure Python Base58 implementation (zero external dependency)
+B58_ALPHABET = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def b58encode(b: bytes) -> str:
+    n = int.from_bytes(b, "big")
+    chars = []
+    while n > 0:
+        n, r = divmod(n, 58)
+        chars.append(B58_ALPHABET[r : r + 1])
+    pad = 0
+    for byte in b:
+        if byte == 0:
+            pad += 1
+        else:
+            break
+    return (b"1" * pad + b"".join(reversed(chars))).decode("ascii") or "1"
+
+
+def b58decode(s: str) -> bytes:
+    b = s.encode("ascii")
+    n = 0
+    for char in b:
+        idx = B58_ALPHABET.find(char)
+        if idx == -1:
+            raise ValueError(f"Invalid Base58 character: {chr(char)}")
+        n = n * 58 + idx
+    res = n.to_bytes((n.bit_length() + 7) // 8 or 1, "big") if n > 0 else b""
+    pad = 0
+    for char in b:
+        if char == ord("1"):
+            pad += 1
+        else:
+            break
+    return b"\x00" * pad + res
 
 logging.basicConfig(
     level=logging.INFO,
@@ -201,10 +236,10 @@ class JitoExecutor:
             # Sign transaction with solana-py if available, or base58 broadcast
             import nacl.signing
 
-            seed = base58.b58decode(self.private_key_b58)[:32]
+            seed = b58decode(self.private_key_b58)[:32]
             signing_key = nacl.signing.SigningKey(seed)
             signed = signing_key.sign(unsigned_tx_bytes)
-            signed_b58 = base58.b58encode(signed.message).decode("utf-8")
+            signed_b58 = b58encode(signed.message)
 
             bundle_id = self.submit_jito_bundle(signed_b58)
             if bundle_id:
