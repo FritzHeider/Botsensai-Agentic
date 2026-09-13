@@ -716,6 +716,14 @@ class Pipeline:
             score=result.composite,
             as_of=result.as_of,
         )
+        log.info(
+            "pipeline.signal_emitted",
+            token=launch.token.key,
+            symbol=launch.token.symbol,
+            side="BUY",
+            size=round(size, 4),
+            score=round(result.composite, 3),
+        )
 
         self.memory.remember(
             MemoryKind.OBSERVATION,

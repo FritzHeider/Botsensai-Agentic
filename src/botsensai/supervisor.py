@@ -143,6 +143,15 @@ class Supervisor:
 
                 summary = report.summary()
                 ts = datetime.now().strftime("%H:%M:%S")
+                log.info(
+                    "supervisor.sweep_completed",
+                    sweep=self.stats.sweeps,
+                    discovered=summary["discovered"],
+                    screened=summary["screened_in"],
+                    scored=summary["scored"],
+                    entered=summary["entered"],
+                    duration_s=summary["duration_seconds"],
+                )
                 console.print(
                     f"  [dim]{ts}[/dim]  sweep {self.stats.sweeps:3d}  "
                     f"{summary['discovered']:3d} discovered → {summary['screened_in']:2d} screened → "
