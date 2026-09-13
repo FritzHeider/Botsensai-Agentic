@@ -116,6 +116,27 @@ class JitoExecutor:
     def get_db(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS execution_signals (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_key         TEXT NOT NULL,
+                symbol            TEXT,
+                side              TEXT NOT NULL,
+                size_native       REAL NOT NULL,
+                max_slippage_bps  INTEGER NOT NULL,
+                jito_tip_lamports INTEGER NOT NULL,
+                score             REAL NOT NULL,
+                as_of             REAL NOT NULL,
+                status            TEXT NOT NULL DEFAULT 'PENDING',
+                tx_hash           TEXT,
+                error             TEXT,
+                created_at        REAL NOT NULL,
+                executed_at       REAL
+            );
+            """
+        )
+        conn.commit()
         return conn
 
     def fetch_pending_signals(self) -> list[dict[str, Any]]:
