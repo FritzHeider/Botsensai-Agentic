@@ -351,6 +351,26 @@ CREATE TABLE IF NOT EXISTS social_accounts (
     PRIMARY KEY (platform, handle, token_key, observed_at)
 );
 CREATE INDEX IF NOT EXISTS ix_accounts_token_time ON social_accounts(token_key, observed_at);
+
+-- Signals emitted by the scoring pipeline when an order clears risk checks.
+-- Read by the external Jito execution adapter to broadcast live transactions.
+CREATE TABLE IF NOT EXISTS execution_signals (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_key         TEXT NOT NULL,
+    symbol            TEXT,
+    side              TEXT NOT NULL,
+    size_native       REAL NOT NULL,
+    max_slippage_bps  INTEGER NOT NULL,
+    jito_tip_lamports INTEGER NOT NULL,
+    score             REAL NOT NULL,
+    as_of             REAL NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'PENDING',
+    tx_hash           TEXT,
+    error             TEXT,
+    created_at        REAL NOT NULL,
+    executed_at       REAL
+);
+CREATE INDEX IF NOT EXISTS ix_signals_status ON execution_signals(status, created_at);
 """
 
 
@@ -1616,6 +1636,76 @@ class Database:
             "peak": stats(peaks),
             "realizable": stats(realizable),
         }
+
+    def record_signal(
+        self,
+        token_key: str,
+        symbol: str | None,
+        side: str,
+        size_native: float,
+        max_slippage_bps: int,
+        jito_tip_lamports: int,
+        score: float,
+        as_of: datetime | float,
+    ) -> int:
+        """Record an execution signal emitted by the scoring pipeline."""
+        now = utcnow().timestamp()
+        as_of_ts = _ts(as_of)
+        with self.transaction() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO execution_signals (
+                    token_key, symbol, side, size_native, max_slippage_bps,
+                    jito_tip_lamports, score, as_of, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+                """,
+                (
+                    token_key,
+                    symbol,
+                    side,
+                    size_native,
+                    max_slippage_bps,
+                    jito_tip_lamports,
+                    score,
+                    as_of_ts,
+                    now,
+                ),
+            )
+            return cursor.lastrowid or 0
+
+    def pending_signals(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Retrieve pending signals awaiting live execution."""
+        rows = self.conn.execute(
+            """
+            SELECT id, token_key, symbol, side, size_native, max_slippage_bps,
+                   jito_tip_lamports, score, as_of, status, created_at
+            FROM execution_signals
+            WHERE status = 'PENDING'
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_signal_status(
+        self,
+        signal_id: int,
+        status: str,
+        tx_hash: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Update signal execution status and transaction hash."""
+        now = utcnow().timestamp()
+        with self.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE execution_signals
+                SET status = ?, tx_hash = ?, error = ?, executed_at = ?
+                WHERE id = ?
+                """,
+                (status, tx_hash, error, now if status != "PENDING" else None, signal_id),
+            )
 
 
 def _b(value: bool | None) -> int | None:

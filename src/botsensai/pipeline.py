@@ -706,6 +706,17 @@ class Pipeline:
         if fill.rejected:
             return f"failed: {fill.reject_reason}"
 
+        self.db.record_signal(
+            token_key=launch.token.key,
+            symbol=launch.token.symbol,
+            side="BUY",
+            size_native=size,
+            max_slippage_bps=self.settings.risk.max_slippage_bps,
+            jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+            score=result.composite,
+            as_of=result.as_of,
+        )
+
         self.memory.remember(
             MemoryKind.OBSERVATION,
             subject=launch.token.key,
