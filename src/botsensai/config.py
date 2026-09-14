@@ -371,7 +371,25 @@ class CloudflareR2Settings(BaseModel):
             "secret_access_key",
         ),
     )
+    region: str = Field(
+        default="auto",
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_R2_REGION",
+            "BOTSENSAI_BACKUP__R2__REGION",
+            "R2_REGION",
+            "region",
+        ),
+    )
     prefix: str = "backups"
+
+    @property
+    def resolved_region(self) -> str:
+        return (
+            os.environ.get("BOTSENSAI_BACKUP_R2_REGION")
+            or os.environ.get("R2_REGION")
+            or (self.region and self.region.strip())
+            or "auto"
+        )
 
     @property
     def resolved_enabled(self) -> bool:
@@ -791,6 +809,12 @@ def audit_capabilities(settings: Settings) -> dict[str, Any]:
 
 def load_settings(config_path: str | Path | None = None, **overrides: Any) -> Settings:
     """Build Settings from YAML, then environment, then explicit overrides."""
+    env_file = REPO_ROOT / ".env"
+    if env_file.exists():
+        from dotenv import load_dotenv
+
+        load_dotenv(env_file)
+
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
     base = _load_yaml(DEFAULT_CONFIG_PATH)
     if path.resolve() != DEFAULT_CONFIG_PATH.resolve() and path.exists():

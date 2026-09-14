@@ -67,6 +67,7 @@ S3_BUCKET="${BOTSENSAI_BACKUP_S3_BUCKET:-botsensai-backups-538471157365}"
 R2_BUCKET="${BOTSENSAI_BACKUP_R2_BUCKET:-${R2_BUCKET:-botsensai-backups}}"
 R2_ACCOUNT_ID="${BOTSENSAI_BACKUP_R2_ACCOUNT_ID:-${R2_ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID:-}}}"
 R2_ENDPOINT="${BOTSENSAI_BACKUP_R2_ENDPOINT_URL:-${R2_ENDPOINT_URL:-}}"
+R2_REGION="${BOTSENSAI_BACKUP_R2_REGION:-${R2_REGION:-auto}}"
 if [ -z "$R2_ENDPOINT" ] && [ -n "$R2_ACCOUNT_ID" ]; then
     R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 fi
@@ -94,7 +95,7 @@ pull_from_r2() {
     SOURCE_URI="s3://$R2_BUCKET/latest/botsensai.db"
     echo "==> Pulling from Cloudflare R2 (Zero Egress): $SOURCE_URI"
     if [ "$DRY_RUN" = true ]; then
-        echo "    (Dry-run) aws s3 cp $SOURCE_URI $DEST --endpoint-url $R2_ENDPOINT"
+        echo "    (Dry-run) aws s3 cp $SOURCE_URI $DEST --endpoint-url $R2_ENDPOINT --region $R2_REGION"
         return 0
     fi
 
@@ -105,8 +106,10 @@ pull_from_r2() {
     if [ -n "${BOTSENSAI_BACKUP_R2_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY:-}}" ]; then
         R2_ENV+=(AWS_SECRET_ACCESS_KEY="${BOTSENSAI_BACKUP_R2_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY}}")
     fi
+    R2_ENV+=(AWS_DEFAULT_REGION="$R2_REGION")
+    R2_ENV+=(AWS_REGION="$R2_REGION")
 
-    if env "${R2_ENV[@]}" aws s3 cp "$SOURCE_URI" "$DEST" --endpoint-url "$R2_ENDPOINT"; then
+    if env "${R2_ENV[@]}" aws s3 cp "$SOURCE_URI" "$DEST" --endpoint-url "$R2_ENDPOINT" --region "$R2_REGION"; then
         echo "    ✓ Successfully downloaded from Cloudflare R2"
         return 0
     else

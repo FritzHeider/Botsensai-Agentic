@@ -168,6 +168,7 @@ class MultiCloudBackupManager:
                         provider="r2",
                         bucket=r2_bucket,
                         endpoint_url=r2_endpoint,
+                        region=r2_cfg.resolved_region,
                         access_key_id=r2_cfg.resolved_access_key_id,
                         secret_access_key=r2_cfg.resolved_secret_access_key,
                         prefix=r2_cfg.prefix,
@@ -211,6 +212,8 @@ class MultiCloudBackupManager:
 
         if target.region:
             cmd.extend(["--region", target.region])
+            env["AWS_DEFAULT_REGION"] = target.region
+            env["AWS_REGION"] = target.region
 
         if target.profile:
             cmd.extend(["--profile", target.profile])

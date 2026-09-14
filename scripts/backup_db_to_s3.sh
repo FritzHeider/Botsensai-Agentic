@@ -94,16 +94,21 @@ S3_BUCKET="${CLI_S3_BUCKET:-${BOTSENSAI_BACKUP_S3_BUCKET:-${AWS_S3_BUCKET:-}}}"
 R2_BUCKET="${BOTSENSAI_BACKUP_R2_BUCKET:-${R2_BUCKET:-}}"
 R2_ACCOUNT_ID="${BOTSENSAI_BACKUP_R2_ACCOUNT_ID:-${R2_ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID:-}}}"
 R2_ENDPOINT="${BOTSENSAI_BACKUP_R2_ENDPOINT_URL:-${R2_ENDPOINT_URL:-}}"
+R2_REGION="${BOTSENSAI_BACKUP_R2_REGION:-${R2_REGION:-auto}}"
 
 # Fallback to reading config if S3/R2 not explicitly set
 if [ -z "$S3_BUCKET" ] && [ -z "$R2_BUCKET" ] && [ -f "$APP_DIR/config/botsensai.yaml" ]; then
     CFG_S3=$(python3 -c "from botsensai.config import load_settings; print(load_settings().backup.s3.resolved_bucket or '')" 2>/dev/null || true)
     CFG_R2=$(python3 -c "from botsensai.config import load_settings; print(load_settings().backup.r2.resolved_bucket or '')" 2>/dev/null || true)
     CFG_R2_EP=$(python3 -c "from botsensai.config import load_settings; print(load_settings().backup.r2.resolved_endpoint or '')" 2>/dev/null || true)
+    CFG_R2_REG=$(python3 -c "from botsensai.config import load_settings; print(load_settings().backup.r2.resolved_region or 'auto')" 2>/dev/null || true)
     S3_BUCKET="${S3_BUCKET:-$CFG_S3}"
     R2_BUCKET="${R2_BUCKET:-$CFG_R2}"
     if [ -z "$R2_ENDPOINT" ] && [ -n "$CFG_R2_EP" ]; then
         R2_ENDPOINT="$CFG_R2_EP"
+    fi
+    if [ -n "$CFG_R2_REG" ]; then
+        R2_REGION="$CFG_R2_REG"
     fi
 fi
 
@@ -208,8 +213,8 @@ if [ -n "$R2_BUCKET" ] && [ -n "$R2_ENDPOINT" ]; then
     R2_LATEST="s3://${R2_BUCKET}/latest/botsensai.db"
     echo "==> [3/4] Mirroring to Cloudflare R2 (Zero Egress): $R2_TARGET"
     if [ "$DRY_RUN" = true ]; then
-        echo "    (Dry-run) aws s3 cp $BACKUP_TMP $R2_TARGET --endpoint-url $R2_ENDPOINT"
-        echo "    (Dry-run) aws s3 cp $BACKUP_TMP $R2_LATEST --endpoint-url $R2_ENDPOINT"
+        echo "    (Dry-run) aws s3 cp $BACKUP_TMP $R2_TARGET --endpoint-url $R2_ENDPOINT --region $R2_REGION"
+        echo "    (Dry-run) aws s3 cp $BACKUP_TMP $R2_LATEST --endpoint-url $R2_ENDPOINT --region $R2_REGION"
     else
         R2_ENV=()
         if [ -n "${BOTSENSAI_BACKUP_R2_ACCESS_KEY_ID:-${R2_ACCESS_KEY_ID:-}}" ]; then
@@ -218,9 +223,11 @@ if [ -n "$R2_BUCKET" ] && [ -n "$R2_ENDPOINT" ]; then
         if [ -n "${BOTSENSAI_BACKUP_R2_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY:-}}" ]; then
             R2_ENV+=(AWS_SECRET_ACCESS_KEY="${BOTSENSAI_BACKUP_R2_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY}}")
         fi
+        R2_ENV+=(AWS_DEFAULT_REGION="$R2_REGION")
+        R2_ENV+=(AWS_REGION="$R2_REGION")
 
-        if env "${R2_ENV[@]}" aws s3 cp "$BACKUP_TMP" "$R2_TARGET" --endpoint-url "$R2_ENDPOINT"; then
-            env "${R2_ENV[@]}" aws s3 cp "$BACKUP_TMP" "$R2_LATEST" --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1 || true
+        if env "${R2_ENV[@]}" aws s3 cp "$BACKUP_TMP" "$R2_TARGET" --endpoint-url "$R2_ENDPOINT" --region "$R2_REGION"; then
+            env "${R2_ENV[@]}" aws s3 cp "$BACKUP_TMP" "$R2_LATEST" --endpoint-url "$R2_ENDPOINT" --region "$R2_REGION" >/dev/null 2>&1 || true
             echo "    ✓ Cloudflare R2 mirror succeeded"
         else
             echo "    ✗ Cloudflare R2 mirror failed" >&2

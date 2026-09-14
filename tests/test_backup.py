@@ -24,6 +24,28 @@ from botsensai.store.backup import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clean_backup_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate backup tests from host environment variables in .env or local environment."""
+    backup_vars = [
+        "BOTSENSAI_BACKUP_S3_ENABLED", "BOTSENSAI_BACKUP_S3_BUCKET", "AWS_S3_BUCKET",
+        "BOTSENSAI_BACKUP_S3_REGION", "BOTSENSAI_BACKUP_S3_PROFILE",
+        "BOTSENSAI_BACKUP_R2_ENABLED", "BOTSENSAI_BACKUP_R2_BUCKET", "R2_BUCKET",
+        "BOTSENSAI_BACKUP_R2_ACCOUNT_ID", "R2_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID",
+        "BOTSENSAI_BACKUP_R2_ENDPOINT_URL", "R2_ENDPOINT_URL",
+        "BOTSENSAI_BACKUP_R2_ACCESS_KEY_ID", "R2_ACCESS_KEY_ID",
+        "BOTSENSAI_BACKUP_R2_SECRET_ACCESS_KEY", "R2_SECRET_ACCESS_KEY",
+        "BOTSENSAI_BACKUP_R2_REGION", "R2_REGION",
+        "BOTSENSAI_BACKUP_B2_ENABLED", "BOTSENSAI_BACKUP_B2_BUCKET", "B2_BUCKET",
+        "BOTSENSAI_BACKUP_B2_ENDPOINT_URL", "B2_ENDPOINT_URL",
+        "BOTSENSAI_BACKUP_B2_REGION", "B2_REGION",
+        "BOTSENSAI_BACKUP_B2_ACCESS_KEY_ID", "B2_ACCESS_KEY_ID",
+        "BOTSENSAI_BACKUP_B2_SECRET_ACCESS_KEY", "B2_SECRET_ACCESS_KEY",
+    ]
+    for var in backup_vars:
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def sample_db(tmp_path: Path) -> Path:
     """Create a sample SQLite database for testing snapshots."""
@@ -69,6 +91,7 @@ def test_r2_settings_resolution() -> None:
         account_id="acc12345",
     )
     assert r2.resolved_endpoint == "https://acc12345.r2.cloudflarestorage.com"
+    assert r2.resolved_region == "auto"
     assert r2.is_configured is True
 
     # Custom endpoint overrides account_id
@@ -115,6 +138,7 @@ def test_multi_cloud_backup_manager_targets(sample_db: Path) -> None:
     r2_target = next(t for t in targets if t.provider == "r2")
     assert r2_target.endpoint_url == "https://cf_acc_99.r2.cloudflarestorage.com"
     assert r2_target.bucket == "r2-backup-bucket"
+    assert r2_target.region == "auto"
 
     # Test provider filtering
     r2_only = manager.get_configured_targets(providers=["r2"])
@@ -129,6 +153,7 @@ def test_build_aws_cli_cmd() -> None:
         provider="r2",
         bucket="r2-test",
         endpoint_url="https://cf123.r2.cloudflarestorage.com",
+        region="auto",
         access_key_id="r2_access_key",
         secret_access_key="r2_secret_key",
     )
@@ -142,9 +167,13 @@ def test_build_aws_cli_cmd() -> None:
         "s3://r2-test/backups/snapshot.db",
         "--endpoint-url",
         "https://cf123.r2.cloudflarestorage.com",
+        "--region",
+        "auto",
     ]
     assert env["AWS_ACCESS_KEY_ID"] == "r2_access_key"
     assert env["AWS_SECRET_ACCESS_KEY"] == "r2_secret_key"
+    assert env["AWS_DEFAULT_REGION"] == "auto"
+    assert env["AWS_REGION"] == "auto"
 
 
 def test_mirror_backup_dry_run(sample_db: Path) -> None:
