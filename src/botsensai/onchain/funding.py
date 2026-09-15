@@ -323,6 +323,8 @@ class FundingSourceResolver:
 
     @property
     def rpc_url(self) -> str:
+        if self.settings.helius_rpc_url:
+            return self.settings.helius_rpc_url
         key = self.settings.helius_api_key
         if key:
             return f"https://mainnet.helius-rpc.com/?api-key={key}"

@@ -314,6 +314,10 @@ def open_html_dashboard():
     if dash_file.exists():
         console.print(f"[bold green]Opening {dash_file} in your browser...[/bold green]")
         subprocess.run(["open", str(dash_file)])
+
+        qa_script = REPO_ROOT / ".agents" / "skills" / "dashboard-qa" / "scripts" / "run_qa.py"
+        if qa_script.exists() and Confirm.ask("\nRun automated Playwright headless QA audit on this dashboard?", default=False):
+            subprocess.run([sys.executable, str(qa_script), "--target", str(dash_file)])
     else:
         console.print("[red]Dashboard file not found.[/red]")
 

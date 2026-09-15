@@ -294,6 +294,26 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("BOTSENSAI_HELIUS_API_KEY", "HELIUS_API_KEY", "helius_api_key"),
     )
+    helius_rpc_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_RPC_URL", "HELIUS_RPC_URL", "helius_rpc_url"),
+    )
+    helius_fallback_rpc_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_FALLBACK_RPC_URL", "HELIUS_FALLBACK_RPC_URL", "helius_fallback_rpc_url"),
+    )
+    helius_api_url: str = Field(
+        default="https://mainnet.helius-rpc.com/v0",
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_API_URL", "HELIUS_API_URL", "helius_api_url"),
+    )
+    helius_enhanced_tx_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_ENHANCED_TX_URL", "HELIUS_ENHANCED_TX_URL", "helius_enhanced_tx_url"),
+    )
+    helius_portal_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_PORTAL_URL", "HELIUS_PORTAL_URL", "helius_portal_url"),
+    )
     birdeye_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("BOTSENSAI_BIRDEYE_API_KEY", "BIRDEYE_API_KEY", "birdeye_api_key"),
