@@ -1044,8 +1044,7 @@ def _backtest_tapes(
     """
     if not synthetic:
         db = Database(settings.path(settings.db_path))
-        tapes = Backtester.tapes_from_database(db, start, end)
-        usable = [t for t in tapes if len(t.snapshots) >= 3]
+        usable = Backtester.tapes_from_database(db, start, end, limit=universe)
         if len(usable) >= 10:
             return usable, False
         console.print(
@@ -1781,7 +1780,7 @@ def recap(
 @app.command(name="track-record")
 def track_record(
     config: str = typer.Option(None, help="Path to a config YAML."),
-    days: float = typer.Option(2.0, help="Window of history to evaluate in days."),
+    days: float = typer.Option(7.0, help="Window of history to evaluate in days."),
     synthetic: bool = typer.Option(
         False, "--synthetic", help="Force a synthetic run instead of using the store."
     ),
@@ -2236,6 +2235,86 @@ def export(
         console.print(f"[green]✓ Exported table '{table}' to[/green] [bold]{dest}[/bold]")
     except Exception as exc:
         console.print(f"[red]Export failed:[/red] {exc}")
+        raise typer.Exit(1) from None
+
+
+# --------------------------------------------------------------------------- #
+# backup
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+def backup(
+    config: str = typer.Option(None, help="Path to a config YAML."),
+    provider: str = typer.Option("all", "--provider", "-p", help="Target provider: all | s3 | r2 | b2."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate backup without uploading."),
+    no_latest: bool = typer.Option(False, "--no-latest", help="Do not overwrite the latest/ pointer."),
+    status: bool = typer.Option(False, "--status", help="Show configured cloud backup targets and exit."),
+    log_level: str = typer.Option("INFO", help="Log level."),
+) -> None:
+    """Create an atomic SQLite snapshot and mirror it across AWS S3 and Cloudflare R2 / Backblaze B2."""
+    from botsensai.store.backup import MultiCloudBackupManager
+
+    settings = _settings(config, log_level)
+    manager = MultiCloudBackupManager(settings)
+
+    if status:
+        targets = manager.get_configured_targets()
+        table = Table(title="multi-cloud backup targets")
+        table.add_column("provider", style="bold cyan")
+        table.add_column("destination")
+        table.add_column("endpoint")
+        table.add_column("features")
+        for t in targets:
+            features = []
+            if t.provider == "r2":
+                features.append("[green]zero egress fees[/green]")
+            elif t.provider == "s3":
+                features.append("aws native / iam")
+            elif t.provider == "b2":
+                features.append("b2 low-cost")
+            table.add_row(
+                t.provider.upper(),
+                f"s3://{t.bucket}/{t.prefix}/",
+                t.endpoint_url or "aws default",
+                ", ".join(features),
+            )
+        console.print(table)
+        return
+
+    providers = None if provider == "all" else [provider]
+    try:
+        targets = manager.get_configured_targets(providers)
+        if not targets:
+            console.print(f"[yellow]No cloud targets configured for provider '{provider}'.[/yellow]")
+            console.print("Check your config/botsensai.yaml or set environment variables like BOTSENSAI_BACKUP_S3_BUCKET.")
+            raise typer.Exit(1)
+
+        console.print(f"[bold]Mirroring database backup to {len(targets)} target(s):[/bold] " + ", ".join(t.display_name for t in targets))
+        report = manager.mirror_backup(
+            providers=providers,
+            update_latest=not no_latest,
+            dry_run=dry_run,
+        )
+
+        table = Table(title=f"backup results ({report.timestamp})")
+        table.add_column("provider", style="bold")
+        table.add_column("status")
+        table.add_column("destination")
+        table.add_column("duration", justify="right")
+        for res in report.results:
+            status_str = "[green]✓ uploaded[/green]" if res.success else "[red]✗ failed[/red]"
+            dur = f"{res.duration_seconds:.2f}s" if res.success else "—"
+            table.add_row(res.provider.upper(), status_str, res.target_uri, dur)
+            if res.error:
+                table.add_row("", f"[red]{res.error}[/red]", "", "")
+
+        console.print(table)
+        if not report.success:
+            raise typer.Exit(1)
+
+    except Exception as exc:
+        console.print(f"[red]Backup failed:[/red] {exc}")
         raise typer.Exit(1) from None
 
 

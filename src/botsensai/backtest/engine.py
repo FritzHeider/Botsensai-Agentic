@@ -240,6 +240,17 @@ class BacktestResult:
             "total_pnl_native": round(self.total_pnl_native, 6),
             "expectancy_native": round(self.expectancy_native, 6),
             "win_rate": round(self.win_rate, 4),
+            "total_return": round(
+                self.account.get("total_return")
+                if self.account.get("total_return") is not None
+                else (
+                    (self.account.get("equity_native", 0.0) - self.account.get("starting_native", 0.0))
+                    / self.account.get("starting_native", 1.0)
+                    if self.account.get("starting_native", 0.0) > 0
+                    else 0.0
+                ),
+                6,
+            ),
             "median_multiple": round(self.median_multiple, 4),
             "profit_factor": round(self.profit_factor, 4)
             if math.isfinite(self.profit_factor)
@@ -389,7 +400,11 @@ class Backtester:
 
     @staticmethod
     def tapes_from_database(
-        db: Database, start: datetime, end: datetime
+        db: Database,
+        start: datetime,
+        end: datetime,
+        limit: int | None = None,
+        min_snapshots: int = 0,
     ) -> list[TokenTape]:
         """Load a replayable universe from persisted collection data."""
         tapes: list[TokenTape] = []
@@ -398,9 +413,13 @@ class Backtester:
         for launch in db.launches_between(start, end):
             key = launch.token.key
             horizon = end
+            snapshots = db.snapshots_as_of(key, horizon)
+            if min_snapshots > 0 and len(snapshots) < min_snapshots:
+                continue
+
             tape = TokenTape(
                 launch=launch,
-                snapshots=db.snapshots_as_of(key, horizon),
+                snapshots=snapshots,
                 trades=db.trades_as_of(key, horizon),
                 holders=db.holders_as_of(key, horizon),
                 posts=db.posts_as_of(key, horizon),
@@ -428,6 +447,8 @@ class Backtester:
             tape.wallet_skills = skills_res.scores
             tape.wallet_typical_sizes = skills_res.typical_sizes
             tapes.append(tape)
+            if limit is not None and len(tapes) >= limit:
+                break
         return tapes
 
     @staticmethod

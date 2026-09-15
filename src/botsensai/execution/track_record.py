@@ -48,11 +48,15 @@ def _summary_rows(
 ) -> list[str]:
     mode_str = "Paper Trading (Synthetic)" if result.synthetic else "Paper Trading (Real Store)"
     win_rate = summary.get("win_rate", 0.0)
-    total_ret = summary.get("total_return", 0.0)
-    expectancy = summary.get("expectancy_native", 0.0)
     start_cap = result.account.get("starting_native", 10.0)
     end_eq = result.account.get("equity_native", 10.0)
     realized_pnl = result.account.get("realized_pnl_native", 0.0)
+    total_ret = summary.get("total_return")
+    if total_ret is None:
+        total_ret = result.account.get("total_return")
+    if total_ret is None:
+        total_ret = ((end_eq - start_cap) / start_cap) if start_cap > 0 else 0.0
+    expectancy = summary.get("expectancy_native", 0.0)
 
     return [
         "| Metric | Value |",

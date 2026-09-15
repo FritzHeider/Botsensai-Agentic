@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# ============================================================================ #
+# Botsensai Control Center launcher
+# ============================================================================ #
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export AWS_PROFILE="${AWS_PROFILE:-agent-profile}"
+export AWS_REGION="${AWS_REGION:-us-east-1}"
+export BOTSENSAI_INSTANCE_ID="${BOTSENSAI_INSTANCE_ID:-i-0bb5f0e7d264a2937}"
+exec python3 "$DIR/wizard.py" "$@"

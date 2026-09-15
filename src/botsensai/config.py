@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -263,6 +263,307 @@ class NotificationSettings(BaseModel):
     on_integrity_alarm: bool = True
 
 
+class AWSS3Settings(BaseModel):
+    """AWS S3 backup target settings."""
+
+    enabled: bool = True
+    bucket: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_S3_BUCKET",
+            "BOTSENSAI_BACKUP__S3__BUCKET",
+            "AWS_S3_BUCKET",
+            "bucket",
+        ),
+    )
+    region: str | None = Field(
+        default="us-east-1",
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_S3_REGION",
+            "BOTSENSAI_BACKUP__S3__REGION",
+            "AWS_REGION",
+            "AWS_DEFAULT_REGION",
+            "region",
+        ),
+    )
+    profile: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_S3_PROFILE",
+            "BOTSENSAI_BACKUP__S3__PROFILE",
+            "AWS_PROFILE",
+            "profile",
+        ),
+    )
+    prefix: str = "backups"
+
+    @property
+    def resolved_enabled(self) -> bool:
+        if "BOTSENSAI_BACKUP_S3_ENABLED" in os.environ:
+            return os.environ["BOTSENSAI_BACKUP_S3_ENABLED"].lower() in ("1", "true", "yes")
+        return self.enabled
+
+    @property
+    def resolved_bucket(self) -> str | None:
+        return (
+            (self.bucket and self.bucket.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_S3_BUCKET")
+            or os.environ.get("AWS_S3_BUCKET")
+        )
+
+    @property
+    def resolved_region(self) -> str | None:
+        return (
+            (self.region and self.region.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_S3_REGION")
+            or os.environ.get("AWS_REGION")
+            or "us-east-1"
+        )
+
+
+class CloudflareR2Settings(BaseModel):
+    """Cloudflare R2 backup mirror settings (S3-compatible, zero egress fees)."""
+
+    enabled: bool = True
+    bucket: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_R2_BUCKET",
+            "BOTSENSAI_BACKUP__R2__BUCKET",
+            "R2_BUCKET",
+            "bucket",
+        ),
+    )
+    account_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_R2_ACCOUNT_ID",
+            "BOTSENSAI_BACKUP__R2__ACCOUNT_ID",
+            "R2_ACCOUNT_ID",
+            "CLOUDFLARE_ACCOUNT_ID",
+            "account_id",
+        ),
+    )
+    endpoint_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_R2_ENDPOINT_URL",
+            "BOTSENSAI_BACKUP__R2__ENDPOINT_URL",
+            "R2_ENDPOINT_URL",
+            "endpoint_url",
+        ),
+    )
+    access_key_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_R2_ACCESS_KEY_ID",
+            "BOTSENSAI_BACKUP__R2__ACCESS_KEY_ID",
+            "R2_ACCESS_KEY_ID",
+            "access_key_id",
+        ),
+    )
+    secret_access_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_R2_SECRET_ACCESS_KEY",
+            "BOTSENSAI_BACKUP__R2__SECRET_ACCESS_KEY",
+            "R2_SECRET_ACCESS_KEY",
+            "secret_access_key",
+        ),
+    )
+    region: str = Field(
+        default="auto",
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_R2_REGION",
+            "BOTSENSAI_BACKUP__R2__REGION",
+            "R2_REGION",
+            "region",
+        ),
+    )
+    prefix: str = "backups"
+
+    @property
+    def resolved_region(self) -> str:
+        return (
+            os.environ.get("BOTSENSAI_BACKUP_R2_REGION")
+            or os.environ.get("R2_REGION")
+            or (self.region and self.region.strip())
+            or "auto"
+        )
+
+    @property
+    def resolved_enabled(self) -> bool:
+        if "BOTSENSAI_BACKUP_R2_ENABLED" in os.environ:
+            return os.environ["BOTSENSAI_BACKUP_R2_ENABLED"].lower() in ("1", "true", "yes")
+        return self.enabled
+
+    @property
+    def resolved_bucket(self) -> str | None:
+        return (
+            (self.bucket and self.bucket.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_R2_BUCKET")
+            or os.environ.get("R2_BUCKET")
+        )
+
+    @property
+    def resolved_account_id(self) -> str | None:
+        return (
+            (self.account_id and self.account_id.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_R2_ACCOUNT_ID")
+            or os.environ.get("R2_ACCOUNT_ID")
+            or os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+        )
+
+    @property
+    def resolved_endpoint(self) -> str | None:
+        url = (
+            (self.endpoint_url and self.endpoint_url.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_R2_ENDPOINT_URL")
+            or os.environ.get("R2_ENDPOINT_URL")
+        )
+        if url:
+            return url.rstrip("/")
+        acct = self.resolved_account_id
+        if acct:
+            return f"https://{acct}.r2.cloudflarestorage.com"
+        return None
+
+    @property
+    def resolved_access_key_id(self) -> str | None:
+        return (
+            (self.access_key_id and self.access_key_id.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_R2_ACCESS_KEY_ID")
+            or os.environ.get("R2_ACCESS_KEY_ID")
+        )
+
+    @property
+    def resolved_secret_access_key(self) -> str | None:
+        return (
+            (self.secret_access_key and self.secret_access_key.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_R2_SECRET_ACCESS_KEY")
+            or os.environ.get("R2_SECRET_ACCESS_KEY")
+        )
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.resolved_bucket and self.resolved_endpoint)
+
+
+class BackblazeB2Settings(BaseModel):
+    """Backblaze B2 backup mirror settings (S3-compatible)."""
+
+    enabled: bool = True
+    bucket: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_B2_BUCKET",
+            "BOTSENSAI_BACKUP__B2__BUCKET",
+            "B2_BUCKET",
+            "bucket",
+        ),
+    )
+    endpoint_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_B2_ENDPOINT_URL",
+            "BOTSENSAI_BACKUP__B2__ENDPOINT_URL",
+            "B2_ENDPOINT_URL",
+            "endpoint_url",
+        ),
+    )
+    region: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_B2_REGION",
+            "BOTSENSAI_BACKUP__B2__REGION",
+            "B2_REGION",
+            "region",
+        ),
+    )
+    access_key_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_B2_ACCESS_KEY_ID",
+            "BOTSENSAI_BACKUP__B2__ACCESS_KEY_ID",
+            "B2_ACCESS_KEY_ID",
+            "access_key_id",
+        ),
+    )
+    secret_access_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BOTSENSAI_BACKUP_B2_SECRET_ACCESS_KEY",
+            "BOTSENSAI_BACKUP__B2__SECRET_ACCESS_KEY",
+            "B2_SECRET_ACCESS_KEY",
+            "secret_access_key",
+        ),
+    )
+    prefix: str = "backups"
+
+    @property
+    def resolved_enabled(self) -> bool:
+        if "BOTSENSAI_BACKUP_B2_ENABLED" in os.environ:
+            return os.environ["BOTSENSAI_BACKUP_B2_ENABLED"].lower() in ("1", "true", "yes")
+        return bool(self.enabled or os.environ.get("BOTSENSAI_BACKUP_B2_BUCKET") or os.environ.get("B2_BUCKET"))
+
+    @property
+    def resolved_bucket(self) -> str | None:
+        return (
+            (self.bucket and self.bucket.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_B2_BUCKET")
+            or os.environ.get("B2_BUCKET")
+        )
+
+    @property
+    def resolved_endpoint(self) -> str | None:
+        url = (
+            (self.endpoint_url and self.endpoint_url.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_B2_ENDPOINT_URL")
+            or os.environ.get("B2_ENDPOINT_URL")
+        )
+        if url:
+            return url.rstrip("/")
+        reg = (
+            (self.region and self.region.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_B2_REGION")
+            or os.environ.get("B2_REGION")
+        )
+        if reg:
+            return f"https://s3.{reg}.backblazeb2.com"
+        return None
+
+    @property
+    def resolved_access_key_id(self) -> str | None:
+        return (
+            (self.access_key_id and self.access_key_id.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_B2_ACCESS_KEY_ID")
+            or os.environ.get("B2_ACCESS_KEY_ID")
+        )
+
+    @property
+    def resolved_secret_access_key(self) -> str | None:
+        return (
+            (self.secret_access_key and self.secret_access_key.strip())
+            or os.environ.get("BOTSENSAI_BACKUP_B2_SECRET_ACCESS_KEY")
+            or os.environ.get("B2_SECRET_ACCESS_KEY")
+        )
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.resolved_bucket and self.resolved_endpoint)
+
+
+class BackupSettings(BaseModel):
+    """Multi-cloud backup configuration (AWS S3 + Cloudflare R2 / Backblaze B2)."""
+
+    enabled: bool = True
+    cron_schedule: str = "0 */6 * * *"
+    update_latest: bool = True
+    s3: AWSS3Settings = Field(default_factory=AWSS3Settings)
+    r2: CloudflareR2Settings = Field(default_factory=CloudflareR2Settings)
+    b2: BackblazeB2Settings = Field(default_factory=BackblazeB2Settings)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="BOTSENSAI_",
@@ -282,15 +583,30 @@ class Settings(BaseSettings):
     seed: int = 1337
 
     # --- chains and rpc -----------------------------------------------------
-    solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
-    solana_ws_url: str | None = None
-    helius_api_key: str | None = None
-    birdeye_api_key: str | None = None
+    solana_rpc_url: str = Field(
+        default="https://api.mainnet-beta.solana.com",
+        validation_alias=AliasChoices("BOTSENSAI_SOLANA_RPC_URL", "SOLANA_RPC_URL", "solana_rpc_url"),
+    )
+    solana_ws_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_SOLANA_WS_URL", "SOLANA_WS_URL", "solana_ws_url"),
+    )
+    helius_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_API_KEY", "HELIUS_API_KEY", "helius_api_key"),
+    )
+    birdeye_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_BIRDEYE_API_KEY", "BIRDEYE_API_KEY", "birdeye_api_key"),
+    )
     bitquery_api_key: str | None = None
     jito_block_engine_url: str | None = None
 
     # --- social credentials (all optional; collectors degrade without them) --
-    x_bearer_token: str | None = None
+    x_bearer_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_X_BEARER_TOKEN", "X_BEARER_TOKEN", "x_bearer_token"),
+    )
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None
     reddit_user_agent: str = "botsensai/0.1 (research)"
@@ -315,6 +631,7 @@ class Settings(BaseSettings):
     media_hash: MediaHashSettings = Field(default_factory=MediaHashSettings)
     backtest: BacktestSettings = Field(default_factory=BacktestSettings)
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
+    backup: BackupSettings = Field(default_factory=BackupSettings)
     collectors: dict[str, CollectorSettings] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -478,6 +795,13 @@ def audit_capabilities(settings: Settings) -> dict[str, Any]:
                 or settings.notifications.webhook_url
             )
         ),
+        "backup_s3": bool(settings.backup.s3.bucket),
+        "backup_r2": settings.backup.r2.is_configured,
+        "backup_b2": settings.backup.b2.is_configured,
+        "backup_multicloud": bool(
+            settings.backup.s3.bucket
+            and (settings.backup.r2.is_configured or settings.backup.b2.is_configured)
+        ),
         "playwright_installed": has_playwright,
         "ml_installed": has_sklearn and has_lightgbm,
     }
@@ -485,8 +809,21 @@ def audit_capabilities(settings: Settings) -> dict[str, Any]:
 
 def load_settings(config_path: str | Path | None = None, **overrides: Any) -> Settings:
     """Build Settings from YAML, then environment, then explicit overrides."""
+    env_file = REPO_ROOT / ".env"
+    if env_file.exists():
+        from dotenv import load_dotenv
+
+        load_dotenv(env_file)
+
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
-    base = _load_yaml(path)
+    base = _load_yaml(DEFAULT_CONFIG_PATH)
+    if path.resolve() != DEFAULT_CONFIG_PATH.resolve() and path.exists():
+        overlay = _load_yaml(path)
+        for k, v in overlay.items():
+            if isinstance(v, dict) and isinstance(base.get(k), dict):
+                base[k].update(v)
+            else:
+                base[k] = v
     base.update(overrides)
     return Settings(**base)
 
@@ -498,8 +835,12 @@ def get_settings() -> Settings:
 
 
 __all__ = [
+    "AWSS3Settings",
+    "BackblazeB2Settings",
     "BacktestSettings",
+    "BackupSettings",
     "BrowserSettings",
+    "CloudflareR2Settings",
     "CollectorSettings",
     "DEFAULT_CONFIG_PATH",
     "ExecutionSettings",
