@@ -30,48 +30,25 @@ def patch_botsensai_config(config_path: Path, profile_dir: Path) -> None:
 
     text = config_path.read_text(encoding="utf-8")
 
-    # Update or insert browser.user_data_dir
-    if re.search(r"^\s*user_data_dir:\s*.*$", text, re.MULTILINE):
-        text = re.sub(
-            r"^\s*user_data_dir:\s*.*$",
-            f'  user_data_dir: "{profile_dir}"',
-            text,
-            flags=re.MULTILINE,
-        )
-    else:
-        text = re.sub(
-            r"^browser:\s*$",
-            f'browser:\n  user_data_dir: "{profile_dir}"',
-            text,
-            flags=re.MULTILINE,
-        )
+    # Update browser.user_data_dir
+    text = re.sub(
+        r"(user_data_dir:\s*).*$",
+        rf"\g<1>{profile_dir}",
+        text,
+        flags=re.MULTILINE,
+    )
 
-    # Update or insert x_session.enabled and acknowledged_burner
+    # Update only the x_session block specifically
+    def fix_x_session(match: re.Match) -> str:
+        block = match.group(0)
+        block = re.sub(r"(^\s+enabled:\s*).*$", r"\g<1>true", block, flags=re.MULTILINE)
+        block = re.sub(r"(^\s+acknowledged_burner:\s*).*$", r"\g<1>true", block, flags=re.MULTILINE)
+        return block
+
     if "x_session:" in text:
-        text = re.sub(
-            r"^\s*enabled:\s*(?:true|false).*$",
-            "  enabled: true",
-            text,
-            flags=re.MULTILINE,
-        )
-        if "acknowledged_burner:" in text:
-            text = re.sub(
-                r"^\s*acknowledged_burner:\s*(?:true|false).*$",
-                "  acknowledged_burner: true",
-                text,
-                flags=re.MULTILINE,
-            )
-        else:
-            text = re.sub(
-                r"^x_session:\s*$",
-                "x_session:\n  enabled: true\n  acknowledged_burner: true",
-                text,
-                flags=re.MULTILINE,
-            )
+        text = re.sub(r"^x_session:\s*\n(?:\s+.*\n)*", fix_x_session, text, flags=re.MULTILINE)
     else:
-        text += (
-            f"\n\nx_session:\n  enabled: true\n  acknowledged_burner: true\n"
-        )
+        text += f"\n\nx_session:\n  enabled: true\n  acknowledged_burner: true\n"
 
     config_path.write_text(text, encoding="utf-8")
     console.print(f"[green]Successfully patched {config_path} with user_data_dir and enabled x_session.[/green]")
