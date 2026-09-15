@@ -41,6 +41,7 @@ Operating rules, all enforced in code rather than merely documented:
 from __future__ import annotations
 
 import contextlib
+import os
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -211,16 +212,20 @@ class AuthenticatedXCollector(XCollector):
         """A browser configured for reading a logged-in session.
 
         Two deliberate departures from the default profile: headed rather than
-        headless, because X serves a materially different and more
-        challenge-prone experience to headless clients even with a valid
-        session; and images unblocked, because `derivative_remix_depth` needs
-        the media URLs the timeline lazy-loads.
+        headless when a GUI display is available, because X serves a materially
+        different experience to headless clients; and images unblocked, because
+        `derivative_remix_depth` needs the media URLs the timeline lazy-loads.
+        In headless Linux server environments (e.g. EC2 without X11/DISPLAY),
+        headless mode is required so Playwright does not crash.
         """
         base = self.settings.browser
+        has_display = bool(os.environ.get("DISPLAY"))
+        headless = True if not has_display else base.headless
+
         return base.model_copy(
             update={
                 "user_data_dir": self.profile_dir,
-                "headless": False,
+                "headless": headless,
                 "block_resources": ["font", "media"],
                 "max_pages": 1,
             }
