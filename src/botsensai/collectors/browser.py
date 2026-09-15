@@ -26,9 +26,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import re
 from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from botsensai.config import BrowserSettings
@@ -221,6 +223,14 @@ class WebUseDriver:
                     self._context = await launcher.launch_persistent_context(
                         self.settings.user_data_dir, **launch_kwargs, **context_kwargs
                     )
+                    state_path = Path(self.settings.user_data_dir) / "storage_state.json"
+                    if state_path.exists():
+                        try:
+                            state_data = json.loads(state_path.read_text(encoding="utf-8"))
+                            if "cookies" in state_data and state_data["cookies"]:
+                                await self._context.add_cookies(state_data["cookies"])
+                        except Exception as e:
+                            log.warning("browser.storage_state_load_failed", error=str(e))
                     self._browser = None
                 else:
                     self._browser = await launcher.launch(**launch_kwargs)

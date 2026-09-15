@@ -11,6 +11,7 @@ import asyncio
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 from playwright.async_api import async_playwright
@@ -86,7 +87,8 @@ async def inject_cookies(
             viewport={"width": 1280, "height": 800},
         )
 
-        # Inject auth cookies for both .x.com and .twitter.com
+        # Inject auth cookies for both .x.com and .twitter.com with 1-year expiry
+        exp = int(time.time()) + 365 * 86400
         cookies = [
             {
                 "name": "auth_token",
@@ -95,6 +97,7 @@ async def inject_cookies(
                 "path": "/",
                 "secure": True,
                 "httpOnly": True,
+                "expires": exp,
             },
             {
                 "name": "ct0",
@@ -103,6 +106,7 @@ async def inject_cookies(
                 "path": "/",
                 "secure": True,
                 "httpOnly": False,
+                "expires": exp,
             },
             {
                 "name": "auth_token",
@@ -111,6 +115,7 @@ async def inject_cookies(
                 "path": "/",
                 "secure": True,
                 "httpOnly": True,
+                "expires": exp,
             },
             {
                 "name": "ct0",
@@ -119,6 +124,7 @@ async def inject_cookies(
                 "path": "/",
                 "secure": True,
                 "httpOnly": False,
+                "expires": exp,
             },
         ]
         await context.add_cookies(cookies)
@@ -130,6 +136,10 @@ async def inject_cookies(
             await asyncio.sleep(4.0)
             html = await page.content()
             text = await page.evaluate("() => document.body.innerText")
+            # Save storage state (cookies + local storage) for persistent sessions
+            state_file = target_dir / "storage_state.json"
+            await context.storage_state(path=str(state_file))
+            console.print(f"[green]Saved storage state to {state_file}[/green]")
         except Exception as e:
             console.print(f"[yellow]Navigation probe notice: {e}[/yellow]")
             html = await page.content() if page else ""
