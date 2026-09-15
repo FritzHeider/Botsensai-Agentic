@@ -458,6 +458,8 @@ class Database:
             conn.rollback()
             raise
 
+    transaction = tx
+
     def close(self) -> None:
         if self._shared is not None:
             self._shared.close()
@@ -1651,7 +1653,7 @@ class Database:
         """Record an execution signal emitted by the scoring pipeline."""
         now = utcnow().timestamp()
         as_of_ts = _ts(as_of)
-        with self.transaction() as conn:
+        with self.tx() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO execution_signals (
@@ -1697,7 +1699,7 @@ class Database:
     ) -> None:
         """Update signal execution status and transaction hash."""
         now = utcnow().timestamp()
-        with self.transaction() as conn:
+        with self.tx() as conn:
             conn.execute(
                 """
                 UPDATE execution_signals
