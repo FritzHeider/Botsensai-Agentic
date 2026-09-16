@@ -266,3 +266,4 @@ Botsensai/
 ## 📄 License
 
 MIT License. Engineered for open quantitative research, on-chain safety, and adversarial market intelligence.
+# Botsensai-AWS
