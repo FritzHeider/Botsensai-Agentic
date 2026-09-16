@@ -691,6 +691,28 @@ class Pipeline:
         if size <= 1e-6:
             return "skip: sizing produced zero"
 
+        # Check for real-time smart money participation boost
+        trades = self.db.trades_as_of(launch.token.key, result.as_of)
+        buyer_wallets = [t.wallet for t in trades if t.wallet and getattr(t.side, "value", str(t.side)).lower() == "buy"]
+        if buyer_wallets:
+            try:
+                from botsensai.smart_money import RealtimeSmartMoneyTrigger
+                matched, boost, _ = RealtimeSmartMoneyTrigger().evaluate_early_buyers(buyer_wallets)
+                if matched:
+                    result.composite = min(1.0, result.composite + boost)
+            except Exception:
+                pass
+
+        dynamic_tip = self.settings.execution.jito_tip_lamports
+        try:
+            from botsensai.execution.jito_tips import JitoTipEngine
+            dynamic_tip = JitoTipEngine.get_instance(self.settings).calculate_tip_lamports(
+                conviction_score=result.composite,
+                trade_size_sol=size,
+            )
+        except Exception:
+            pass
+
         age = (result.as_of - launch.created_at).total_seconds()
         fill = self.broker.open_position(
             launch.token,
@@ -700,6 +722,7 @@ class Pipeline:
             age_seconds=age,
             reason=result.explanation or "",
             score=result.composite,
+            jito_tip_lamports=dynamic_tip,
         )
         if fill is None:
             return "skip: rejected by risk manager"
@@ -712,7 +735,7 @@ class Pipeline:
             side="BUY",
             size_native=size,
             max_slippage_bps=self.settings.risk.max_slippage_bps,
-            jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+            jito_tip_lamports=dynamic_tip,
             score=result.composite,
             as_of=result.as_of,
         )

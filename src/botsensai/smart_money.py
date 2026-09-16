@@ -114,8 +114,33 @@ async def run_smart_money_cli(settings: Settings, min_trades: int = 2) -> None:
         db.close()
 
 
+
+class RealtimeSmartMoneyTrigger:
+    """Reactive tracker that checks incoming transactions against proven alpha wallets."""
+
+    def __init__(self, high_win_wallets: set[str] | None = None) -> None:
+        self.alpha_wallets: set[str] = high_win_wallets or set()
+
+    def update_alpha_wallets(self, profiles: list[SmartWalletProfile], min_win_rate: float = 0.65) -> None:
+        for p in profiles:
+            if p.win_rate >= min_win_rate and p.total_trades >= 10:
+                self.alpha_wallets.add(p.wallet)
+
+    def evaluate_early_buyers(self, buyer_wallets: list[str]) -> tuple[bool, float, list[str]]:
+        """Check if any buyer in the list is a known high-win-rate smart money wallet.
+        
+        Returns (matched, conviction_boost, matched_wallets).
+        """
+        matched = [w for w in buyer_wallets if w in self.alpha_wallets]
+        if matched:
+            boost = min(0.25, 0.10 * len(matched))
+            return True, boost, matched
+        return False, 0.0, []
+
+
 __all__ = [
     "SmartWalletProfile",
+    "RealtimeSmartMoneyTrigger",
     "discover_smart_money_wallets",
     "render_smart_money_table",
     "run_smart_money_cli",

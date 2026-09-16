@@ -513,6 +513,9 @@ async def get_sniper_status(request: Request) -> dict[str, Any]:
     try:
         pending = db.pending_signals(limit=10)
         recent = db.recent_signals(limit=20)
+        from botsensai.execution.jito_tips import JitoTipEngine
+        tip_floor = JitoTipEngine.get_instance(settings).current_floor
+
         return {
             "mode": settings.trading_mode.value.upper(),
             "dry_run": True,
@@ -522,6 +525,19 @@ async def get_sniper_status(request: Request) -> dict[str, Any]:
                 "canary_max_sol": settings.risk.max_position_native,
                 "daily_loss_limit_sol": getattr(settings.risk, "daily_loss_limit_sol", 0.25),
                 "max_slippage_bps": settings.risk.max_slippage_bps,
+            },
+            "profitability_engine": {
+                "yellowstone_grpc_active": bool(settings.yellowstone_grpc_endpoint),
+                "dynamic_jito_tips": settings.execution.dynamic_jito_tips,
+                "jito_tip_floor_p50_lamports": tip_floor.p50_lamports,
+                "jito_tip_floor_p75_lamports": tip_floor.p75_lamports,
+                "kelly_sizing_enabled": settings.risk.use_kelly_sizing,
+                "kelly_fraction": settings.risk.kelly_fraction,
+                "momentum_stop_seconds": settings.risk.momentum_stop_seconds,
+                "curve_auto_exit_pct": settings.risk.curve_auto_exit_pct,
+                "anti_sandwich_bundling": settings.execution.anti_sandwich_private_bundle,
+                "dev_bundler_sybil_defense": True,
+                "golden_curve_window": "2% - 85%",
             },
             "execution": {
                 "jito_tip_lamports": settings.execution.jito_tip_lamports,

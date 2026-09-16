@@ -130,6 +130,11 @@ class VetoReason(str, Enum):
     SOCIAL_ENGAGEMENT_INAUTHENTIC = "social_engagement_inauthentic"
     DEV_ALREADY_SOLD = "dev_already_sold"
     KILL_SWITCH = "kill_switch"
+    DEV_BUNDLER_SYBIL = "dev_bundler_sybil"
+    CEX_INSIDER_CABAL = "cex_insider_cabal"
+    COPYCAT_HONEYPOT = "copycat_honeypot"
+    WASH_TRADING_DETECTED = "wash_trading_detected"
+    CURVE_STAGE_OUT_OF_BOUNDS = "curve_stage_out_of_bounds"
 
 
 # --------------------------------------------------------------------------- #

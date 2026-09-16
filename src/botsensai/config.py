@@ -129,6 +129,14 @@ class RiskSettings(BaseModel):
     max_hold_seconds: float = 60 * 60 * 4
     kill_switch: bool = False
     expectancy_floor: float = -0.05
+    momentum_stop_seconds: float = 90.0
+    momentum_min_gain_pct: float = 0.15
+    curve_auto_exit_pct: float = 0.98
+    use_kelly_sizing: bool = True
+    kelly_fraction: float = 0.25
+    min_curve_progress: float = 0.02
+    max_curve_progress: float = 0.85
+    sniper_min_token_age_seconds: float = 0.0
 
     @model_validator(mode="after")
     def _check_ladder(self) -> RiskSettings:
@@ -159,6 +167,13 @@ class ExecutionSettings(BaseModel):
         default="curve", description="curve | constant_product | depth_table"
     )
     max_impact_bps: float = 5_000.0
+    dynamic_jito_tips: bool = True
+    jito_tip_percentile: int = 50
+    anti_sandwich_private_bundle: bool = True
+    leader_schedule_routing: bool = True
+    yellowstone_grpc_endpoint: str | None = None
+    yellowstone_grpc_x_token: str | None = None
+    bloxroute_auth_header: str | None = None
 
 
 class ScoringSettings(BaseModel):
@@ -181,8 +196,13 @@ class ScoringSettings(BaseModel):
     veto_top10_share: float = 0.55
     veto_insider_share: float = 0.30
     veto_bundle_share: float = 0.35
+    veto_dev_bundle_share: float = 0.25
     veto_deployer_rug_count: int = 1
     veto_inauthenticity: float = 0.75
+    veto_cex_insider: bool = True
+    veto_copycat: bool = True
+    veto_wash_trading: bool = True
+    veto_golden_curve: bool = True
 
 
 class MemorySettings(BaseModel):
@@ -620,7 +640,22 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("BOTSENSAI_BIRDEYE_API_KEY", "BIRDEYE_API_KEY", "birdeye_api_key"),
     )
     bitquery_api_key: str | None = None
-    jito_block_engine_url: str | None = None
+    jito_block_engine_url: str | None = Field(
+        default="https://mainnet.block-engine.jito.wtf",
+        validation_alias=AliasChoices("BOTSENSAI_JITO_BLOCK_ENGINE_URL", "JITO_BLOCK_ENGINE_URL", "jito_block_engine_url"),
+    )
+    yellowstone_grpc_endpoint: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_YELLOWSTONE_GRPC_ENDPOINT", "YELLOWSTONE_GRPC_ENDPOINT", "yellowstone_grpc_endpoint"),
+    )
+    yellowstone_grpc_x_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_YELLOWSTONE_GRPC_X_TOKEN", "YELLOWSTONE_GRPC_X_TOKEN", "yellowstone_grpc_x_token"),
+    )
+    bloxroute_auth_header: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_BLOXROUTE_AUTH_HEADER", "BLOXROUTE_AUTH_HEADER", "bloxroute_auth_header"),
+    )
 
     # --- Cloudflare R2 / S3 backup configuration ----------------------------
     backup_r2_bucket: str | None = Field(
