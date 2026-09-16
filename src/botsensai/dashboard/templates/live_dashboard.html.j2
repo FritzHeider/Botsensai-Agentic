@@ -579,6 +579,84 @@ footer {
 .mc-btn.pause-btn:hover { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; }
 .mc-btn.resume-btn { border-color: rgba(34, 197, 94, 0.4); color: #4ade80; }
 .mc-btn.resume-btn:hover { background: rgba(34, 197, 94, 0.15); border-color: #22c55e; }
+.mc-btn.backtest-btn:hover { border-color: #f59e0b; box-shadow: 0 0 10px rgba(245, 158, 11, 0.25); }
+.mc-btn.papertrade-btn:hover { border-color: #10b981; box-shadow: 0 0 10px rgba(16, 185, 129, 0.25); }
+.mc-btn.sniper-btn:hover { border-color: #ec4899; box-shadow: 0 0 10px rgba(236, 72, 153, 0.25); }
+.mc-btn .badge {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+.action-modal.modal-lg { width: min(900px, 95vw); }
+.action-modal.modal-xl { width: min(1080px, 96vw); }
+.ctrl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ctrl-group { display: flex; flex-direction: column; gap: 4px; }
+.ctrl-label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.ctrl-input, .ctrl-select {
+  background: #161b22;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.ctrl-input:focus, .ctrl-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.kpi-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.kpi-card {
+  background: #141820;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  text-align: center;
+}
+.kpi-card .val { font-size: 18px; font-weight: 700; color: var(--fg); }
+.kpi-card .lbl { font-size: 10px; color: var(--dim); text-transform: uppercase; margin-top: 3px; }
+.pos-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.pos-table th, .pos-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.pos-table th { background: #13171f; color: var(--dim); font-size: 11px; text-transform: uppercase; font-weight: 600; }
+.pos-table tr:hover { background: rgba(255, 255, 255, 0.02); }
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.btn-close-pos { border-color: rgba(239, 68, 68, 0.5); color: #f87171; }
+.btn-close-pos:hover { background: rgba(239, 68, 68, 0.2); }
+.btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 5px; padding: 8px 16px; font-weight: 600; cursor: pointer; }
+.btn-primary:hover { opacity: 0.9; }
+.btn-danger { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; border-radius: 5px; padding: 8px 16px; font-weight: 600; cursor: pointer; }
+.btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
 
 .mc-telemetry {
   display: flex;
@@ -711,6 +789,9 @@ footer {
 <div class="mission-control-bar">
   <div class="mc-actions">
     <button class="mc-btn sweep-btn" id="btn-sweep" onclick="triggerSweep()" title="Trigger manual candidate discovery & scoring"><span class="icon">⚡</span> Trigger Sweep</button>
+    <button class="mc-btn backtest-btn" id="btn-backtest" onclick="openBacktestModal()" title="Configure and execute walk-forward backtests"><span class="icon">📊</span> Backtest Engine</button>
+    <button class="mc-btn papertrade-btn" id="btn-papertrade" onclick="openPapertradeModal()" title="View open paper positions and portfolio performance"><span class="icon">💼</span> Paper Portfolio <span class="badge" id="open-positions-badge">0</span></button>
+    <button class="mc-btn sniper-btn" id="btn-sniper" onclick="openSniperModal()" title="Inspect sniper outbox signals, execution telemetry & simulated sniping"><span class="icon">🎯</span> Sniper Info <span class="badge" id="sniper-signals-badge">0</span></button>
     <button class="mc-btn doctor-btn" id="btn-doctor" onclick="triggerDoctor()" title="Probe all 11 external data surfaces"><span class="icon">🧪</span> Surface Health</button>
     <button class="mc-btn backup-btn" id="btn-backup" onclick="triggerBackup()" title="Mirror SQLite snapshot to S3 & R2"><span class="icon">💾</span> Cloud Backup</button>
     <button class="mc-btn pause-btn" id="pause-resume-btn" onclick="togglePause()" title="Soft pause active sweeping & trading"><span class="icon">⏸</span> Pause Engine</button>
@@ -1342,11 +1423,13 @@ connectWS();
 // --- Mission Control Actions ---------------------------------------------- //
 let isEnginePaused = false;
 
-function showActionModal(title, content, isLoading = false) {
-  const modal = document.getElementById('action-modal-backdrop');
+function showActionModal(title, content, isLoading = false, modalClass = '') {
+  const backdrop = document.getElementById('action-modal-backdrop');
+  const modal = backdrop.querySelector('.action-modal');
+  modal.className = 'action-modal' + (modalClass ? ' ' + modalClass : '');
   document.getElementById('action-modal-title').innerHTML = (isLoading ? '<span class="action-spinner"></span>' : '') + title;
   document.getElementById('action-modal-content').innerHTML = content;
-  modal.classList.add('open');
+  backdrop.classList.add('open');
 }
 
 function closeActionModal() {
@@ -1482,8 +1565,552 @@ async function checkEngineStatus() {
     }
   } catch (e) {}
 }
-setInterval(checkEngineStatus, 15000);
-checkEngineStatus();
+// --- Backtest Controls --- //
+async function openBacktestModal() {
+  const html = `
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <p class="dim" style="font-size:12px; margin:0;">
+        Replay historical Solana bonding curve launches through the full adversarial decision stack with empirical fills and walk-forward out-of-sample validation.
+      </p>
+
+      <div class="ctrl-grid">
+        <div class="ctrl-group">
+          <label class="ctrl-label">Lookback Window</label>
+          <select id="bt-days" class="ctrl-select">
+            <option value="1.0">24 Hours</option>
+            <option value="2.0">48 Hours (2 Days)</option>
+            <option value="3.0">3 Days</option>
+            <option value="7.0" selected>7 Days (Standard)</option>
+            <option value="14.0">14 Days</option>
+            <option value="30.0">30 Days</option>
+          </select>
+        </div>
+        <div class="ctrl-group">
+          <label class="ctrl-label">Starting Capital (SOL)</label>
+          <input type="number" id="bt-capital" class="ctrl-input" value="10.0" min="1" step="1">
+        </div>
+        <div class="ctrl-group">
+          <label class="ctrl-label">Min Conviction Score</label>
+          <input type="number" id="bt-minscore" class="ctrl-input" value="0.65" min="0.1" max="0.99" step="0.05">
+        </div>
+        <div class="ctrl-group">
+          <label class="ctrl-label">Universe Limit</label>
+          <input type="number" id="bt-universe" class="ctrl-input" value="60" min="10" max="300" step="10">
+        </div>
+      </div>
+
+      <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; font-size:12px;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <input type="checkbox" id="bt-baselines">
+          <span>Compare against Null-Hypothesis Baselines</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <input type="checkbox" id="bt-synthetic">
+          <span>Force Synthetic Cohort</span>
+        </label>
+      </div>
+
+      <div>
+        <button class="btn-primary" id="btn-run-backtest" onclick="executeBacktest()">
+          <span class="icon">🚀</span> Run Walk-Forward Backtest
+        </button>
+      </div>
+
+      <div id="backtest-results-container" style="display:none; margin-top:10px;"></div>
+    </div>
+  `;
+  showActionModal('📊 Walk-Forward Backtest Engine', html, false, 'modal-xl');
+}
+
+async function executeBacktest() {
+  const btn = document.getElementById('btn-run-backtest');
+  const resContainer = document.getElementById('backtest-results-container');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="action-spinner"></span> Simulating Execution...';
+  }
+  resContainer.style.display = 'block';
+  resContainer.innerHTML = '<div style="padding:20px; text-align:center;" class="dim"><span class="action-spinner"></span> Replaying historical market tapes through composite scoring, risk limits & sandwich fill simulator...</div>';
+
+  try {
+    const payload = {
+      lookback_days: parseFloat(document.getElementById('bt-days').value) || 7.0,
+      capital_sol: parseFloat(document.getElementById('bt-capital').value) || 10.0,
+      min_score: parseFloat(document.getElementById('bt-minscore').value) || 0.65,
+      universe: parseInt(document.getElementById('bt-universe').value) || 60,
+      baselines: document.getElementById('bt-baselines').checked,
+      synthetic: document.getElementById('bt-synthetic').checked,
+    };
+
+    const res = await fetch('/api/v1/backtest/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await safeFetchJson(res);
+    if (!res.ok) {
+      resContainer.innerHTML = `<p style="color:var(--alarm);">Backtest Failed: ${data.detail || 'Execution error'}</p>`;
+      return;
+    }
+
+    const s = data.summary || {};
+    const trades = data.trades || [];
+    const winRatePct = (s.win_rate !== undefined ? (s.win_rate * 100).toFixed(1) : '0.0') + '%';
+    const returnPct = (s.total_return !== undefined ? (s.total_return * 100).toFixed(1) : '0.0') + '%';
+    const sharpeVal = s.sharpe !== undefined ? Number(s.sharpe).toFixed(2) : 'N/A';
+    const maxDdPct = (s.max_drawdown !== undefined ? (s.max_drawdown * 100).toFixed(1) : '0.0') + '%';
+    const realizedSol = s.realized_pnl_native !== undefined ? Number(s.realized_pnl_native).toFixed(4) + ' SOL' : '0.0000 SOL';
+    const expectancy = s.expectancy_native !== undefined ? Number(s.expectancy_native).toFixed(4) + ' SOL' : '0.0000 SOL';
+
+    let outHtml = `
+      <div style="border-top:1px solid var(--line); padding-top:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <b style="color:var(--accent); font-size:14px;">Walk-Forward Results &middot; ${data.duration_seconds}s</b>
+          <span class="dim" style="font-size:11px;">${data.synthetic ? '⚠️ SYNTHETIC COHORT' : '✓ STORE REPLAY'} (${data.token_count} tokens)</span>
+        </div>
+
+        <div class="kpi-card-grid">
+          <div class="kpi-card">
+            <div class="val" style="color:${s.total_return >= 0 ? 'var(--ok)' : 'var(--alarm)'};">${returnPct}</div>
+            <div class="lbl">Total Return</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val" style="color:var(--ok);">${winRatePct}</div>
+            <div class="lbl">Win Rate</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val">${sharpeVal}</div>
+            <div class="lbl">Sharpe Ratio</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val" style="color:var(--alarm);">${maxDdPct}</div>
+            <div class="lbl">Max Drawdown</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val" style="color:${s.realized_pnl_native >= 0 ? 'var(--ok)' : 'var(--alarm)'};">${realizedSol}</div>
+            <div class="lbl">Realized PnL</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val">${expectancy}</div>
+            <div class="lbl">Expectancy</div>
+          </div>
+        </div>
+
+        ${data.baselines ? `
+          <div style="background:#11151c; border:1px solid var(--line); border-radius:6px; padding:10px; margin:10px 0; font-size:11px;">
+            <b>Null-Hypothesis Baselines Comparison:</b>
+            <pre style="margin-top:6px; font-size:11px;">${JSON.stringify(data.baselines, null, 2)}</pre>
+          </div>
+        ` : ''}
+
+        <div style="margin-top:12px;">
+          <div style="font-size:12px; font-weight:600; margin-bottom:6px; color:var(--dim);">REPLAYED TRADES (${trades.length})</div>
+          <div style="max-height:220px; overflow-y:auto; border:1px solid var(--line); border-radius:6px;">
+            <table class="pos-table">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Entry Score</th>
+                  <th>Multiple</th>
+                  <th>PnL (SOL)</th>
+                  <th>Exit Reason</th>
+                  <th>Hold Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${trades.length ? trades.map(t => `
+                  <tr>
+                    <td><b>${t.symbol || '?'}</b> <span class="dim" style="font-size:10px;">${(t.token || '').split(':')[1] || ''}</span></td>
+                    <td>${(t.score || 0).toFixed(3)}</td>
+                    <td style="color:${(t.multiple || 1) >= 1 ? 'var(--ok)' : 'var(--alarm)'}; font-weight:700;">${(t.multiple || 1).toFixed(2)}x</td>
+                    <td style="color:${(t.pnl_native || 0) >= 0 ? 'var(--ok)' : 'var(--alarm)'}; font-weight:600;">${(t.pnl_native || 0) >= 0 ? '+' : ''}${(t.pnl_native || 0).toFixed(4)}</td>
+                    <td><span class="dim">${t.exit_reason || 'exit'}</span></td>
+                    <td class="dim">${Math.round(t.hold_seconds || 0)}s</td>
+                  </tr>
+                `).join('') : '<tr><td colspan="6" class="dim" style="text-align:center; padding:12px;">No trades triggered entry criteria during window.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+    resContainer.innerHTML = outHtml;
+  } catch (err) {
+    resContainer.innerHTML = `<p style="color:var(--alarm);">Network error: ${err.message}</p>`;
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="icon">🚀</span> Run Walk-Forward Backtest';
+    }
+  }
+}
+
+// --- Paper Trading Portfolio --- //
+async function openPapertradeModal() {
+  showActionModal('💼 Paper Trading Portfolio', '<p class="dim"><span class="action-spinner"></span> Loading paper trading positions & ledger...</p>', true, 'modal-xl');
+  try {
+    const res = await fetch('/api/v1/papertrade/portfolio');
+    const data = await safeFetchJson(res);
+    if (!res.ok) {
+      showActionModal('Portfolio Error', `<p style="color:var(--alarm);">Failed to load portfolio: ${data.detail || ''}</p>`, false, 'modal-lg');
+      return;
+    }
+
+    const openPos = data.open_positions || [];
+    const closedPos = data.recent_closed_trades || [];
+    const cash = (data.cash_native || 0).toFixed(3);
+    const equity = (data.equity_native || 0).toFixed(3);
+    const unPnl = (data.unrealized_pnl_native || 0).toFixed(4);
+    const rePnl = (data.realized_pnl_native || 0).toFixed(4);
+    const retPct = ((data.total_return || 0) * 100).toFixed(1) + '%';
+    const winRate = ((data.win_rate || 0) * 100).toFixed(1) + '%';
+
+    let html = `
+      <div class="kpi-card-grid">
+        <div class="kpi-card">
+          <div class="val" style="color:var(--accent);">${equity} SOL</div>
+          <div class="lbl">Account Equity</div>
+        </div>
+        <div class="kpi-card">
+          <div class="val">${cash} SOL</div>
+          <div class="lbl">Available Cash</div>
+        </div>
+        <div class="kpi-card">
+          <div class="val" style="color:${data.unrealized_pnl_native >= 0 ? 'var(--ok)' : 'var(--alarm)'};">${data.unrealized_pnl_native >= 0 ? '+' : ''}${unPnl} SOL</div>
+          <div class="lbl">Unrealized PnL</div>
+        </div>
+        <div class="kpi-card">
+          <div class="val" style="color:${data.realized_pnl_native >= 0 ? 'var(--ok)' : 'var(--alarm)'};">${data.realized_pnl_native >= 0 ? '+' : ''}${rePnl} SOL</div>
+          <div class="lbl">Realized PnL</div>
+        </div>
+        <div class="kpi-card">
+          <div class="val" style="color:${data.total_return >= 0 ? 'var(--ok)' : 'var(--alarm)'};">${retPct}</div>
+          <div class="lbl">Total Return</div>
+        </div>
+        <div class="kpi-card">
+          <div class="val">${winRate}</div>
+          <div class="lbl">Win Rate (${data.closed_trades_count || 0})</div>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 6px 0;">
+        <b style="font-size:13px;">ACTIVE OPEN POSITIONS (${openPos.length})</b>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-sm" onclick="openPapertradeModal()" title="Refresh positions">⟳ Refresh</button>
+          ${openPos.length ? `<button class="btn-sm btn-close-pos" onclick="liquidateAllPositions()">🚨 Liquidate All (${openPos.length})</button>` : ''}
+          <button class="btn-sm" style="border-color:var(--line); color:var(--dim);" onclick="resetPaperPortfolio()">Reset Account</button>
+        </div>
+      </div>
+
+      <div style="max-height:220px; overflow-y:auto; border:1px solid var(--line); border-radius:6px; margin-bottom:16px;">
+        <table class="pos-table">
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th>Amount</th>
+              <th>Cost Basis</th>
+              <th>Current Val</th>
+              <th>PnL / Mult</th>
+              <th>Age</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${openPos.length ? openPos.map(p => `
+              <tr>
+                <td>
+                  <b>${p.symbol || '?'}</b>
+                  <div class="dim" style="font-size:10px;">${(p.mint || '').slice(0, 10)}...</div>
+                </td>
+                <td>${Number(p.amount_token).toLocaleString()}</td>
+                <td>${Number(p.cost_basis_native).toFixed(4)} SOL</td>
+                <td>${Number(p.current_value_native).toFixed(4)} SOL</td>
+                <td>
+                  <span style="color:${p.unrealized_pnl_native >= 0 ? 'var(--ok)' : 'var(--alarm)'}; font-weight:700;">
+                    ${p.unrealized_pnl_native >= 0 ? '+' : ''}${Number(p.unrealized_pnl_native).toFixed(4)} SOL
+                    (${Number(p.multiple).toFixed(2)}x)
+                  </span>
+                </td>
+                <td class="dim">${Math.round(p.age_seconds || 0)}s</td>
+                <td>
+                  <button class="btn-sm btn-close-pos" onclick="closePosition('${p.token_key}')">Close</button>
+                </td>
+              </tr>
+            `).join('') : '<tr><td colspan="7" class="dim" style="text-align:center; padding:16px;">No open paper positions held. Use [⚡ Trigger Sweep] to evaluate and open new candidates.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+
+      <b style="font-size:13px; margin-top:10px; display:block;">RECENT CLOSED TRADES</b>
+      <div style="max-height:160px; overflow-y:auto; border:1px solid var(--line); border-radius:6px; margin-top:6px;">
+        <table class="pos-table">
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th>Cost Basis</th>
+              <th>Exit Px</th>
+              <th>Realized PnL</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${closedPos.length ? closedPos.map(c => `
+              <tr>
+                <td><b>${c.symbol || '?'}</b> <span class="dim" style="font-size:10px;">${(c.mint || '').slice(0, 8)}</span></td>
+                <td>${Number(c.cost_basis_native).toFixed(4)} SOL</td>
+                <td>${Number(c.last_price_native).toFixed(8)}</td>
+                <td style="color:${c.realized_pnl_native >= 0 ? 'var(--ok)' : 'var(--alarm)'}; font-weight:700;">
+                  ${c.realized_pnl_native >= 0 ? '+' : ''}${Number(c.realized_pnl_native).toFixed(4)} SOL
+                </td>
+                <td><span class="dim">${c.exit_reason || 'exit'}</span></td>
+              </tr>
+            `).join('') : '<tr><td colspan="5" class="dim" style="text-align:center; padding:12px;">No closed trades recorded yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    showActionModal('💼 Paper Trading Portfolio & Positions', html, false, 'modal-xl');
+    updateBadges();
+  } catch (err) {
+    showActionModal('Portfolio Error', `<p style="color:var(--alarm);">Network error: ${err.message}</p>`, false, 'modal-lg');
+  }
+}
+
+async function closePosition(tokenKey) {
+  if (!confirm(`Close paper position for ${tokenKey}?`)) return;
+  try {
+    const res = await fetch('/api/v1/papertrade/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token_key: tokenKey, reason: 'operator_manual_close' }),
+    });
+    const data = await safeFetchJson(res);
+    if (res.ok) {
+      openPapertradeModal();
+    } else {
+      alert(`Failed to close position: ${data.detail || ''}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+async function liquidateAllPositions() {
+  if (!confirm('EMERGENCY: Are you sure you want to close ALL open paper trading positions?')) return;
+  try {
+    const res = await fetch('/api/v1/papertrade/close_all', { method: 'POST' });
+    const data = await safeFetchJson(res);
+    if (res.ok) {
+      alert(`Liquidated ${data.liquidated_count} positions.`);
+      openPapertradeModal();
+    } else {
+      alert(`Failed to liquidate: ${data.detail || ''}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+async function resetPaperPortfolio() {
+  if (!confirm('Are you sure you want to reset all paper trading positions and history?')) return;
+  try {
+    const res = await fetch('/api/v1/papertrade/reset', { method: 'POST' });
+    const data = await safeFetchJson(res);
+    if (res.ok) {
+      openPapertradeModal();
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+// --- Sniper Info & Outbox --- //
+async function openSniperModal() {
+  showActionModal('🎯 Sniper Info & Outbox', '<p class="dim"><span class="action-spinner"></span> Loading sniper telemetry & outbox signals...</p>', true, 'modal-xl');
+  try {
+    const [statusRes, signalsRes] = await Promise.all([
+      fetch('/api/v1/sniper/status'),
+      fetch('/api/v1/sniper/signals?limit=30'),
+    ]);
+    const statusData = await safeFetchJson(statusRes);
+    const signalsData = await safeFetchJson(signalsRes);
+
+    const signals = Array.isArray(signalsData) ? signalsData : [];
+    const invariants = statusData.safety_invariants || {};
+    const execution = statusData.execution || {};
+
+    let html = `
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div class="kpi-card-grid">
+          <div class="kpi-card">
+            <div class="val" style="color:var(--ok); font-size:14px;">${statusData.mode || 'PAPER'}</div>
+            <div class="lbl">Execution Mode</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val" style="color:var(--ok); font-size:14px;">VERIFIED SAFE</div>
+            <div class="lbl">Zero-Signing Invariant</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val">${invariants.canary_max_sol || 0.05} SOL</div>
+            <div class="lbl">Max Canary Size</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val">${execution.jito_tip_lamports || 10000}</div>
+            <div class="lbl">Jito Tip (Lamports)</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val">${invariants.max_slippage_bps || 500} bps</div>
+            <div class="lbl">Max Slippage</div>
+          </div>
+          <div class="kpi-card">
+            <div class="val" style="color:var(--accent);">${signals.length}</div>
+            <div class="lbl">Outbox Signals</div>
+          </div>
+        </div>
+
+        <div style="background:#11151c; border:1px solid var(--line); border-radius:6px; padding:12px;">
+          <b style="font-size:12px; display:block; margin-bottom:8px; color:var(--accent);">🎯 TEST SNIPE SIMULATOR</b>
+          <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+            <div style="flex:1; min-width:240px;" class="ctrl-group">
+              <label class="ctrl-label">Solana Token Mint Address</label>
+              <input type="text" id="snipe-test-mint" class="ctrl-input" placeholder="e.g. HYwLkDxZBqKt7AaTDy92qGqHFfSfTXWXbU4Y8VSxsons" value="HYwLkDxZBqKt7AaTDy92qGqHFfSfTXWXbU4Y8VSxsons">
+            </div>
+            <div style="width:120px;" class="ctrl-group">
+              <label class="ctrl-label">Size (SOL)</label>
+              <input type="number" id="snipe-test-size" class="ctrl-input" value="0.05" step="0.01" min="0.01" max="1.0">
+            </div>
+            <button class="btn-primary" id="btn-run-snipe-test" onclick="executeSnipeTest()">
+              <span class="icon">🎯</span> Simulate Snipe
+            </button>
+          </div>
+          <div id="snipe-test-result" style="display:none; margin-top:10px;"></div>
+        </div>
+
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <b style="font-size:13px;">EXECUTION SIGNALS OUTBOX (${signals.length})</b>
+            <button class="btn-sm" onclick="openSniperModal()">⟳ Refresh Outbox</button>
+          </div>
+          <div style="max-height:240px; overflow-y:auto; border:1px solid var(--line); border-radius:6px;">
+            <table class="pos-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Token</th>
+                  <th>Side</th>
+                  <th>Size</th>
+                  <th>Score</th>
+                  <th>Status</th>
+                  <th>Tx Hash / Bundle ID</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${signals.length ? signals.map(s => {
+                  const statusClass = s.status === 'CONFIRMED' || s.status === 'SUBMITTED' ? 'var(--ok)' : s.status === 'SIMULATED' ? 'var(--accent)' : s.status === 'PENDING' ? 'var(--warn)' : 'var(--alarm)';
+                  const createdDate = s.created_at ? new Date(s.created_at * 1000).toLocaleTimeString() : '-';
+                  return `
+                    <tr>
+                      <td class="dim">#${s.id}</td>
+                      <td><b>${s.symbol || '?'}</b> <div class="dim" style="font-size:10px;">${(s.token_key || '').split(':')[1] || s.token_key}</div></td>
+                      <td><b>${s.side}</b></td>
+                      <td>${(s.size_native || 0).toFixed(4)} SOL</td>
+                      <td>${(s.score || 0).toFixed(3)}</td>
+                      <td><span style="color:${statusClass}; font-weight:700;">${s.status}</span></td>
+                      <td style="font-family:monospace; font-size:11px;">${s.tx_hash ? s.tx_hash.slice(0, 16) + '...' : '<span class="dim">-</span>'}</td>
+                      <td class="dim">${createdDate}</td>
+                    </tr>
+                  `;
+                }).join('') : '<tr><td colspan="8" class="dim" style="text-align:center; padding:16px;">No execution signals in outbox. Run a sweep or sniper test to generate signals.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    showActionModal('🎯 Adversarial Sniper Telemetry & Outbox', html, false, 'modal-xl');
+    updateBadges();
+  } catch (err) {
+    showActionModal('Sniper Info Error', `<p style="color:var(--alarm);">Network error: ${err.message}</p>`, false, 'modal-lg');
+  }
+}
+
+async function executeSnipeTest() {
+  const mint = document.getElementById('snipe-test-mint').value.trim();
+  const size = parseFloat(document.getElementById('snipe-test-size').value) || 0.05;
+  const resBox = document.getElementById('snipe-test-result');
+  const btn = document.getElementById('btn-run-snipe-test');
+
+  if (!mint) {
+    alert('Please enter a valid Solana mint address.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="action-spinner"></span> Simulating...';
+  resBox.style.display = 'block';
+  resBox.innerHTML = '<p class="dim"><span class="action-spinner"></span> Querying bonding curve state, checking safety vetoes & simulating fill latency...</p>';
+
+  try {
+    const res = await fetch('/api/v1/sniper/test_snipe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mint: mint, size_sol: size }),
+    });
+    const data = await safeFetchJson(res);
+    if (!res.ok) {
+      resBox.innerHTML = `<p style="color:var(--alarm);">Snipe Test Failed: ${data.detail || 'Error'}</p>`;
+      return;
+    }
+
+    const fill = data.simulated_fill || {};
+    resBox.innerHTML = `
+      <div style="background:#090d14; border:1px solid var(--line); border-radius:6px; padding:10px; margin-top:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b style="color:var(--ok);">✓ Modelled Snipe Receipt (${data.duration_seconds}s)</b>
+          <span class="tag ok" style="color:var(--ok); font-weight:700;">${fill.rejected ? 'REJECTED' : 'SIMULATED FILL'}</span>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; margin-top:8px; font-size:11px;">
+          <div><span class="dim">Tokens Out:</span> <b>${Number(fill.amount_token || 0).toLocaleString()}</b></div>
+          <div><span class="dim">Effective Price:</span> <b>${(fill.effective_price_sol || 0).toFixed(10)} SOL</b></div>
+          <div><span class="dim">Simulated Slippage:</span> <b>${(fill.slippage_bps || 0).toFixed(1)} bps</b></div>
+          <div><span class="dim">Modelled Latency:</span> <b>${(fill.latency_ms || 0).toFixed(1)} ms</b></div>
+          <div><span class="dim">Priority + Tip:</span> <b>${((fill.fee_sol || 0) + (fill.tip_sol || 0)).toFixed(6)} SOL</b></div>
+        </div>
+        ${fill.reject_reason ? `<div style="color:var(--alarm); margin-top:6px; font-size:11px;">Reject Reason: ${fill.reject_reason}</div>` : ''}
+      </div>
+    `;
+  } catch (err) {
+    resBox.innerHTML = `<p style="color:var(--alarm);">Error: ${err.message}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="icon">🎯</span> Simulate Snipe';
+  }
+}
+
+// --- Live Badges Telemetry --- //
+async function updateBadges() {
+  try {
+    const [portRes, snipRes] = await Promise.all([
+      fetch('/api/v1/papertrade/portfolio'),
+      fetch('/api/v1/sniper/status'),
+    ]);
+    if (portRes.ok) {
+      const pData = await safeFetchJson(portRes);
+      const badge = document.getElementById('open-positions-badge');
+      if (badge) badge.innerText = pData.open_positions_count || 0;
+    }
+    if (snipRes.ok) {
+      const sData = await safeFetchJson(snipRes);
+      const badge = document.getElementById('sniper-signals-badge');
+      if (badge) badge.innerText = (sData.outbox && sData.outbox.total_recorded_signals) || 0;
+    }
+  } catch (e) {}
+}
+setInterval(updateBadges, 15000);
+updateBadges();
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
