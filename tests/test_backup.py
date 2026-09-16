@@ -252,8 +252,12 @@ def test_mirror_backup_handles_partial_failure(sample_db: Path) -> None:
     assert "AccessDenied" in report.errors[0]
 
 
-def test_cli_backup_status() -> None:
+def test_cli_backup_status(monkeypatch: pytest.MonkeyPatch) -> None:
     """CLI backup --status displays active multi-cloud targets."""
+    from botsensai.config import get_settings
+
+    monkeypatch.setenv("BOTSENSAI_BACKUP_S3_BUCKET", "test-bucket")
+    get_settings.cache_clear()
     runner = CliRunner()
     result = runner.invoke(app, ["backup", "--status"])
     assert result.exit_code == 0
@@ -261,8 +265,13 @@ def test_cli_backup_status() -> None:
     assert "S3" in result.output
 
 
-def test_cli_backup_dry_run() -> None:
+def test_cli_backup_dry_run(monkeypatch: pytest.MonkeyPatch, sample_db: Path) -> None:
     """CLI backup --dry-run prints execution plan."""
+    from botsensai.config import get_settings
+
+    monkeypatch.setenv("BOTSENSAI_BACKUP_S3_BUCKET", "test-bucket")
+    monkeypatch.setenv("BOTSENSAI_DB_PATH", str(sample_db))
+    get_settings.cache_clear()
     runner = CliRunner()
     result = runner.invoke(app, ["backup", "--dry-run"])
     assert result.exit_code == 0

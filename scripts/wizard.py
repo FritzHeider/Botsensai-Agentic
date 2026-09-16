@@ -198,14 +198,15 @@ def run_doctor():
 
 
 def open_port_forward():
-    """Starts SSM Port Forwarding for local Swagger / REST UI exploration."""
+    """Starts SSM Port Forwarding for local Mission Control & REST API exploration."""
     console.print(Panel(
-        "[bold green]SSM Encrypted Port Forwarding Tunnel[/bold green]\n\n"
+        "[bold green]SSM Encrypted Port Forwarding Tunnel & Mission Control[/bold green]\n\n"
         "This tool sets up a secure tunnel from your Mac to port [bold]8001[/bold] on the EC2 instance.\n"
-        "No public security group rules or firewall openings are created.\n\n"
-        "• Local URL: [bold underline cyan]http://localhost:8001/docs[/bold underline cyan] (Interactive Swagger API)\n"
-        "• Telemetry: [bold underline cyan]http://localhost:8001/api/v1/candidates[/bold underline cyan]\n"
-        "• Metrics:   [bold underline cyan]http://localhost:8001/api/v1/metrics[/bold underline cyan]\n\n"
+        "No public security group rules or firewall openings are created on AWS.\n\n"
+        "• Mission Control GUI: [bold underline cyan]http://localhost:8001/[/bold underline cyan] (Interactive Controls & Streams)\n"
+        "• Interactive Swagger: [bold underline cyan]http://localhost:8001/docs[/bold underline cyan] (OpenAPI Interface)\n"
+        "• System Telemetry:    [bold underline cyan]http://localhost:8001/api/v1/system/metrics[/bold underline cyan]\n"
+        "• Candidate Scoring:   [bold underline cyan]http://localhost:8001/api/v1/candidates[/bold underline cyan]\n\n"
         "[dim]Press Ctrl+C in this terminal when you are done to close the tunnel.[/dim]",
         border_style="green"
     ))
@@ -221,7 +222,20 @@ def open_port_forward():
         if DEFAULT_PROFILE:
             tunnel_cmd.extend(["--profile", DEFAULT_PROFILE])
 
-        console.print("[cyan]Tunnel active! Open http://localhost:8001/docs in your browser...[/cyan]")
+        console.print("[bold green]Tunnel active! Launching Mission Control at http://localhost:8001/ ...[/bold green]")
+        import threading
+        import time
+        import webbrowser
+
+        def _open():
+            time.sleep(2)
+            try:
+                webbrowser.open("http://localhost:8001/")
+            except Exception:
+                pass
+
+        threading.Thread(target=_open, daemon=True).start()
+
         try:
             subprocess.run(tunnel_cmd)
         except KeyboardInterrupt:
@@ -521,7 +535,7 @@ def main():
         menu_tbl.add_column("Description", style="dim")
 
         menu_tbl.add_row("1", "📊 Live Telemetry Dashboard", "Inspect EC2 CPU/RAM/Disk, service status & DB counts")
-        menu_tbl.add_row("2", "🌐 Open Web API Tunnel", "Forward port 8001 locally to browse Swagger UI & API docs")
+        menu_tbl.add_row("2", "🌐 Launch Mission Control GUI & Tunnel", "Forward port 8001 locally and open interactive web dashboard in browser")
         menu_tbl.add_row("3", "🧪 Run Surface Doctor", "Probe Pump.fun, X, Telegram, Reddit & DEX endpoints")
         menu_tbl.add_row("4", "⚡ Trigger Manual Sweep", "Execute a live discovery, scoring, and screening pass")
         menu_tbl.add_row("5", "🎯 Snipe Mode (Paper Execution)", "Discover, score, and paper-buy the #1 best token")

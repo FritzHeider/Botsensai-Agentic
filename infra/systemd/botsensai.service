@@ -1,0 +1,29 @@
+[Unit]
+Description=Botsensai Agentic Recon, Scoring, and Paper-Trading Daemon
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/botsensai
+EnvironmentFile=-/home/ubuntu/botsensai/.env
+
+# Run continuous sweep loop (interval 60s, repeat forever)
+ExecStart=/home/ubuntu/botsensai/.venv/bin/python -m botsensai.cli sweep --repeat 0 --interval 60.0
+
+# Restart policy: robust recovery on crashes, but avoid fast spin loops
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# Hardening & limits
+LimitNOFILE=65536
+KillMode=mixed
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=botsensai
+
+[Install]
+WantedBy=multi-user.target

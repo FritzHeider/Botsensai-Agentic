@@ -388,3 +388,31 @@ def test_repository_contains_no_signing_code():
             if needle in text:
                 offenders.append(f"{path.name}: {needle}")
     assert not offenders, f"signing-capable code found: {offenders}"
+
+
+def test_database_execution_signals(tmp_path):
+    from botsensai.store.db import Database
+
+    db = Database(tmp_path / "test_signals.db")
+    sig_id = db.record_signal(
+        token_key="solana:So11111111111111111111111111111111111111112",
+        symbol="TEST",
+        side="BUY",
+        size_native=0.05,
+        max_slippage_bps=200,
+        jito_tip_lamports=10000,
+        score=0.88,
+        as_of=1700000000.0,
+    )
+    assert sig_id > 0
+
+    pending = db.pending_signals()
+    assert len(pending) == 1
+    assert pending[0]["id"] == sig_id
+    assert pending[0]["symbol"] == "TEST"
+    assert pending[0]["status"] == "PENDING"
+
+    db.update_signal_status(sig_id, status="SUBMITTED", tx_hash="bundle_test_123")
+    pending_after = db.pending_signals()
+    assert len(pending_after) == 0
+

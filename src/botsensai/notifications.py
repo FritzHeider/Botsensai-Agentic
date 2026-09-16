@@ -117,16 +117,20 @@ class NotificationDispatcher:
     ) -> None:
         if not self.config.on_high_score or score < self.config.min_score_alert:
             return
+        dex_url = f"https://dexscreener.com/solana/{mint}"
+        solscan_url = f"https://solscan.io/token/{mint}"
+        padre_url = f"https://trade.padre.gg/trade/{mint}"
         fields = [
             {"name": "Symbol", "value": f"${symbol}", "inline": True},
             {"name": "Score", "value": f"{score:.3f}", "inline": True},
             {"name": "Coverage", "value": f"{coverage:.0%}", "inline": True},
             {"name": "Mint", "value": f"`{mint}`", "inline": False},
+            {"name": "Explorers & Terminals", "value": f"[DexScreener]({dex_url}) • [Solscan]({solscan_url}) • [Padre]({padre_url})", "inline": False},
         ]
         await self.notify(
             event="high_score",
             title=f"High Conviction Candidate: ${symbol}",
-            body=explanation or f"Scored {score:.3f} with {coverage:.0%} coverage.",
+            body=(explanation or f"Scored {score:.3f} with {coverage:.0%} coverage.") + f"\n\n[DexScreener]({dex_url}) | [Solscan]({solscan_url}) | [Padre]({padre_url})",
             fields=fields,
         )
 

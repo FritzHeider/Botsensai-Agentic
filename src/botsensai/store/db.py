@@ -351,6 +351,45 @@ CREATE TABLE IF NOT EXISTS social_accounts (
     PRIMARY KEY (platform, handle, token_key, observed_at)
 );
 CREATE INDEX IF NOT EXISTS ix_accounts_token_time ON social_accounts(token_key, observed_at);
+
+-- Signals emitted by the scoring pipeline when an order clears risk checks.
+-- Read by the external Jito execution adapter to broadcast live transactions.
+CREATE TABLE IF NOT EXISTS execution_signals (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_key         TEXT NOT NULL,
+    symbol            TEXT,
+    side              TEXT NOT NULL,
+    size_native       REAL NOT NULL,
+    max_slippage_bps  INTEGER NOT NULL,
+    jito_tip_lamports INTEGER NOT NULL,
+    score             REAL NOT NULL,
+    as_of             REAL NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'PENDING',
+    tx_hash           TEXT,
+    error             TEXT,
+    created_at        REAL NOT NULL,
+    executed_at       REAL
+);
+CREATE INDEX IF NOT EXISTS ix_signals_status ON execution_signals(status, created_at);
+
+-- Paper trading positions tracked for real-time portfolio management and exit management.
+CREATE TABLE IF NOT EXISTS paper_positions (
+    token_key          TEXT PRIMARY KEY,
+    symbol             TEXT,
+    mint               TEXT NOT NULL,
+    amount_token       REAL NOT NULL,
+    cost_basis_native  REAL NOT NULL,
+    entry_price_native REAL NOT NULL,
+    peak_price_native  REAL NOT NULL,
+    last_price_native  REAL NOT NULL,
+    realized_pnl_native REAL NOT NULL DEFAULT 0.0,
+    opened_at          REAL NOT NULL,
+    closed_at          REAL,
+    status             TEXT NOT NULL DEFAULT 'OPEN',
+    exit_reason        TEXT,
+    updated_at         REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_paper_positions_status ON paper_positions(status, opened_at);
 """
 
 
@@ -425,6 +464,10 @@ class Database:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA cache_size=-64000")
+            conn.execute("PRAGMA mmap_size=268435456")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            conn.execute("PRAGMA busy_timeout=30000")
             self._local.conn = conn
         return conn
 
@@ -437,6 +480,8 @@ class Database:
         except Exception:
             conn.rollback()
             raise
+
+    transaction = tx
 
     def close(self) -> None:
         if self._shared is not None:
@@ -1615,6 +1660,281 @@ class Database:
             "with_both": len(both),
             "peak": stats(peaks),
             "realizable": stats(realizable),
+        }
+
+    def record_signal(
+        self,
+        token_key: str,
+        symbol: str | None,
+        side: str,
+        size_native: float,
+        max_slippage_bps: int,
+        jito_tip_lamports: int,
+        score: float,
+        as_of: datetime | float,
+    ) -> int:
+        """Record an execution signal emitted by the scoring pipeline."""
+        now = utcnow().timestamp()
+        as_of_ts = _ts(as_of)
+        with self.tx() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO execution_signals (
+                    token_key, symbol, side, size_native, max_slippage_bps,
+                    jito_tip_lamports, score, as_of, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+                """,
+                (
+                    token_key,
+                    symbol,
+                    side,
+                    size_native,
+                    max_slippage_bps,
+                    jito_tip_lamports,
+                    score,
+                    as_of_ts,
+                    now,
+                ),
+            )
+            return cursor.lastrowid or 0
+
+    def pending_signals(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Retrieve pending signals awaiting live execution."""
+        rows = self.conn.execute(
+            """
+            SELECT id, token_key, symbol, side, size_native, max_slippage_bps,
+                   jito_tip_lamports, score, as_of, status, created_at
+            FROM execution_signals
+            WHERE status = 'PENDING'
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_signal_status(
+        self,
+        signal_id: int,
+        status: str,
+        tx_hash: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Update signal execution status and transaction hash."""
+        now = utcnow().timestamp()
+        with self.tx() as conn:
+            conn.execute(
+                """
+                UPDATE execution_signals
+                SET status = ?, tx_hash = ?, error = ?, executed_at = ?
+                WHERE id = ?
+                """,
+                (status, tx_hash, error, now if status != "PENDING" else None, signal_id),
+            )
+
+    def recent_signals(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Retrieve recent execution signals regardless of status."""
+        rows = self.conn.execute(
+            """
+            SELECT id, token_key, symbol, side, size_native, max_slippage_bps,
+                   jito_tip_lamports, score, as_of, status, tx_hash, error,
+                   created_at, executed_at
+            FROM execution_signals
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_paper_position(
+        self,
+        token_key: str,
+        symbol: str | None,
+        mint: str,
+        amount_token: float,
+        cost_basis_native: float,
+        entry_price_native: float,
+        peak_price_native: float,
+        last_price_native: float,
+        opened_at: datetime | float,
+        status: str = "OPEN",
+        realized_pnl_native: float = 0.0,
+        closed_at: datetime | float | None = None,
+        exit_reason: str | None = None,
+    ) -> None:
+        """Upsert an active or updated paper trading position."""
+        now = utcnow().timestamp()
+        opened_ts = _ts(opened_at)
+        closed_ts = _ts(closed_at)
+        with self.tx() as conn:
+            conn.execute(
+                """
+                INSERT INTO paper_positions (
+                    token_key, symbol, mint, amount_token, cost_basis_native,
+                    entry_price_native, peak_price_native, last_price_native,
+                    realized_pnl_native, opened_at, closed_at, status, exit_reason, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(token_key) DO UPDATE SET
+                    amount_token = excluded.amount_token,
+                    cost_basis_native = excluded.cost_basis_native,
+                    peak_price_native = MAX(paper_positions.peak_price_native, excluded.peak_price_native),
+                    last_price_native = excluded.last_price_native,
+                    realized_pnl_native = excluded.realized_pnl_native,
+                    closed_at = excluded.closed_at,
+                    status = excluded.status,
+                    exit_reason = excluded.exit_reason,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    token_key,
+                    symbol,
+                    mint,
+                    amount_token,
+                    cost_basis_native,
+                    entry_price_native,
+                    peak_price_native,
+                    last_price_native,
+                    realized_pnl_native,
+                    opened_ts,
+                    closed_ts,
+                    status,
+                    exit_reason,
+                    now,
+                ),
+            )
+
+    def open_paper_positions(self) -> list[dict[str, Any]]:
+        """Return all open paper trading positions enriched with metrics."""
+        rows = self.conn.execute(
+            """
+            SELECT token_key, symbol, mint, amount_token, cost_basis_native,
+                   entry_price_native, peak_price_native, last_price_native,
+                   realized_pnl_native, opened_at, status, updated_at
+            FROM paper_positions
+            WHERE status = 'OPEN' AND amount_token > 0
+            ORDER BY opened_at DESC
+            """
+        ).fetchall()
+        positions = []
+        now = utcnow().timestamp()
+        for r in rows:
+            pos = dict(r)
+            amount = pos["amount_token"]
+            last_px = pos["last_price_native"]
+            cost = pos["cost_basis_native"]
+            curr_val = amount * last_px
+            unrealized = curr_val - cost
+            mult = (curr_val / cost) if cost > 0 else 1.0
+            peak_mult = (amount * pos["peak_price_native"] / cost) if cost > 0 else 1.0
+            age_sec = max(0.0, now - pos["opened_at"])
+            pos.update(
+                {
+                    "current_value_native": curr_val,
+                    "unrealized_pnl_native": unrealized,
+                    "multiple": mult,
+                    "peak_multiple": peak_mult,
+                    "age_seconds": age_sec,
+                }
+            )
+            positions.append(pos)
+        return positions
+
+    def closed_paper_positions(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return recent closed paper trading positions."""
+        rows = self.conn.execute(
+            """
+            SELECT token_key, symbol, mint, amount_token, cost_basis_native,
+                   entry_price_native, last_price_native, realized_pnl_native,
+                   opened_at, closed_at, status, exit_reason
+            FROM paper_positions
+            WHERE status = 'CLOSED'
+            ORDER BY closed_at DESC, updated_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def close_paper_position(
+        self, token_key: str, exit_price_native: float | None = None, reason: str = "operator_close"
+    ) -> dict[str, Any] | None:
+        """Close an open paper position and record realized PnL."""
+        row = self.conn.execute(
+            "SELECT * FROM paper_positions WHERE token_key = ? AND status = 'OPEN'",
+            (token_key,),
+        ).fetchone()
+        if not row:
+            return None
+        pos = dict(row)
+        exit_price = exit_price_native if exit_price_native is not None else pos["last_price_native"]
+        proceeds = pos["amount_token"] * exit_price
+        realized_pnl = proceeds - pos["cost_basis_native"]
+        now = utcnow().timestamp()
+        with self.tx() as conn:
+            conn.execute(
+                """
+                UPDATE paper_positions
+                SET status = 'CLOSED',
+                    closed_at = ?,
+                    last_price_native = ?,
+                    realized_pnl_native = ?,
+                    exit_reason = ?,
+                    updated_at = ?
+                WHERE token_key = ?
+                """,
+                (now, exit_price, realized_pnl, reason, now, token_key),
+            )
+        pos["closed_at"] = now
+        pos["last_price_native"] = exit_price
+        pos["realized_pnl_native"] = realized_pnl
+        pos["exit_reason"] = reason
+        pos["status"] = "CLOSED"
+        return pos
+
+    def reset_paper_positions(self) -> int:
+        """Clear all paper positions."""
+        with self.tx() as conn:
+            cur = conn.execute("DELETE FROM paper_positions")
+            return cur.rowcount
+
+    def paper_portfolio_summary(self, starting_capital_native: float = 10.0) -> dict[str, Any]:
+        """Compute aggregate paper trading portfolio balance, equity, and performance."""
+        open_pos = self.open_paper_positions()
+        closed_pos = self.closed_paper_positions(limit=500)
+
+        open_cost = sum(p["cost_basis_native"] for p in open_pos)
+        open_val = sum(p["current_value_native"] for p in open_pos)
+        unrealized_pnl = sum(p["unrealized_pnl_native"] for p in open_pos)
+
+        realized_pnl = sum(p["realized_pnl_native"] for p in closed_pos)
+
+        total_trades = len(closed_pos)
+        winning_trades = sum(1 for p in closed_pos if p["realized_pnl_native"] > 0)
+        win_rate = (winning_trades / total_trades) if total_trades > 0 else 0.0
+
+        cash_native = max(0.0, starting_capital_native - open_cost + realized_pnl)
+        equity_native = cash_native + open_val
+        total_return = (
+            ((equity_native - starting_capital_native) / starting_capital_native)
+            if starting_capital_native > 0
+            else 0.0
+        )
+
+        return {
+            "starting_capital_native": starting_capital_native,
+            "cash_native": cash_native,
+            "open_exposure_native": open_cost,
+            "open_value_native": open_val,
+            "equity_native": equity_native,
+            "unrealized_pnl_native": unrealized_pnl,
+            "realized_pnl_native": realized_pnl,
+            "total_return": total_return,
+            "open_positions_count": len(open_pos),
+            "closed_trades_count": total_trades,
+            "win_rate": win_rate,
+            "open_positions": open_pos,
+            "recent_closed_trades": closed_pos[:10],
         }
 
 

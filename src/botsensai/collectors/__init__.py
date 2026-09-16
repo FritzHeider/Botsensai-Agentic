@@ -1,6 +1,7 @@
 """Data collectors. Browser-driven (web-use) first, HTTP fast paths where they exist."""
 
 from botsensai.collectors.base import CollectionResult, Collector, CollectorRegistry
+from botsensai.collectors.birdeye import BirdeyeCollector
 from botsensai.collectors.browser import WebUseDriver, get_driver, shutdown_driver
 from botsensai.collectors.dexscreener import DexscreenerCollector
 from botsensai.collectors.geckoterminal import GeckoTerminalCollector
@@ -20,6 +21,7 @@ ALL_COLLECTORS = (
     PumpFunCollector,
     DexscreenerCollector,
     GeckoTerminalCollector,
+    BirdeyeCollector,
     XCollector,
     RedditCollector,
     FourChanBizCollector,
@@ -32,6 +34,7 @@ ALL_COLLECTORS = (
 __all__ = [
     "ALL_COLLECTORS",
     "AuthenticatedXCollector",
+    "BirdeyeCollector",
     "CollectionResult",
     "Collector",
     "CollectorRegistry",

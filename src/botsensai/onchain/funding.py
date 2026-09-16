@@ -353,13 +353,25 @@ class FundingSourceResolver:
     async def _rpc(self, method: str, params: list[Any]) -> Any:
         self.calls += 1
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
-        response = await self.client.post_json(self.rpc_url, payload)
-        if not isinstance(response, dict):
-            raise ValueError(f"{method}: non-object response")
-        error = response.get("error")
-        if error:
-            raise ValueError(f"{method}: {error}")
-        return response.get("result")
+        try:
+            response = await self.client.post_json(self.rpc_url, payload)
+            if not isinstance(response, dict):
+                raise ValueError(f"{method}: non-object response")
+            error = response.get("error")
+            if error:
+                raise ValueError(f"{method}: {error}")
+            return response.get("result")
+        except Exception as exc:
+            fallback = self.settings.helius_fallback_rpc_url
+            if fallback and self.rpc_url != fallback:
+                log.info("funding.rpc_failover", primary=self.rpc_url[:35], fallback=fallback[:35], error=str(exc))
+                try:
+                    res = await self.client.post_json(fallback, payload)
+                    if isinstance(res, dict) and not res.get("error"):
+                        return res.get("result")
+                except Exception:
+                    pass
+            raise
 
     async def _oldest_signature(self, wallet: str) -> tuple[str | None, float | None, str]:
         """Oldest successful signature for `wallet`, and why if there is none."""

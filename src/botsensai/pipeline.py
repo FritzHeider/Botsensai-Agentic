@@ -706,6 +706,30 @@ class Pipeline:
         if fill.rejected:
             return f"failed: {fill.reject_reason}"
 
+        self.db.record_signal(
+            token_key=launch.token.key,
+            symbol=launch.token.symbol,
+            side="BUY",
+            size_native=size,
+            max_slippage_bps=self.settings.risk.max_slippage_bps,
+            jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+            score=result.composite,
+            as_of=result.as_of,
+        )
+
+        self.db.upsert_paper_position(
+            token_key=launch.token.key,
+            symbol=launch.token.symbol,
+            mint=launch.token.mint,
+            amount_token=fill.amount_token,
+            cost_basis_native=fill.amount_native + fill.fee_native + fill.tip_native,
+            entry_price_native=fill.price_native,
+            peak_price_native=fill.price_native,
+            last_price_native=fill.price_native,
+            opened_at=fill.as_of,
+            status="OPEN",
+        )
+
         self.memory.remember(
             MemoryKind.OBSERVATION,
             subject=launch.token.key,

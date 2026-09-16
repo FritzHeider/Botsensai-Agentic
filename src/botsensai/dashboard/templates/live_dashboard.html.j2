@@ -528,6 +528,166 @@ footer {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* Mission Control Action Bar */
+.mission-control-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  background: rgba(15, 19, 26, 0.95);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  position: sticky;
+  top: 57px;
+  z-index: 90;
+  backdrop-filter: blur(8px);
+}
+.mc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mc-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.mc-btn:active { transform: translateY(0); }
+.mc-btn.sweep-btn:hover { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
+.mc-btn.doctor-btn:hover { border-color: #22c55e; box-shadow: 0 0 10px rgba(34, 197, 94, 0.25); }
+.mc-btn.backup-btn:hover { border-color: #a855f7; box-shadow: 0 0 10px rgba(168, 85, 247, 0.25); }
+.mc-btn.pause-btn { border-color: rgba(239, 68, 68, 0.4); color: #f87171; }
+.mc-btn.pause-btn:hover { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; }
+.mc-btn.resume-btn { border-color: rgba(34, 197, 94, 0.4); color: #4ade80; }
+.mc-btn.resume-btn:hover { background: rgba(34, 197, 94, 0.15); border-color: #22c55e; }
+
+.mc-telemetry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.mc-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.mc-dot.green { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.mc-dot.blue { background: #38bdf8; box-shadow: 0 0 6px #38bdf8; }
+.mc-dot.purple { background: #a855f7; box-shadow: 0 0 6px #a855f7; }
+.mc-dot.red { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+
+/* Action Results Modal */
+.action-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.action-modal-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.action-modal {
+  background: #0f131a;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  width: min(640px, 95vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  transform: translateY(20px);
+  transition: transform 0.2s ease;
+  overflow: hidden;
+}
+.action-modal-backdrop.open .action-modal {
+  transform: translateY(0);
+}
+.action-modal-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.action-modal-title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.action-modal-body {
+  padding: 16px;
+  overflow-y: auto;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+}
+.action-modal-body pre {
+  background: #080a0e;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 360px;
+  overflow-y: auto;
+  color: #a5f3fc;
+  font-size: 11px;
+}
+.action-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(56, 189, 248, 0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -547,6 +707,20 @@ footer {
     </div>
   </div>
 </header>
+
+<div class="mission-control-bar">
+  <div class="mc-actions">
+    <button class="mc-btn sweep-btn" id="btn-sweep" onclick="triggerSweep()" title="Trigger manual candidate discovery & scoring"><span class="icon">⚡</span> Trigger Sweep</button>
+    <button class="mc-btn doctor-btn" id="btn-doctor" onclick="triggerDoctor()" title="Probe all 11 external data surfaces"><span class="icon">🧪</span> Surface Health</button>
+    <button class="mc-btn backup-btn" id="btn-backup" onclick="triggerBackup()" title="Mirror SQLite snapshot to S3 & R2"><span class="icon">💾</span> Cloud Backup</button>
+    <button class="mc-btn pause-btn" id="pause-resume-btn" onclick="togglePause()" title="Soft pause active sweeping & trading"><span class="icon">⏸</span> Pause Engine</button>
+  </div>
+  <div class="mc-telemetry">
+    <span class="mc-pill"><span class="mc-dot green"></span> RPC: Helius Primary (Failover: Beta)</span>
+    <span class="mc-pill"><span class="mc-dot blue"></span> DB: <span id="db-launches-count">{{ snap.total_launches or snap.labelled_outcomes }}</span> launches</span>
+    <span class="mc-pill"><span class="mc-dot purple"></span> Backups: S3 + Cloudflare R2</span>
+  </div>
+</div>
 
 <main>
   <div>
@@ -1164,6 +1338,169 @@ if (selectedCandidate) {
   updateRadar(selectedCandidate);
 }
 connectWS();
+
+// --- Mission Control Actions ---------------------------------------------- //
+let isEnginePaused = false;
+
+function showActionModal(title, content, isLoading = false) {
+  const modal = document.getElementById('action-modal-backdrop');
+  document.getElementById('action-modal-title').innerHTML = (isLoading ? '<span class="action-spinner"></span>' : '') + title;
+  document.getElementById('action-modal-content').innerHTML = content;
+  modal.classList.add('open');
+}
+
+function closeActionModal() {
+  document.getElementById('action-modal-backdrop').classList.remove('open');
+}
+
+async function safeFetchJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return { detail: text || `HTTP ${res.status} ${res.statusText}` };
+  }
+}
+
+async function triggerSweep() {
+  showActionModal('⚡ Running Sweep on EC2...', '<p class="dim">Dispatching discovery, screening, and scoring pass across Solana launchpads...</p>', true);
+  try {
+    const res = await fetch('/api/v1/system/actions/sweep', { method: 'POST' });
+    const data = await safeFetchJson(res);
+    if (!res.ok) {
+      showActionModal('Sweep Failed', `<p style="color:var(--alarm);">Error: ${data.detail || 'Sweep execution failed'}</p>`);
+      return;
+    }
+    const html = `
+      <p style="color:var(--ok); font-weight:600;">✓ Sweep completed in ${data.duration_seconds}s</p>
+      <ul>
+        <li>Screened candidates: <b>${data.screened_in}</b></li>
+        <li>Paper positions entered: <b>${data.entered}</b></li>
+      </ul>
+      ${data.top_candidate ? `
+        <div style="background:#11151c; border:1px solid var(--line); padding:10px; border-radius:6px; margin-top:10px;">
+          <b>Top Candidate:</b> ${data.top_candidate.symbol || '?'} (<span class="dim">${data.top_candidate.mint}</span>)<br>
+          <b>Score:</b> <span style="color:var(--accent); font-weight:700;">${data.top_candidate.score}</span>
+          ${data.top_candidate.vetoes && data.top_candidate.vetoes.length ? `<br><span style="color:var(--alarm);">Vetoes: ${data.top_candidate.vetoes.join(', ')}</span>` : ''}
+        </div>
+      ` : ''}
+      <pre style="margin-top:10px;">${JSON.stringify(data, null, 2)}</pre>
+    `;
+    showActionModal('⚡ Sweep Execution Complete', html, false);
+    setTimeout(() => { if (typeof refreshSnapshot === 'function') refreshSnapshot(); }, 1000);
+  } catch (err) {
+    showActionModal('Sweep Error', `<p style="color:var(--alarm);">Network error: ${err.message}</p>`);
+  }
+}
+
+async function triggerDoctor() {
+  showActionModal('🧪 Probing Surfaces on EC2...', '<p class="dim">Testing connectivity to all 11 external data surfaces (Pump.fun, Birdeye, DexScreener, X, Telegram, Reddit)...</p>', true);
+  try {
+    const res = await fetch('/api/v1/system/actions/doctor', { method: 'POST' });
+    const data = await safeFetchJson(res);
+    if (!res.ok) {
+      showActionModal('Diagnostics Failed', `<p style="color:var(--alarm);">Error: ${data.detail || 'Doctor failed'}</p>`);
+      return;
+    }
+    let table = `<p><b>${data.reachable_surfaces}/${data.total_surfaces}</b> surfaces reachable in <b>${data.duration_seconds}s</b></p>`;
+    table += `<table style="width:100%; border-collapse:collapse; margin-top:10px;">
+      <thead><tr><th style="text-align:left; border-bottom:1px solid var(--line); padding:4px;">Surface</th><th style="border-bottom:1px solid var(--line); padding:4px;">Status</th><th style="text-align:left; border-bottom:1px solid var(--line); padding:4px;">Detail</th></tr></thead><tbody>`;
+    data.surfaces.forEach(s => {
+      table += `<tr>
+        <td style="padding:4px; font-weight:600;">${s.surface}</td>
+        <td style="padding:4px; text-align:center;"><span class="tag ${s.ok ? 'ok' : 'alarm'}" style="color:${s.ok ? 'var(--ok)' : 'var(--alarm)'}; font-weight:700;">${s.ok ? 'OK' : 'DOWN'}</span></td>
+        <td style="padding:4px; color:var(--dim); font-size:11px;">${s.detail}</td>
+      </tr>`;
+    });
+    table += `</tbody></table>`;
+    showActionModal('🧪 Surface Health Diagnostics', table, false);
+  } catch (err) {
+    showActionModal('Diagnostics Error', `<p style="color:var(--alarm);">Network error: ${err.message}</p>`);
+  }
+}
+
+async function triggerBackup() {
+  showActionModal('💾 Mirroring SQLite Backup...', '<p class="dim">Creating online atomic snapshot and uploading to AWS S3 + Cloudflare R2...</p>', true);
+  try {
+    const res = await fetch('/api/v1/system/actions/backup', { method: 'POST' });
+    const data = await safeFetchJson(res);
+    if (!res.ok) {
+      showActionModal('Backup Failed', `<p style="color:var(--alarm);">Error: ${data.detail || 'Backup execution failed'}</p>`);
+      return;
+    }
+    let html = `<p style="color:${data.status === 'success' ? 'var(--ok)' : 'var(--warn)'}; font-weight:600;">
+      ✓ Backup mirrored in ${data.duration_seconds}s (${(data.total_bytes / 1024 / 1024).toFixed(2)} MB)
+    </p>`;
+    html += `<ul style="margin:10px 0;">`;
+    data.targets.forEach(t => {
+      html += `<li><b>${t.provider.toUpperCase()}</b>: <span style="color:${t.success ? 'var(--ok)' : 'var(--alarm)'};">${t.success ? '✓ Uploaded' : '✗ Failed'}</span> &mdash; <span class="dim">${t.target_uri}</span> (${t.duration_seconds}s)</li>`;
+    });
+    html += `</ul>`;
+    showActionModal('💾 Multi-Cloud Backup Result', html, false);
+  } catch (err) {
+    showActionModal('Backup Error', `<p style="color:var(--alarm);">Network error: ${err.message}</p>`);
+  }
+}
+
+async function togglePause() {
+  const action = isEnginePaused ? 'resume' : 'pause';
+  if (!confirm(`Are you sure you want to ${action.toUpperCase()} the automated scoring and sweeping engine?`)) return;
+
+  try {
+    const res = await fetch(`/api/v1/system/actions/${action}`, { method: 'POST' });
+    const data = await safeFetchJson(res);
+    if (res.ok) {
+      isEnginePaused = (action === 'pause');
+      updatePauseButton();
+    } else {
+      alert(`Failed to ${action} engine: ${data.detail || 'Request failed'}`);
+    }
+  } catch (err) {
+    alert(`Failed to ${action} engine: ${err.message}`);
+  }
+}
+
+function updatePauseButton() {
+  const btn = document.getElementById('pause-resume-btn');
+  if (!btn) return;
+  if (isEnginePaused) {
+    btn.innerHTML = '<span class="icon">▶</span> Resume Engine';
+    btn.className = 'mc-btn resume-btn';
+  } else {
+    btn.innerHTML = '<span class="icon">⏸</span> Pause Engine';
+    btn.className = 'mc-btn pause-btn';
+  }
+}
+
+async function checkEngineStatus() {
+  try {
+    const res = await fetch('/api/v1/system/actions/status');
+    if (res.ok) {
+      const data = await safeFetchJson(res);
+      isEnginePaused = !!data.engine_paused;
+      updatePauseButton();
+    }
+  } catch (e) {}
+}
+setInterval(checkEngineStatus, 15000);
+checkEngineStatus();
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeActionModal();
+  }
+});
 </script>
+
+<!-- Action Modal Backdrop -->
+<div class="action-modal-backdrop" id="action-modal-backdrop" onclick="if(event.target===this)closeActionModal()">
+  <div class="action-modal">
+    <div class="action-modal-hdr">
+      <span class="action-modal-title" id="action-modal-title">Action Execution</span>
+      <button class="drawer-close" onclick="closeActionModal()">&times;</button>
+    </div>
+    <div class="action-modal-body" id="action-modal-content"></div>
+  </div>
+</div>
 </body>
 </html>

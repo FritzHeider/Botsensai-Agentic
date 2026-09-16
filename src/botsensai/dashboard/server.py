@@ -84,6 +84,7 @@ def _get_active_settings(request: Request) -> Settings:
     return getattr(request.app.state, "settings", None) or get_settings()
 
 
+@router.head("/", include_in_schema=False)
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request) -> str:
     settings = _get_active_settings(request)
