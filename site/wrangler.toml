@@ -12,6 +12,18 @@ assets = { directory = "." }
 binding = "BOTSENSAI_R2"
 bucket_name = "botsensai-backups"
 
+# Observability Configuration
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
+persist = true
+
 # Production Route (uncomment when domain DNS is mapped in Cloudflare Dashboard)
 # routes = [
 #   { pattern = "botsensai.com/*", zone_name = "botsensai.com" },
