@@ -5,6 +5,7 @@
 
 let currentSnapshot = null;
 let activeFilter = 'all';
+let currentTableRows = [];
 
 async function fetchSnapshot() {
   try {
@@ -160,6 +161,8 @@ function renderSignalTable(signals, candidates) {
       symbol: s.symbol,
       mint: s.mint,
       image_uri: s.image_uri,
+      website: s.website,
+      twitter: s.twitter,
       score: score.toFixed(3),
       coverage: (cand.coverage_pct || s.coverage_pct) ? `${cand.coverage_pct || s.coverage_pct}%` : '50%',
       regime: (cand.regime || s.regime || 'HOT').toUpperCase(),
@@ -172,8 +175,10 @@ function renderSignalTable(signals, candidates) {
     });
   });
 
+  currentTableRows = rows;
+
   // Render rows
-  tbody.innerHTML = rows.map((r) => `
+  tbody.innerHTML = rows.map((r, idx) => `
     <tr class="hover:bg-white/[0.04] transition-colors border-b border-white/5" data-type="${r.rowType}">
       <td class="py-3.5 px-4 font-bold ${r.isVetoed ? 'text-rose-400' : 'text-cyan-400'}">#${r.id}</td>
       <td class="py-3.5 px-4">
@@ -199,7 +204,7 @@ function renderSignalTable(signals, candidates) {
       <td class="py-3.5 px-4 text-slate-300">${r.isVetoed ? '0 SOL (BLOCKED)' : r.size}</td>
       <td class="py-3.5 px-4 ${r.perfClass}">${r.perfLabel}</td>
       <td class="py-3.5 px-4 text-right">
-        <button onclick="openDossier('${r.symbol}', '${r.score}', '${r.coverage}', '${r.size}', '${r.mint}', \`${r.notes}\`)" class="px-2.5 py-1 rounded bg-white/5 hover:bg-cyan-500/20 text-cyan-300 border border-white/10 hover:border-cyan-500/30 text-xs transition-colors">
+        <button onclick="openDossier(${idx})" class="px-2.5 py-1 rounded bg-white/5 hover:bg-cyan-500/20 text-cyan-300 border border-white/10 hover:border-cyan-500/30 text-xs transition-colors">
           Dossier ↗
         </button>
       </td>
@@ -282,17 +287,58 @@ function updateCountdown() {
 }
 
 // Token Dossier Drawer
-function openDossier(symbol, score, coverage, size, mint, notes) {
+function openDossier(idx) {
+  const r = currentTableRows[idx];
+  if (!r) return;
   const drawer = document.getElementById('dossier-drawer');
   if (!drawer) return;
 
-  document.getElementById('dossier-title').innerText = `${symbol} DOSSIER`;
-  document.getElementById('dossier-score').innerText = score;
-  document.getElementById('dossier-coverage').innerText = coverage;
-  document.getElementById('dossier-size').innerText = size;
-  document.getElementById('dossier-notes').innerText = notes || 'No extra notes recorded.';
+  document.getElementById('dossier-title').innerText = `${r.symbol} DOSSIER`;
+  document.getElementById('dossier-score').innerText = r.score;
+  document.getElementById('dossier-coverage').innerText = r.coverage;
+  document.getElementById('dossier-size').innerText = r.size;
+  document.getElementById('dossier-notes').innerText = r.notes || 'No extra notes recorded.';
 
-  const cleanMint = mint || '';
+  // Image Avatar
+  const imgEl = document.getElementById('dossier-img');
+  const iconEl = document.getElementById('dossier-icon');
+  if (r.image_uri && imgEl) {
+    imgEl.src = r.image_uri;
+    imgEl.classList.remove('hidden');
+    if (iconEl) iconEl.classList.add('hidden');
+  } else if (imgEl) {
+    imgEl.classList.add('hidden');
+    if (iconEl) iconEl.classList.remove('hidden');
+  }
+
+  // Social / Web Links
+  const webEl = document.getElementById('dossier-link-web');
+  const twEl = document.getElementById('dossier-link-twitter');
+  const socialsWrap = document.getElementById('dossier-socials');
+  let hasSocial = false;
+
+  if (r.website && webEl) {
+    webEl.href = r.website;
+    webEl.classList.remove('hidden');
+    hasSocial = true;
+  } else if (webEl) {
+    webEl.classList.add('hidden');
+  }
+
+  if (r.twitter && twEl) {
+    twEl.href = r.twitter;
+    twEl.classList.remove('hidden');
+    hasSocial = true;
+  } else if (twEl) {
+    twEl.classList.add('hidden');
+  }
+
+  if (socialsWrap) {
+    if (hasSocial) socialsWrap.classList.remove('hidden');
+    else socialsWrap.classList.add('hidden');
+  }
+
+  const cleanMint = r.mint || '';
   document.getElementById('dossier-link-dex').href = `https://dexscreener.com/solana/${cleanMint}`;
   document.getElementById('dossier-link-pump').href = `https://pump.fun/${cleanMint}`;
   document.getElementById('dossier-link-solscan').href = `https://solscan.io/token/${cleanMint}`;

@@ -12,8 +12,50 @@ import time
 import json
 import sqlite3
 import argparse
+import urllib.request
 from datetime import datetime, timezone
 import boto3
+
+dex_cache = {}
+
+def normalize_image_url(url):
+    if not url:
+        return None
+    # Upgrade rate-limited ipfs.io gateways to high-performance Pinata CDN
+    if "ipfs.io/ipfs/" in url:
+        return url.replace("ipfs.io/ipfs/", "pump.mypinata.cloud/ipfs/")
+    if "dweb.link/ipfs/" in url:
+        return url.replace("dweb.link/ipfs/", "pump.mypinata.cloud/ipfs/")
+    return url
+
+def get_dexscreener_info(mint):
+    if mint in dex_cache:
+        return dex_cache[mint]
+    try:
+        req = urllib.request.Request(
+            f"https://api.dexscreener.com/latest/dex/tokens/{mint}",
+            headers={"User-Agent": "Mozilla/5.0 (compatible; Botsensai/2.0)"}
+        )
+        with urllib.request.urlopen(req, timeout=1.8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            pairs = data.get("pairs") or []
+            if pairs:
+                p0 = pairs[0]
+                info = p0.get("info") or {}
+                websites = [w.get("url") for w in info.get("websites", []) if w.get("url")]
+                socials = {s.get("type"): s.get("url") for s in info.get("socials", []) if s.get("url")}
+                res = {
+                    "image_url": info.get("imageUrl"),
+                    "website": websites[0] if websites else None,
+                    "twitter": socials.get("twitter"),
+                    "telegram": socials.get("telegram")
+                }
+                dex_cache[mint] = res
+                return res
+    except Exception:
+        pass
+    dex_cache[mint] = {}
+    return {}
 
 def parse_env(env_path):
     env_vars = {}
@@ -110,6 +152,24 @@ def build_snapshot(db_path):
             "photon": f"https://photon-sol.tinyastro.io/en/lp/{mint}"
         }
 
+        raw_img = launch_d.get("image_uri")
+        img_url = normalize_image_url(raw_img)
+        website = launch_d.get("website")
+        twitter = launch_d.get("twitter")
+        telegram = launch_d.get("telegram")
+
+        # Enrich from DexScreener if image or socials are missing
+        if not img_url or not website or not twitter:
+            dex_info = get_dexscreener_info(mint)
+            if not img_url and dex_info.get("image_url"):
+                img_url = dex_info["image_url"]
+            if not website and dex_info.get("website"):
+                website = dex_info["website"]
+            if not twitter and dex_info.get("twitter"):
+                twitter = dex_info["twitter"]
+            if not telegram and dex_info.get("telegram"):
+                telegram = dex_info["telegram"]
+
         signal_obj = {
             "id": s_d["id"],
             "token_key": tkey,
@@ -133,9 +193,10 @@ def build_snapshot(db_path):
             "market_cap_usd": market_cap_usd,
             "bonding_curve_progress": bonding_progress,
             "outcome": outcome,
-            "image_uri": launch_d.get("image_uri"),
-            "website": launch_d.get("website"),
-            "twitter": launch_d.get("twitter"),
+            "image_uri": img_url,
+            "website": website,
+            "twitter": twitter,
+            "telegram": telegram,
             "links": links
         }
 

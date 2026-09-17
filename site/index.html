@@ -318,13 +318,29 @@
   <!-- Slide-Out Token Dossier Drawer -->
   <aside id="dossier-drawer" class="fixed inset-y-0 right-0 w-full max-w-md bg-[#0c111a] border-l border-white/10 shadow-2xl p-6 transform translate-x-full transition-transform duration-300 ease-in-out z-50 overflow-y-auto space-y-6">
     <div class="flex items-center justify-between pb-4 border-b border-white/10">
-      <div>
-        <h3 id="dossier-title" class="text-xl font-black text-white">TOKEN DOSSIER</h3>
-        <span class="text-xs text-slate-400 font-mono">Deep-Dive Quantitative Telemetry</span>
+      <div class="flex items-center gap-3">
+        <div id="dossier-avatar-wrap" class="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+          <img id="dossier-img" src="" class="w-full h-full object-cover hidden">
+          <span id="dossier-icon" class="text-xl">⚡</span>
+        </div>
+        <div>
+          <h3 id="dossier-title" class="text-xl font-black text-white">TOKEN DOSSIER</h3>
+          <span class="text-xs text-slate-400 font-mono">Deep-Dive Quantitative Telemetry</span>
+        </div>
       </div>
       <button onclick="closeDossier()" class="text-slate-400 hover:text-white text-2xl font-bold px-2 py-1">
         &times;
       </button>
+    </div>
+
+    <!-- Social / Web Badges -->
+    <div id="dossier-socials" class="flex items-center gap-2 font-mono text-xs hidden">
+      <a id="dossier-link-web" href="#" target="_blank" class="hidden px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-cyan-300 border border-white/10 text-[11px]">
+        🌐 Website
+      </a>
+      <a id="dossier-link-twitter" href="#" target="_blank" class="hidden px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-cyan-300 border border-white/10 text-[11px]">
+        🐦 X / Twitter
+      </a>
     </div>
 
     <div class="space-y-4 font-mono text-xs">
