@@ -27,3 +27,4 @@ botsensai-x-profile/
 .coverage
 .coverage.*
 .worktrees/
+.wrangler/

@@ -1,0 +1,593 @@
+{
+  "generated_at": "2026-09-16T20:36:00Z",
+  "epoch_id": 1789617,
+  "epoch_seconds_remaining": 864,
+  "meta": {
+    "title": "Botsensai Live Free Signals & Quantitative Telemetry",
+    "domain": "botsensai.com",
+    "model_version": "v20260913",
+    "social_session": "Authenticated (@Botsensaix)",
+    "regime": "HOT (Elevated Velocity)",
+    "jito_latency_ms": 350,
+    "canary_win_rate_pct": 75.0,
+    "total_launches": 36286,
+    "total_signals": 27
+  },
+  "top_sniper_pick": {
+    "token_key": "solana:7xPqm4Q78dK8L8Xj9K3f8pump",
+    "mint": "7xPqm4Q78dK8L8Xj9K3f8pump",
+    "symbol": "ASTREUS",
+    "name": "Astreus Navigation AI",
+    "composite": 0.939,
+    "coverage": 0.74,
+    "coverage_pct": 74,
+    "regime": "hot",
+    "vetoes": [],
+    "is_vetoed": false,
+    "size_sol": 0.012,
+    "bonding_curve_progress": 42.8,
+    "exit_depth_contrib": 0.336,
+    "deployer_behaviour_contrib": 0.194,
+    "explanation": "Top composite score 0.939 in hot regime; Realizable exit depth 0.98 (+0.336); Deployer behaviour 0.97 (+0.194); Launch substance 0.91; Zero vetoes.",
+    "links": {
+      "dexscreener": "https://dexscreener.com/solana/7xPqm4Q78dK8L8Xj9K3f8pump",
+      "pumpfun": "https://pump.fun/7xPqm4Q78dK8L8Xj9K3f8pump",
+      "solscan": "https://solscan.io/token/7xPqm4Q78dK8L8Xj9K3f8pump",
+      "photon": "https://photon-sol.tinyastro.io/en/lp/7xPqm4Q78dK8L8Xj9K3f8pump"
+    }
+  },
+  "signals": [
+    {
+      "id": 27,
+      "symbol": "CROWN",
+      "side": "BUY",
+      "size_native": 0.0052,
+      "score": 0.892,
+      "status": "SIMULATED",
+      "mint": "solana_27_CROWN",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_27_CROWN",
+        "pumpfun": "https://pump.fun/solana_27_CROWN",
+        "solscan": "https://solscan.io/token/solana_27_CROWN",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_27_CROWN"
+      }
+    },
+    {
+      "id": 26,
+      "symbol": "PAIDLON",
+      "side": "BUY",
+      "size_native": 0.0088,
+      "score": 0.895,
+      "status": "SIMULATED",
+      "mint": "solana_26_PAIDLON",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_26_PAIDLON",
+        "pumpfun": "https://pump.fun/solana_26_PAIDLON",
+        "solscan": "https://solscan.io/token/solana_26_PAIDLON",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_26_PAIDLON"
+      }
+    },
+    {
+      "id": 25,
+      "symbol": "ASTREUS",
+      "side": "BUY",
+      "size_native": 0.0132,
+      "score": 0.936,
+      "status": "SIMULATED",
+      "mint": "solana_25_ASTREUS",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_25_ASTREUS",
+        "pumpfun": "https://pump.fun/solana_25_ASTREUS",
+        "solscan": "https://solscan.io/token/solana_25_ASTREUS",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_25_ASTREUS"
+      }
+    },
+    {
+      "id": 24,
+      "symbol": "CROWN",
+      "side": "BUY",
+      "size_native": 0.0052,
+      "score": 0.892,
+      "status": "SIMULATED",
+      "mint": "solana_24_CROWN",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_24_CROWN",
+        "pumpfun": "https://pump.fun/solana_24_CROWN",
+        "solscan": "https://solscan.io/token/solana_24_CROWN",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_24_CROWN"
+      }
+    },
+    {
+      "id": 23,
+      "symbol": "PAIDLON",
+      "side": "BUY",
+      "size_native": 0.0088,
+      "score": 0.896,
+      "status": "SIMULATED",
+      "mint": "solana_23_PAIDLON",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_23_PAIDLON",
+        "pumpfun": "https://pump.fun/solana_23_PAIDLON",
+        "solscan": "https://solscan.io/token/solana_23_PAIDLON",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_23_PAIDLON"
+      }
+    },
+    {
+      "id": 22,
+      "symbol": "VILLAGE",
+      "side": "BUY",
+      "size_native": 0.0079,
+      "score": 0.898,
+      "status": "SIMULATED",
+      "mint": "solana_22_VILLAGE",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_22_VILLAGE",
+        "pumpfun": "https://pump.fun/solana_22_VILLAGE",
+        "solscan": "https://solscan.io/token/solana_22_VILLAGE",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_22_VILLAGE"
+      }
+    },
+    {
+      "id": 21,
+      "symbol": "ASTREUS",
+      "side": "BUY",
+      "size_native": 0.012,
+      "score": 0.939,
+      "status": "SIMULATED",
+      "mint": "solana_21_ASTREUS",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_21_ASTREUS",
+        "pumpfun": "https://pump.fun/solana_21_ASTREUS",
+        "solscan": "https://solscan.io/token/solana_21_ASTREUS",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_21_ASTREUS"
+      }
+    },
+    {
+      "id": 20,
+      "symbol": "MEXC",
+      "side": "BUY",
+      "size_native": 0.0003,
+      "score": 0.636,
+      "status": "SIMULATED",
+      "mint": "solana_20_MEXC",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_20_MEXC",
+        "pumpfun": "https://pump.fun/solana_20_MEXC",
+        "solscan": "https://solscan.io/token/solana_20_MEXC",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_20_MEXC"
+      }
+    },
+    {
+      "id": 19,
+      "symbol": "QK",
+      "side": "BUY",
+      "size_native": 0.001,
+      "score": 0.743,
+      "status": "SIMULATED",
+      "mint": "solana_19_QK",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_19_QK",
+        "pumpfun": "https://pump.fun/solana_19_QK",
+        "solscan": "https://solscan.io/token/solana_19_QK",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_19_QK"
+      }
+    },
+    {
+      "id": 18,
+      "symbol": "GWYNNE",
+      "side": "BUY",
+      "size_native": 0.0026,
+      "score": 0.796,
+      "status": "SIMULATED",
+      "mint": "solana_18_GWYNNE",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_18_GWYNNE",
+        "pumpfun": "https://pump.fun/solana_18_GWYNNE",
+        "solscan": "https://solscan.io/token/solana_18_GWYNNE",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_18_GWYNNE"
+      }
+    },
+    {
+      "id": 17,
+      "symbol": "Gary",
+      "side": "BUY",
+      "size_native": 0.0016,
+      "score": 0.804,
+      "status": "SIMULATED",
+      "mint": "solana_17_Gary",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_17_Gary",
+        "pumpfun": "https://pump.fun/solana_17_Gary",
+        "solscan": "https://solscan.io/token/solana_17_Gary",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_17_Gary"
+      }
+    },
+    {
+      "id": 16,
+      "symbol": "CREOS",
+      "side": "BUY",
+      "size_native": 0.0017,
+      "score": 0.817,
+      "status": "SIMULATED",
+      "mint": "solana_16_CREOS",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_16_CREOS",
+        "pumpfun": "https://pump.fun/solana_16_CREOS",
+        "solscan": "https://solscan.io/token/solana_16_CREOS",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_16_CREOS"
+      }
+    },
+    {
+      "id": 15,
+      "symbol": "NDLINU",
+      "side": "BUY",
+      "size_native": 0.0018,
+      "score": 0.825,
+      "status": "SIMULATED",
+      "mint": "solana_15_NDLINU",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_15_NDLINU",
+        "pumpfun": "https://pump.fun/solana_15_NDLINU",
+        "solscan": "https://solscan.io/token/solana_15_NDLINU",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_15_NDLINU"
+      }
+    },
+    {
+      "id": 14,
+      "symbol": "pidog",
+      "side": "BUY",
+      "size_native": 0.0027,
+      "score": 0.856,
+      "status": "SIMULATED",
+      "mint": "solana_14_pidog",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_14_pidog",
+        "pumpfun": "https://pump.fun/solana_14_pidog",
+        "solscan": "https://solscan.io/token/solana_14_pidog",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_14_pidog"
+      }
+    },
+    {
+      "id": 13,
+      "symbol": "blindcat",
+      "side": "BUY",
+      "size_native": 0.0092,
+      "score": 0.904,
+      "status": "SIMULATED",
+      "mint": "solana_13_blindcat",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_13_blindcat",
+        "pumpfun": "https://pump.fun/solana_13_blindcat",
+        "solscan": "https://solscan.io/token/solana_13_blindcat",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_13_blindcat"
+      }
+    },
+    {
+      "id": 12,
+      "symbol": "MIKE TYSON",
+      "side": "BUY",
+      "size_native": 0.0062,
+      "score": 0.926,
+      "status": "SIMULATED",
+      "mint": "solana_12_MIKE TYSON",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_12_MIKE TYSON",
+        "pumpfun": "https://pump.fun/solana_12_MIKE TYSON",
+        "solscan": "https://solscan.io/token/solana_12_MIKE TYSON",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_12_MIKE TYSON"
+      }
+    },
+    {
+      "id": 11,
+      "symbol": "$DUMP",
+      "side": "BUY",
+      "size_native": 0.0067,
+      "score": 0.916,
+      "status": "SIMULATED",
+      "mint": "solana_11_$DUMP",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_11_$DUMP",
+        "pumpfun": "https://pump.fun/solana_11_$DUMP",
+        "solscan": "https://solscan.io/token/solana_11_$DUMP",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_11_$DUMP"
+      }
+    },
+    {
+      "id": 10,
+      "symbol": "BULLISHCAT",
+      "side": "BUY",
+      "size_native": 0.0075,
+      "score": 0.888,
+      "status": "SIMULATED",
+      "mint": "Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+        "pumpfun": "https://pump.fun/Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+        "solscan": "https://solscan.io/token/Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump"
+      }
+    },
+    {
+      "id": 9,
+      "symbol": "XITTY",
+      "side": "BUY",
+      "size_native": 0.0032,
+      "score": 0.929,
+      "status": "SIMULATED",
+      "mint": "FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+      "time_str": "2026-09-15 18:41:29 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+        "pumpfun": "https://pump.fun/FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+        "solscan": "https://solscan.io/token/FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid"
+      }
+    },
+    {
+      "id": 8,
+      "symbol": "THUNE",
+      "side": "BUY",
+      "size_native": 0.0023,
+      "score": 0.862,
+      "status": "SIMULATED",
+      "mint": "9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+      "time_str": "2026-09-15 17:45:50 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+        "pumpfun": "https://pump.fun/9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+        "solscan": "https://solscan.io/token/9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump"
+      }
+    },
+    {
+      "id": 7,
+      "symbol": "CASHCAT",
+      "side": "BUY",
+      "size_native": 0.004,
+      "score": 0.868,
+      "status": "SIMULATED",
+      "mint": "GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+      "time_str": "2026-09-15 17:45:50 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+        "pumpfun": "https://pump.fun/GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+        "solscan": "https://solscan.io/token/GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump"
+      }
+    },
+    {
+      "id": 6,
+      "symbol": "CLARITY TRUM",
+      "side": "BUY",
+      "size_native": 0.0025,
+      "score": 0.878,
+      "status": "SIMULATED",
+      "mint": "solana_6_CLARITY TRUM",
+      "time_str": "2026-09-15 17:45:50 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_6_CLARITY TRUM",
+        "pumpfun": "https://pump.fun/solana_6_CLARITY TRUM",
+        "solscan": "https://solscan.io/token/solana_6_CLARITY TRUM",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_6_CLARITY TRUM"
+      }
+    },
+    {
+      "id": 5,
+      "symbol": "Sierra",
+      "side": "BUY",
+      "size_native": 0.0025,
+      "score": 0.879,
+      "status": "SIMULATED",
+      "mint": "solana_5_Sierra",
+      "time_str": "2026-09-15 17:45:50 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_5_Sierra",
+        "pumpfun": "https://pump.fun/solana_5_Sierra",
+        "solscan": "https://solscan.io/token/solana_5_Sierra",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_5_Sierra"
+      }
+    },
+    {
+      "id": 4,
+      "symbol": "MANDEM",
+      "side": "BUY",
+      "size_native": 0.002,
+      "score": 0.879,
+      "status": "SIMULATED",
+      "mint": "solana_4_MANDEM",
+      "time_str": "2026-09-15 17:45:50 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_4_MANDEM",
+        "pumpfun": "https://pump.fun/solana_4_MANDEM",
+        "solscan": "https://solscan.io/token/solana_4_MANDEM",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_4_MANDEM"
+      }
+    },
+    {
+      "id": 3,
+      "symbol": "STEALF",
+      "side": "BUY",
+      "size_native": 0.002,
+      "score": 0.882,
+      "status": "SIMULATED",
+      "mint": "solana_3_STEALF",
+      "time_str": "2026-09-15 17:45:50 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_3_STEALF",
+        "pumpfun": "https://pump.fun/solana_3_STEALF",
+        "solscan": "https://solscan.io/token/solana_3_STEALF",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_3_STEALF"
+      }
+    },
+    {
+      "id": 2,
+      "symbol": "JENSENHUH",
+      "side": "BUY",
+      "size_native": 0.0075,
+      "score": 0.886,
+      "status": "SIMULATED",
+      "mint": "solana_2_JENSENHUH",
+      "time_str": "2026-09-15 17:45:50 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/solana_2_JENSENHUH",
+        "pumpfun": "https://pump.fun/solana_2_JENSENHUH",
+        "solscan": "https://solscan.io/token/solana_2_JENSENHUH",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/solana_2_JENSENHUH"
+      }
+    },
+    {
+      "id": 1,
+      "symbol": "SENGI",
+      "side": "BUY",
+      "size_native": 0.0052,
+      "score": 0.892,
+      "status": "SIMULATED",
+      "mint": "7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+      "time_str": "2026-09-15 17:45:50 UTC",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+        "pumpfun": "https://pump.fun/7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+        "solscan": "https://solscan.io/token/7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu"
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "signal_id": 10,
+      "token_key": "solana:Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+      "mint": "Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+      "symbol": "BULLISHCAT",
+      "name": "BullishCat",
+      "composite": 0.888,
+      "coverage_pct": 47,
+      "regime": "hot",
+      "vetoes": [
+        "mint_authority_live",
+        "freeze_authority_live"
+      ],
+      "is_vetoed": true,
+      "size_sol": 0.0075,
+      "entry_price_sol": 2.526e-06,
+      "peak_price_sol": 3.223e-06,
+      "max_multiple": 1.276,
+      "explanation": "REJECTED (mint authority live, freeze authority live)",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+        "pumpfun": "https://pump.fun/Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+        "solscan": "https://solscan.io/token/Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/Cc996qQUy8Y17YMrNp75H4vJTUgkaYKBfJx6Zww8pump"
+      }
+    },
+    {
+      "signal_id": 9,
+      "token_key": "solana:FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+      "mint": "FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+      "symbol": "XITTY",
+      "name": "XITTY / SOL",
+      "composite": 0.929,
+      "coverage_pct": 29,
+      "regime": "hot",
+      "vetoes": [],
+      "is_vetoed": false,
+      "size_sol": 0.0032,
+      "entry_price_sol": 2.841895110365845e-08,
+      "peak_price_sol": 2.919e-08,
+      "max_multiple": 1.027,
+      "explanation": "score 0.929 in a hot regime (coverage 29%); Realizable exit depth 0.98 (+0.336); Deployer behaviour 0.97 (+0.194); Launch description substance 0.91 (+0.039); Meta alignment 0.50 (+0.014); Launch timing quality 0.97 (+0.010); Deployer lineage 0.50 (+0.003); weak: Organic media production rate 0.17; weak: Narrative novelty 0.01; 24 metrics unavailable",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+        "pumpfun": "https://pump.fun/FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+        "solscan": "https://solscan.io/token/FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/FEYTyYciakYNLWYz6V7hFCBhRT46nbrQzKtcTrUEpaid"
+      }
+    },
+    {
+      "signal_id": 8,
+      "token_key": "solana:9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+      "mint": "9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+      "symbol": "THUNE",
+      "name": "John Thune",
+      "composite": 0.862,
+      "coverage_pct": 29,
+      "regime": "hot",
+      "vetoes": [],
+      "is_vetoed": false,
+      "size_sol": 0.0023,
+      "entry_price_sol": 2.983021808809609e-08,
+      "peak_price_sol": 2.983021808809609e-08,
+      "max_multiple": 1.0,
+      "explanation": "score 0.862 in a hot regime (coverage 29%); Realizable exit depth 0.97 (+0.331); Deployer behaviour 0.82 (+0.165); Launch description substance 0.94 (+0.040); Launch timing quality 0.97 (+0.010); Meta alignment 0.16 (+0.004); Deployer lineage 0.50 (+0.003); weak: Narrative novelty 0.00; weak: Organic media production rate 0.17; 24 metrics unavailable",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+        "pumpfun": "https://pump.fun/9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+        "solscan": "https://solscan.io/token/9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/9aQ3tgoPnF2PfrosAuA9GKm3dXJjnf4G1yoJqPRapump"
+      }
+    },
+    {
+      "signal_id": 7,
+      "token_key": "solana:GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+      "mint": "GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+      "symbol": "CASHCAT",
+      "name": "CASHCAT",
+      "composite": 0.868,
+      "coverage_pct": 38,
+      "regime": "hot",
+      "vetoes": [],
+      "is_vetoed": false,
+      "size_sol": 0.004,
+      "entry_price_sol": 2.53808762363113e-06,
+      "peak_price_sol": 5.169e-06,
+      "max_multiple": 2.037,
+      "explanation": "score 0.868 in a hot regime (coverage 38%); Realizable exit depth 1.00 (+0.341); Launch description substance 0.65 (+0.027); Launch timing quality 0.97 (+0.010); Meta alignment 0.18 (+0.005); Smart wallet participation 0.31 (+0.001); Sniper supply share 0.93 (+0.000); weak: Organic media production rate 0.17; weak: Narrative novelty 0.00; 21 metrics unavailable",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+        "pumpfun": "https://pump.fun/GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+        "solscan": "https://solscan.io/token/GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/GEVexg2fEpmjsuA9rJjX24baCP69oJ4B7Dp1rNhYpump"
+      }
+    },
+    {
+      "signal_id": 1,
+      "token_key": "solana:7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+      "mint": "7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+      "symbol": "SENGI",
+      "name": "Elephant Shrew",
+      "composite": 0.892,
+      "coverage_pct": 41,
+      "regime": "hot",
+      "vetoes": [],
+      "is_vetoed": false,
+      "size_sol": 0.0052,
+      "entry_price_sol": 4.085e-07,
+      "peak_price_sol": 5.571e-07,
+      "max_multiple": 1.364,
+      "explanation": "score 0.898 in a hot regime (coverage 41%); Realizable exit depth 1.00 (+0.341); Launch description substance 0.77 (+0.033); Launch timing quality 0.97 (+0.010); Narrative novelty 0.76 (+0.009); Meta alignment 0.14 (+0.004); Smart wallet participation 0.25 (+0.000); weak: Organic media production rate 0.17; weak: Cross-platform propagation lag 0.10; 20 metrics unavailable",
+      "links": {
+        "dexscreener": "https://dexscreener.com/solana/7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+        "pumpfun": "https://pump.fun/7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+        "solscan": "https://solscan.io/token/7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu",
+        "photon": "https://photon-sol.tinyastro.io/en/lp/7PboeXUhu35TYV4TFfKzvMGPj9TfgsbSADjWcasE35zu"
+      }
+    }
+  ]
+}

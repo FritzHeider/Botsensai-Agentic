@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Botsensai Telemetry Publisher every 60 seconds for botsensai.com
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Botsensai Public Telemetry Publisher for botsensai.com
+After=network.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Botsensai
+EnvironmentFile=-/home/ubuntu/Botsensai/.env
+ExecStart=/home/ubuntu/Botsensai/.venv/bin/python scripts/publish_public_telemetry.py --out site/snapshot.json --upload-r2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
