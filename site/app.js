@@ -59,10 +59,10 @@ function renderDashboard(data) {
 
 function renderHeroSniper(top) {
   const symbolEl = document.getElementById('hero-symbol');
-  if (symbolEl) symbolEl.innerText = top.symbol || 'ASTREUS';
+  if (symbolEl) symbolEl.innerText = top.symbol || 'MEMEBID';
 
   const nameEl = document.getElementById('hero-name');
-  if (nameEl) nameEl.innerText = top.name || 'Astreus Navigation AI';
+  if (nameEl) nameEl.innerText = top.name || 'MemeBID';
 
   const mintEl = document.getElementById('hero-mint');
   const mintTrunc = top.mint ? `${top.mint.slice(0, 8)}...${top.mint.slice(-6)}` : 'solana:...pump';
@@ -77,28 +77,41 @@ function renderHeroSniper(top) {
     };
   }
 
+  // Dynamic token image
+  const imgEl = document.getElementById('hero-img');
+  const emojiEl = document.getElementById('hero-emoji');
+  if (top.image_uri && imgEl) {
+    imgEl.src = top.image_uri;
+    imgEl.alt = top.symbol || 'Token';
+    imgEl.classList.remove('hidden');
+    if (emojiEl) emojiEl.classList.add('hidden');
+  } else if (imgEl) {
+    imgEl.classList.add('hidden');
+    if (emojiEl) emojiEl.classList.remove('hidden');
+  }
+
   const scoreEl = document.getElementById('hero-score');
-  if (scoreEl) scoreEl.innerText = top.composite ? top.composite.toFixed(3) : '0.939';
+  if (scoreEl) scoreEl.innerText = top.composite ? top.composite.toFixed(3) : '0.899';
 
   const covEl = document.getElementById('hero-coverage');
-  if (covEl) covEl.innerText = `${top.coverage_pct || 74}%`;
+  if (covEl) covEl.innerText = `${top.coverage_pct || 50}%`;
 
   const progEl = document.getElementById('hero-bonding-prog');
-  if (progEl) progEl.innerText = `${top.bonding_curve_progress || 42.8}%`;
+  if (progEl) progEl.innerText = `${top.bonding_curve_progress || 35.0}%`;
 
   // Gauges
-  const exitDepth = top.exit_depth_contrib || 0.336;
+  const exitDepth = top.exit_depth_contrib || 0.341;
   const exitDepthPct = Math.min(100, Math.round((exitDepth / 0.35) * 100));
   const elExitGauge = document.getElementById('gauge-exit-depth');
   if (elExitGauge) elExitGauge.style.width = `${exitDepthPct}%`;
 
-  const deployer = top.deployer_behaviour_contrib || 0.194;
+  const deployer = top.deployer_behaviour_contrib || 0.186;
   const deployerPct = Math.min(100, Math.round((deployer / 0.20) * 100));
   const elDeployerGauge = document.getElementById('gauge-deployer');
   if (elDeployerGauge) elDeployerGauge.style.width = `${deployerPct}%`;
 
   // Links
-  const mint = top.mint || 'HYwLkDxZBqKt7AaTDy92qGqHFfSfTXWXbU4Y8VSxsons';
+  const mint = top.mint || '9CHnozHgtQVCYu6Z7SzWkxdNJEdMy8Tt3bh7B2wQpump';
   setLink('hero-link-dex', `https://dexscreener.com/solana/${mint}`);
   setLink('hero-link-pump', `https://pump.fun/${mint}`);
   setLink('hero-link-solscan', `https://solscan.io/token/${mint}`);
@@ -146,6 +159,7 @@ function renderSignalTable(signals, candidates) {
       id: s.id,
       symbol: s.symbol,
       mint: s.mint,
+      image_uri: s.image_uri,
       score: score.toFixed(3),
       coverage: (cand.coverage_pct || s.coverage_pct) ? `${cand.coverage_pct || s.coverage_pct}%` : '50%',
       regime: (cand.regime || s.regime || 'HOT').toUpperCase(),
@@ -164,8 +178,8 @@ function renderSignalTable(signals, candidates) {
       <td class="py-3.5 px-4 font-bold ${r.isVetoed ? 'text-rose-400' : 'text-cyan-400'}">#${r.id}</td>
       <td class="py-3.5 px-4">
         <div class="flex items-center gap-2.5">
-          <span class="w-7 h-7 rounded-lg ${r.isVetoed ? 'bg-rose-500/20 border-rose-500/40 text-rose-300' : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'} border flex items-center justify-center font-bold text-xs">
-            ${r.isVetoed ? '🚫' : '⚡'}
+          <span class="w-7 h-7 rounded-lg ${r.isVetoed ? 'bg-rose-500/20 border-rose-500/40 text-rose-300' : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'} border flex items-center justify-center font-bold text-xs overflow-hidden">
+            ${r.image_uri ? `<img src="${r.image_uri}" alt="" class="w-full h-full object-cover" onerror="this.remove()">` : (r.isVetoed ? '🚫' : '⚡')}
           </span>
           <div>
             <span class="font-bold ${r.isVetoed ? 'text-slate-400 line-through' : 'text-white'} block">${r.symbol}</span>
