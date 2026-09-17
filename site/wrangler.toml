@@ -4,6 +4,13 @@ compatibility_date = "2026-09-01"
 account_id = "fd2ff8c29a6d58c479032efea6c9ea62"
 workers_dev = true
 
+# Production Routes
+routes = [
+  { pattern = "botsensai.com", custom_domain = true },
+  { pattern = "www.botsensai.com", custom_domain = true }
+]
+
+
 # Cloudflare Pages / Worker Assets Directory
 assets = { directory = "." }
 
@@ -24,8 +31,3 @@ enabled = true
 head_sampling_rate = 1
 persist = true
 
-# Production Route (uncomment when domain DNS is mapped in Cloudflare Dashboard)
-# routes = [
-#   { pattern = "botsensai.com/*", zone_name = "botsensai.com" },
-#   { pattern = "www.botsensai.com/*", zone_name = "botsensai.com" }
-# ]

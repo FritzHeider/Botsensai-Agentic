@@ -36,7 +36,7 @@ async function getRawSnapshot(env, url) {
 
   return JSON.stringify({
     generated_at: new Date().toISOString(),
-    meta: { regime: "HOT", total_signals: 27 },
+    meta: { regime: "HOT", total_signals: 56, total_launches: 159481, canary_win_rate_pct: 50.0 },
     signals: [],
     candidates: []
   });

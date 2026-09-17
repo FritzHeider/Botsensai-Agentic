@@ -98,7 +98,7 @@ function renderHeroSniper(top) {
   if (elDeployerGauge) elDeployerGauge.style.width = `${deployerPct}%`;
 
   // Links
-  const mint = top.mint || '7xPqm4Q78dK8L8Xj9K3f8pump';
+  const mint = top.mint || 'HYwLkDxZBqKt7AaTDy92qGqHFfSfTXWXbU4Y8VSxsons';
   setLink('hero-link-dex', `https://dexscreener.com/solana/${mint}`);
   setLink('hero-link-pump', `https://pump.fun/${mint}`);
   setLink('hero-link-solscan', `https://solscan.io/token/${mint}`);
@@ -119,12 +119,12 @@ function renderSignalTable(signals, candidates) {
 
   signals.forEach((s) => {
     const cand = candidates.find((c) => c.signal_id === s.id || c.mint === s.mint) || {};
-    const isVetoed = cand.is_vetoed || s.status === 'VETOED';
+    const isVetoed = cand.is_vetoed || s.is_vetoed || s.status === 'VETOED';
     const score = s.score || cand.composite || 0.0;
     const size = s.size_native || cand.size_sol || 0.005;
-    const multiple = cand.max_multiple;
+    const multiple = (s.outcome && s.outcome.max_multiple) || cand.max_multiple;
 
-    let perfLabel = 'Simulated Entry';
+    let perfLabel = 'Signal Confirmed';
     let perfClass = 'text-slate-300';
     let rowType = 'active';
 
@@ -147,14 +147,14 @@ function renderSignalTable(signals, candidates) {
       symbol: s.symbol,
       mint: s.mint,
       score: score.toFixed(3),
-      coverage: cand.coverage_pct ? `${cand.coverage_pct}%` : '38%',
-      regime: (cand.regime || 'HOT').toUpperCase(),
+      coverage: (cand.coverage_pct || s.coverage_pct) ? `${cand.coverage_pct || s.coverage_pct}%` : '50%',
+      regime: (cand.regime || s.regime || 'HOT').toUpperCase(),
       size: `${size.toFixed(4)} SOL`,
       perfLabel,
       perfClass,
       rowType,
       isVetoed,
-      notes: cand.explanation || `Signal #${s.id} generated under ${cand.regime || 'hot'} regime.`,
+      notes: cand.explanation || s.explanation || `Signal #${s.id} evaluated under live radar pipeline.`,
     });
   });
 
@@ -237,7 +237,7 @@ function renderTicker(data) {
       <div class="flex items-center gap-2">
         <span class="text-cyan-400 font-bold">🎯 ${s.symbol}:</span>
         <span>Score ${s.score.toFixed(3)}</span>
-        <span class="${s.status === 'VETOED' ? 'text-rose-400' : 'text-emerald-400'}">${s.status}</span>
+        <span class="${s.is_vetoed || s.status === 'VETOED' ? 'text-rose-400' : 'text-emerald-400'}">${s.is_vetoed || s.status === 'VETOED' ? 'VETOED' : 'CONFIRMED'}</span>
       </div>
     `).join('')}
     <div class="flex items-center gap-2">
