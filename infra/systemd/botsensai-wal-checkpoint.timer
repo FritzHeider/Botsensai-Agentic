@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Botsensai SQLite WAL Checkpoint Every 6 Hours
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=6h
+AccuracySec=1m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

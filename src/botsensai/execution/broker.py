@@ -114,11 +114,32 @@ class RiskManager:
         if len(recent) >= s.max_trades_per_hour:
             return RiskDecision(False, f"trade rate limit ({s.max_trades_per_hour}/hr)")
 
-        token_veto = self._token_veto(snapshot, age_seconds)
+        is_snipe = "snipe" in (order.reason or "").lower()
+        token_veto = self._token_veto(snapshot, age_seconds, is_snipe=is_snipe)
         if token_veto is not None:
             return RiskDecision(False, token_veto)
 
         return RiskDecision(True, "ok", adjusted_size=size)
+
+    def calculate_kelly_size(
+        self, order: Order, score: float | None = None
+    ) -> float:
+        """Fractional Kelly position sizing based on conviction score."""
+        s = self.settings
+        if not s.use_kelly_sizing or score is None:
+            return min(order.size_native, s.max_position_native)
+
+        # Map score (0.65 to 1.00) to estimated win probability p (0.40 to 0.75)
+        p = min(0.75, max(0.40, 0.40 + (score - 0.65) * 1.0))
+        b = 2.5  # Typical payoff ratio
+        q = 1.0 - p
+        kelly_f = (p * b - q) / b
+        if kelly_f <= 0:
+            return min(order.size_native * 0.5, s.max_position_native)
+
+        alloc_fraction = min(1.0, max(0.10, kelly_f * s.kelly_fraction * 3.5))
+        kelly_size = s.max_position_native * alloc_fraction
+        return max(0.02, min(kelly_size, s.max_position_native))
 
     def _size_within_limits(
         self, order: Order, account: AccountState
@@ -129,7 +150,11 @@ class RiskManager:
         trade, the reason to veto on.
         """
         s = self.settings
-        size = min(order.size_native, s.max_position_native)
+        base_size = order.size_native
+        if s.use_kelly_sizing and order.score_at_entry is not None:
+            base_size = self.calculate_kelly_size(order, order.score_at_entry)
+
+        size = min(base_size, s.max_position_native)
 
         headroom = s.max_portfolio_exposure_native - account.open_exposure_native
         if headroom <= 0:
@@ -142,16 +167,20 @@ class RiskManager:
             return size, "insufficient cash after limits"
         return size, None
 
-    def _token_veto(self, snapshot: MarketSnapshot | None, age_seconds: float) -> str | None:
+    def _token_veto(
+        self, snapshot: MarketSnapshot | None, age_seconds: float, is_snipe: bool = False
+    ) -> str | None:
         """Age and liquidity gates on the token itself, or None if it passes."""
         s = self.settings
-        if age_seconds < s.min_token_age_seconds:
+        min_age = s.sniper_min_token_age_seconds if is_snipe else s.min_token_age_seconds
+        if age_seconds < min_age:
             return f"token too young ({age_seconds:.0f}s)"
         if age_seconds > s.max_token_age_seconds:
             return f"token too old ({age_seconds / 3600:.1f}h)"
 
         if snapshot is not None and snapshot.liquidity_usd is not None:
-            if snapshot.liquidity_usd < s.min_liquidity_usd:
+            floor = s.min_liquidity_usd if not is_snipe else min(2_000.0, s.min_liquidity_usd)
+            if snapshot.liquidity_usd < floor:
                 return f"liquidity ${snapshot.liquidity_usd:,.0f} below floor"
         return None
 
@@ -204,8 +233,22 @@ class PaperBroker:
         contention: float = 0.0,
         future_price_native: float | None = None,
         recent_volatility: float = 0.0,
+        jito_tip_lamports: int | None = None,
     ) -> Fill | None:
         self._roll_day(as_of)
+
+        if jito_tip_lamports is not None:
+            tip_amt = jito_tip_lamports
+        else:
+            try:
+                from botsensai.execution.jito_tips import JitoTipEngine
+                tip_amt = JitoTipEngine.get_instance(self.settings).calculate_tip_lamports(
+                    conviction_score=score or 0.70,
+                    trade_size_sol=size_native,
+                    is_contended=(contention > 0.3),
+                )
+            except Exception:
+                tip_amt = self.settings.execution.jito_tip_lamports
 
         order = Order(
             token=token,
@@ -214,7 +257,7 @@ class PaperBroker:
             size_native=size_native,
             max_slippage_bps=self.settings.risk.max_slippage_bps,
             priority_fee_lamports=self.settings.execution.priority_fee_lamports,
-            jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+            jito_tip_lamports=tip_amt,
             reason=reason,
             score_at_entry=score,
             client_id=uuid.uuid4().hex[:12],
@@ -343,12 +386,14 @@ class PaperBroker:
 
     # -- exit policy -------------------------------------------------------- #
 
-    def exit_signals(self, token: TokenRef, as_of: datetime) -> list[tuple[float, str]]:
+    def exit_signals(
+        self, token: TokenRef, as_of: datetime, snapshot: MarketSnapshot | None = None
+    ) -> list[tuple[float, str]]:
         """Mechanical exit rules. Returns (fraction_to_sell, reason) pairs.
 
-        Evaluated in priority order: hard stops first, then the profit ladder,
-        then time. Returning fractions rather than a boolean is what lets the
-        ladder scale out rather than making one all-or-nothing decision.
+        Evaluated in priority order: pre-migration curve exit, hard stops,
+        90s momentum decay stop, trailing breakeven stop, trailing stop,
+        profit ladder, then time.
         """
         position = self.account.positions.get(token.key)
         if position is None or not position.is_open:
@@ -363,9 +408,25 @@ class PaperBroker:
         multiple = current / entry_price
         signals: list[tuple[float, str]] = []
 
+        # 98% bonding curve auto-exit prior to Raydium migration lockup
+        if snapshot is not None and snapshot.market_cap_usd and snapshot.market_cap_usd >= 65_000.0:
+            return [(1.0, "bonding curve at 98%, pre-migration auto-exit")]
+
         # Hard stop.
         if multiple <= (1.0 - s.stop_loss_pct):
             return [(1.0, f"stop loss at {multiple:.2f}x")]
+
+        # 90-second momentum time-decay stop: cut stagnant positions early
+        held = (as_of - position.opened_at).total_seconds()
+        if held >= s.momentum_stop_seconds and multiple < (1.0 + s.momentum_min_gain_pct):
+            return [(1.0, f"momentum time-decay stop, <15% gain at {held:.0f}s")]
+
+        # Trailing breakeven stop: armed when peak gain was >= 30%, closes if drops to entry + 1% floor
+        if (
+            position.peak_price_native >= entry_price * (1.0 + getattr(s, "trailing_breakeven_gain_pct", 0.30))
+            and multiple <= (1.0 + getattr(s, "trailing_breakeven_floor_pct", 0.01))
+        ):
+            return [(1.0, f"trailing breakeven stop at {multiple:.2f}x (peak was {position.peak_price_native / max(1e-18, entry_price):.2f}x)")]
 
         # Trailing stop, armed only once the position has been profitable.
         if position.peak_price_native > entry_price:
@@ -374,7 +435,6 @@ class PaperBroker:
                 return [(1.0, f"trailing stop, {drawdown:.0%} off peak")]
 
         # Time stop.
-        held = (as_of - position.opened_at).total_seconds()
         if held >= s.max_hold_seconds:
             return [(1.0, f"max hold {held / 3600:.1f}h reached")]
 
@@ -407,7 +467,7 @@ class PaperBroker:
     ) -> list[Fill]:
         """Run the exit policy and execute whatever it produces."""
         out: list[Fill] = []
-        for fraction, reason in self.exit_signals(token, as_of):
+        for fraction, reason in self.exit_signals(token, as_of, snapshot=snapshot):
             fill = self.close_position(token, snapshot, as_of, fraction=fraction, reason=reason)
             if fill is not None:
                 out.append(fill)

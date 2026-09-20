@@ -129,6 +129,16 @@ class RiskSettings(BaseModel):
     max_hold_seconds: float = 60 * 60 * 4
     kill_switch: bool = False
     expectancy_floor: float = -0.05
+    momentum_stop_seconds: float = 90.0
+    momentum_min_gain_pct: float = 0.15
+    trailing_breakeven_gain_pct: float = 0.30
+    trailing_breakeven_floor_pct: float = 0.01
+    curve_auto_exit_pct: float = 0.98
+    use_kelly_sizing: bool = True
+    kelly_fraction: float = 0.25
+    min_curve_progress: float = 0.02
+    max_curve_progress: float = 0.85
+    sniper_min_token_age_seconds: float = 0.0
 
     @model_validator(mode="after")
     def _check_ladder(self) -> RiskSettings:
@@ -159,12 +169,19 @@ class ExecutionSettings(BaseModel):
         default="curve", description="curve | constant_product | depth_table"
     )
     max_impact_bps: float = 5_000.0
+    dynamic_jito_tips: bool = True
+    jito_tip_percentile: int = 50
+    anti_sandwich_private_bundle: bool = True
+    leader_schedule_routing: bool = True
+    yellowstone_grpc_endpoint: str | None = None
+    yellowstone_grpc_x_token: str | None = None
+    bloxroute_auth_header: str | None = None
 
 
 class ScoringSettings(BaseModel):
     weights_version: str = "v0"
     weights_path: str | None = "config/weights.json"
-    min_coverage: float = 0.25
+    min_coverage: float = 0.5
     entry_threshold: float = 0.68
     exit_threshold: float = 0.35
     regime_lookback_hours: float = 6.0
@@ -181,8 +198,13 @@ class ScoringSettings(BaseModel):
     veto_top10_share: float = 0.55
     veto_insider_share: float = 0.30
     veto_bundle_share: float = 0.35
+    veto_dev_bundle_share: float = 0.25
     veto_deployer_rug_count: int = 1
     veto_inauthenticity: float = 0.75
+    veto_cex_insider: bool = True
+    veto_copycat: bool = True
+    veto_wash_trading: bool = True
+    veto_golden_curve: bool = True
 
 
 class MemorySettings(BaseModel):
@@ -595,12 +617,47 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("BOTSENSAI_HELIUS_API_KEY", "HELIUS_API_KEY", "helius_api_key"),
     )
+    helius_rpc_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_RPC_URL", "HELIUS_RPC_URL", "helius_rpc_url"),
+    )
+    helius_fallback_rpc_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_FALLBACK_RPC_URL", "HELIUS_FALLBACK_RPC_URL", "helius_fallback_rpc_url"),
+    )
+    helius_api_url: str = Field(
+        default="https://mainnet.helius-rpc.com/v0",
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_API_URL", "HELIUS_API_URL", "helius_api_url"),
+    )
+    helius_enhanced_tx_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_ENHANCED_TX_URL", "HELIUS_ENHANCED_TX_URL", "helius_enhanced_tx_url"),
+    )
+    helius_portal_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_HELIUS_PORTAL_URL", "HELIUS_PORTAL_URL", "helius_portal_url"),
+    )
     birdeye_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("BOTSENSAI_BIRDEYE_API_KEY", "BIRDEYE_API_KEY", "birdeye_api_key"),
     )
     bitquery_api_key: str | None = None
-    jito_block_engine_url: str | None = None
+    jito_block_engine_url: str | None = Field(
+        default="https://mainnet.block-engine.jito.wtf",
+        validation_alias=AliasChoices("BOTSENSAI_JITO_BLOCK_ENGINE_URL", "JITO_BLOCK_ENGINE_URL", "jito_block_engine_url"),
+    )
+    yellowstone_grpc_endpoint: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_YELLOWSTONE_GRPC_ENDPOINT", "YELLOWSTONE_GRPC_ENDPOINT", "yellowstone_grpc_endpoint"),
+    )
+    yellowstone_grpc_x_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_YELLOWSTONE_GRPC_X_TOKEN", "YELLOWSTONE_GRPC_X_TOKEN", "yellowstone_grpc_x_token"),
+    )
+    bloxroute_auth_header: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BOTSENSAI_BLOXROUTE_AUTH_HEADER", "BLOXROUTE_AUTH_HEADER", "bloxroute_auth_header"),
+    )
 
     # --- social credentials (all optional; collectors degrade without them) --
     x_bearer_token: str | None = Field(
@@ -779,7 +836,10 @@ def audit_capabilities(settings: Settings) -> dict[str, Any]:
 
     return {
         "trading_mode": settings.trading_mode.value,
-        "helius_rpc": bool(settings.helius_api_key),
+        "helius_rpc": bool(settings.helius_api_key or settings.helius_rpc_url),
+        "helius_fallback_rpc": bool(settings.helius_fallback_rpc_url),
+        "jito_block_engine": bool(settings.jito_block_engine_url),
+        "yellowstone_grpc": bool(settings.yellowstone_grpc_endpoint),
         "birdeye": bool(settings.birdeye_api_key),
         "bitquery": bool(settings.bitquery_api_key),
         "x_bearer": bool(settings.x_bearer_token),

@@ -250,6 +250,45 @@ class VetoEngine:
         if rug_count >= self.settings.veto_deployer_rug_count:
             vetoes.append(VetoReason.DEPLOYER_PRIOR_RUGS)
 
+        # Adversarial slot-0 dev bundler sybil detection
+        if sec is not None:
+            try:
+                from botsensai.scoring.adversarial import AdversarialDetector
+                adv_analysis = AdversarialDetector().inspect_slot0_bundle(sec)
+                if adv_analysis.veto:
+                    vetoes.append(adv_analysis.veto)
+            except Exception:
+                pass
+
+        # Copycat honeypot detection
+        try:
+            from botsensai.scoring.copycat import CopycatDetector
+            copycat_veto = CopycatDetector().check_copycat(ctx.token)
+            if copycat_veto:
+                vetoes.append(copycat_veto)
+        except Exception:
+            pass
+
+        # Wash trading flow detection
+        if getattr(ctx, "trades", None):
+            try:
+                from botsensai.scoring.wash_filter import WashTradeFilter
+                wash_veto = WashTradeFilter().evaluate_trades(ctx.trades)
+                if wash_veto:
+                    vetoes.append(wash_veto)
+            except Exception:
+                pass
+
+        # Golden curve stage (2% - 85%) check
+        if getattr(ctx, "snapshots", None):
+            try:
+                from botsensai.scoring.curve_stage import evaluate_curve_stage
+                _, curve_veto = evaluate_curve_stage(ctx.snapshots[-1])
+                if curve_veto:
+                    vetoes.append(curve_veto)
+            except Exception:
+                pass
+
         # Metric-derived vetoes: extreme readings that the weighted sum would
         # merely dilute.
         by_id = {v.metric_id: v for v in values}

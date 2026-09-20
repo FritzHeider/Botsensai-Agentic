@@ -217,32 +217,47 @@ class JitoExecutor:
             return None
 
     def submit_jito_bundle(self, encoded_signed_txs: list[str]) -> str | None:
-        """Submit a signed transaction bundle to Jito Block Engine."""
-        endpoint = random.choice(JITO_BLOCK_ENGINES)
+        """Submit a signed transaction bundle to Jito Block Engine endpoints in parallel."""
+        import concurrent.futures
+
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "sendBundle",
             "params": [encoded_signed_txs],
         }
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10.0) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                bundle_id = result.get("result")
-                if bundle_id:
-                    return bundle_id
-                if "error" in result:
-                    log.error(f"Jito Block Engine returned error: {result['error']}")
-                return None
-        except Exception as e:
-            log.error(f"Failed to submit bundle to Jito: {e}")
+        data = json.dumps(payload).encode("utf-8")
+
+        def _send(ep: str) -> str | None:
+            req = urllib.request.Request(
+                ep,
+                data=data,
+                headers={"Content-Type": "application/json", "User-Agent": "Botsensai-Executor/1.0"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=4.0) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                    bundle_id = result.get("result")
+                    if bundle_id:
+                        return bundle_id
+                    if "error" in result:
+                        log.debug(f"Jito endpoint {ep} returned error: {result['error']}")
+            except Exception as e:
+                log.debug(f"Failed to submit bundle to Jito endpoint {ep}: {e}")
             return None
+
+        # Fan out concurrently to all endpoints to minimize network transit latency
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(JITO_BLOCK_ENGINES)) as executor:
+            future_to_ep = {executor.submit(_send, ep): ep for ep in JITO_BLOCK_ENGINES}
+            for future in concurrent.futures.as_completed(future_to_ep):
+                bid = future.result()
+                if bid:
+                    log.info(f"Bundle successfully accepted by Jito Block Engine ({future_to_ep[future]}): {bid}")
+                    return bid
+
+        log.error("All Jito Block Engine endpoints failed to accept bundle")
+        return None
 
     def execute_signal(self, signal: dict[str, Any]) -> None:
         signal_id = signal["id"]
@@ -251,7 +266,19 @@ class JitoExecutor:
         mint = mint or token_key
         size_sol = min(signal["size_native"], self.max_size_sol)
         side = signal["side"]
-        tip = max(signal.get("jito_tip_lamports", 0), DEFAULT_MIN_TIP_LAMPORTS)
+        
+        tip = signal.get("jito_tip_lamports", 0)
+        if not tip or tip <= DEFAULT_MIN_TIP_LAMPORTS:
+            try:
+                from botsensai.execution.jito_tips import JitoTipEngine
+                tip = JitoTipEngine.get_instance().calculate_tip_lamports(
+                    conviction_score=signal.get("score", 0.70),
+                    trade_size_sol=size_sol,
+                )
+            except Exception:
+                tip = DEFAULT_MIN_TIP_LAMPORTS
+        else:
+            tip = max(tip, DEFAULT_MIN_TIP_LAMPORTS)
 
         log.info(
             f"Processing signal #{signal_id}: {side} {size_sol:.4f} SOL for {signal.get('symbol') or mint[:8]} (score: {signal['score']:.3f})"

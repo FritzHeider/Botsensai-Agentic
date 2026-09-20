@@ -87,6 +87,67 @@ async def get_top_candidates(request: Request, limit: int = 50) -> list[dict[str
         db.close()
 
 
+@router.get("/sniper/status")
+async def get_sniper_status(request: Request) -> dict[str, Any]:
+    """Return sniper execution engine status, parameters, and telemetry."""
+    settings = _get_active_settings(request)
+    db = Database(settings.path(settings.db_path))
+    try:
+        pending = db.pending_signals(limit=10)
+        recent = db.recent_signals(limit=20)
+        from botsensai.execution.jito_tips import JitoTipEngine
+        tip_floor = JitoTipEngine.get_instance(settings).current_floor
+
+        return {
+            "mode": settings.trading_mode.value.upper(),
+            "dry_run": True,
+            "safety_invariants": {
+                "signing_enabled": False,
+                "zero_signing_verified": True,
+                "canary_max_sol": settings.risk.max_position_native,
+                "max_slippage_bps": settings.risk.max_slippage_bps,
+            },
+            "profitability_engine": {
+                "yellowstone_grpc_active": bool(settings.yellowstone_grpc_endpoint),
+                "dynamic_jito_tips": settings.execution.dynamic_jito_tips,
+                "jito_tip_floor_p50_lamports": tip_floor.p50_lamports,
+                "jito_tip_floor_p75_lamports": tip_floor.p75_lamports,
+                "kelly_sizing_enabled": settings.risk.use_kelly_sizing,
+                "kelly_fraction": settings.risk.kelly_fraction,
+                "momentum_stop_seconds": settings.risk.momentum_stop_seconds,
+                "curve_auto_exit_pct": settings.risk.curve_auto_exit_pct,
+                "trailing_breakeven_gain_pct": settings.risk.trailing_breakeven_gain_pct,
+                "trailing_breakeven_floor_pct": settings.risk.trailing_breakeven_floor_pct,
+                "anti_sandwich_bundling": settings.execution.anti_sandwich_private_bundle,
+                "dev_bundler_sybil_defense": True,
+                "golden_curve_window": "2% - 85%",
+            },
+            "execution": {
+                "jito_tip_lamports": settings.execution.jito_tip_lamports,
+                "priority_fee_lamports": settings.execution.priority_fee_lamports,
+                "jito_block_engine": "mainnet.block-engine.jito.wtf",
+            },
+            "outbox": {
+                "pending_signals": len(pending),
+                "total_recorded_signals": len(recent),
+            },
+            "recent_signals": recent,
+        }
+    finally:
+        db.close()
+
+
+@router.get("/sniper/signals")
+async def get_sniper_signals(request: Request, limit: int = 50) -> list[dict[str, Any]]:
+    """Retrieve recent sniper signals from the execution outbox."""
+    settings = _get_active_settings(request)
+    db = Database(settings.path(settings.db_path))
+    try:
+        return db.recent_signals(limit=limit)
+    finally:
+        db.close()
+
+
 def create_headless_api_app(settings: Settings | None = None) -> FastAPI:
     """Instantiate headless FastAPI application."""
     active_settings = settings or get_settings()

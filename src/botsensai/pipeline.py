@@ -720,6 +720,22 @@ class Pipeline:
         if size <= 1e-6:
             return "skip: sizing produced zero"
 
+        dynamic_tip = self.settings.execution.jito_tip_lamports
+        try:
+            from botsensai.execution.jito_tips import JitoTipEngine
+            dynamic_tip = JitoTipEngine.get_instance(self.settings).calculate_tip_lamports(
+                conviction_score=result.composite,
+                trade_size_sol=size,
+            )
+        except Exception:
+            pass
+
+        adaptive_slippage_bps = self.settings.risk.max_slippage_bps
+        if result.composite >= 0.90 and copy_alerts:
+            adaptive_slippage_bps = max(adaptive_slippage_bps, 150)
+        elif result.composite >= 0.85:
+            adaptive_slippage_bps = max(adaptive_slippage_bps, 100)
+
         age = (result.as_of - launch.created_at).total_seconds()
         fill = self.broker.open_position(
             launch.token,
@@ -729,6 +745,7 @@ class Pipeline:
             age_seconds=age,
             reason=result.explanation or "",
             score=result.composite,
+            jito_tip_lamports=dynamic_tip,
         )
         if fill is None:
             return "skip: rejected by risk manager"
@@ -756,8 +773,8 @@ class Pipeline:
             symbol=launch.token.symbol,
             side="BUY",
             size_native=size,
-            max_slippage_bps=self.settings.risk.max_slippage_bps,
-            jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+            max_slippage_bps=adaptive_slippage_bps,
+            jito_tip_lamports=dynamic_tip,
             score=result.composite,
             as_of=result.as_of,
         )
