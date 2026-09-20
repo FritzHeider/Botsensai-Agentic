@@ -389,7 +389,7 @@ class FundingSourceResolver:
 
         tx = await self._rpc(
             "getTransaction",
-            [signature, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
+            [signature, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 1}],
         )
         funder, mechanism = funder_from_transaction(tx if isinstance(tx, dict) else {}, wallet)
         kind, exchange = classify_funder(funder, self._exchange_table())
