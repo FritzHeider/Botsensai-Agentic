@@ -18,6 +18,7 @@ import argparse
 import json
 import logging
 import os
+from pathlib import Path
 import random
 import sqlite3
 import sys
@@ -99,25 +100,60 @@ class JitoExecutor:
         db_path: str = "data/botsensai.db",
         dry_run: bool = True,
         max_size_sol: float = DEFAULT_MAX_CANARY_SOL,
+        keyfile: str | None = None,
     ) -> None:
         self.db_path = db_path
         self.dry_run = dry_run
         self.max_size_sol = max_size_sol
+        self.keyfile = keyfile or os.environ.get("SOLANA_KEYFILE")
         self.private_key_b58 = os.environ.get("SOLANA_PRIVATE_KEY", "")
         self.public_key_b58 = os.environ.get("SOLANA_PUBLIC_KEY", "")
+        self._keypair = None
 
-        if not self.dry_run:
-            if not self.private_key_b58:
-                log.error(
-                    "Dry run is False, but SOLANA_PRIVATE_KEY is not set in environment. "
-                    "Use asm-exec to resolve secrets at runtime."
-                )
-                sys.exit(1)
-            if not self.public_key_b58:
-                from solders.keypair import Keypair
+        self._load_keypair()
+        if not self.dry_run and self._keypair is None:
+            log.error(
+                "Dry run is False, but no signing keypair found. "
+                "Provide SOLANA_PRIVATE_KEY, SOLANA_KEYFILE, or ensure ~/.config/solana/id.json exists."
+            )
+            sys.exit(1)
 
-                keypair = Keypair.from_base58_string(self.private_key_b58)
-                self.public_key_b58 = str(keypair.pubkey())
+    def _load_keypair(self) -> None:
+        try:
+            from solders.keypair import Keypair
+        except ImportError:
+            log.debug("solders not installed; keypair loading skipped.")
+            return
+
+        if self.private_key_b58:
+            try:
+                val = self.private_key_b58.strip()
+                if val.startswith("["):
+                    self._keypair = Keypair.from_bytes(bytes(json.loads(val)))
+                else:
+                    self._keypair = Keypair.from_base58_string(val)
+                self.public_key_b58 = str(self._keypair.pubkey())
+                log.info(f"Loaded hot wallet keypair from environment: {self.public_key_b58}")
+                return
+            except Exception as e:
+                log.error(f"Failed to load keypair from SOLANA_PRIVATE_KEY: {e}")
+
+        # Check explicit or default keyfiles
+        candidates = []
+        if self.keyfile:
+            candidates.append(Path(self.keyfile).expanduser())
+        candidates.append(Path.home() / ".config" / "solana" / "id.json")
+
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                try:
+                    data = json.loads(candidate.read_text())
+                    self._keypair = Keypair.from_bytes(bytes(data))
+                    self.public_key_b58 = str(self._keypair.pubkey())
+                    log.info(f"Loaded hot wallet keypair from {candidate} ({self.public_key_b58})")
+                    return
+                except Exception as e:
+                    log.warning(f"Could not load keypair from {candidate}: {e}")
 
     def get_db(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -302,10 +338,13 @@ class JitoExecutor:
             return
 
         try:
-            from solders.keypair import Keypair
             from solders.transaction import VersionedTransaction
 
-            keypair = Keypair.from_base58_string(self.private_key_b58)
+            if self._keypair is None:
+                self.update_signal(signal_id, status="FAILED", error="Keypair not loaded for live signing")
+                return
+
+            keypair = self._keypair
             encoded_signed_txs: list[str] = []
             first_sig: str = ""
 
@@ -343,6 +382,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Botsensai Jito Execution Adapter")
     parser.add_argument("--db", default="data/botsensai.db", help="Path to SQLite database")
     parser.add_argument("--live", action="store_true", help="Enable live signing (default: dry-run)")
+    parser.add_argument("--keyfile", default=None, help="Path to Solana keypair JSON file (default: ~/.config/solana/id.json)")
     parser.add_argument("--max-size", type=float, default=DEFAULT_MAX_CANARY_SOL, help="Max canary size in SOL")
     parser.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds")
     args = parser.parse_args()
@@ -351,6 +391,7 @@ def main() -> None:
         db_path=args.db,
         dry_run=not args.live,
         max_size_sol=args.max_size,
+        keyfile=args.keyfile,
     )
     executor.run_loop(poll_interval=args.interval)
 
