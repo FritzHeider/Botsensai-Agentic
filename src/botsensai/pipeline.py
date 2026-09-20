@@ -923,11 +923,12 @@ class Pipeline:
                 for f in fills:
                     if not f.rejected:
                         report.exited += 1
-                        self.db.close_paper_position(
-                            key,
-                            exit_price_native=f.price_native,
-                            reason=getattr(position, "exit_reason", None) or "exit",
-                        )
+                        if hasattr(self.db, "close_paper_position"):
+                            self.db.close_paper_position(
+                                key,
+                                exit_price_native=f.price_native,
+                                reason=getattr(position, "exit_reason", None) or "exit",
+                            )
             else:
                 age_sec = (now - position.opened_at).total_seconds()
                 if age_sec >= self.settings.risk.max_hold_seconds:
@@ -938,35 +939,38 @@ class Pipeline:
                         position.token, exit_px, now, reason="time_stop_max_hold"
                     )
                     report.exited += 1
-                    self.db.close_paper_position(
-                        key, exit_price_native=exit_px, reason="time_stop_max_hold"
-                    )
+                    if hasattr(self.db, "close_paper_position"):
+                        self.db.close_paper_position(
+                            key, exit_price_native=exit_px, reason="time_stop_max_hold"
+                        )
 
         # 2. Reconcile DB open_paper_positions to guarantee no orphaned positions
-        try:
-            db_open = self.db.open_paper_positions()
-            for pos in db_open:
-                tok_key = pos["token_key"]
-                age_sec = max(0.0, now_ts - pos["opened_at"])
-                if age_sec >= self.settings.risk.max_hold_seconds:
-                    exit_px = pos.get("last_price_native") or pos.get("entry_price_native", 0.0)
-                    self.db.close_paper_position(
-                        tok_key, exit_price_native=exit_px, reason="time_stop_max_hold"
-                    )
-                    if tok_key in self.broker.account.positions:
-                        p = self.broker.account.positions[tok_key]
-                        if p.is_open:
-                            self.broker.close_position(
-                                p.token, exit_px, now, reason="time_stop_max_hold"
+        if hasattr(self.db, "open_paper_positions"):
+            try:
+                db_open = self.db.open_paper_positions()
+                for pos in db_open:
+                    tok_key = pos["token_key"]
+                    age_sec = max(0.0, now_ts - pos["opened_at"])
+                    if age_sec >= self.settings.risk.max_hold_seconds:
+                        exit_px = pos.get("last_price_native") or pos.get("entry_price_native", 0.0)
+                        if hasattr(self.db, "close_paper_position"):
+                            self.db.close_paper_position(
+                                tok_key, exit_price_native=exit_px, reason="time_stop_max_hold"
                             )
-                    report.exited += 1
-                    log.info(
-                        "paper.auto_reconciled_time_stop",
-                        token=tok_key,
-                        age_hours=round(age_sec / 3600, 2),
-                    )
-        except Exception as exc:
-            log.warning("paper.reconcile_failed", error=str(exc))
+                        if tok_key in self.broker.account.positions:
+                            p = self.broker.account.positions[tok_key]
+                            if p.is_open:
+                                self.broker.close_position(
+                                    p.token, exit_px, now, reason="time_stop_max_hold"
+                                )
+                        report.exited += 1
+                        log.info(
+                            "paper.auto_reconciled_time_stop",
+                            token=tok_key,
+                            age_hours=round(age_sec / 3600, 2),
+                        )
+            except Exception as exc:
+                log.warning("paper.reconcile_failed", error=str(exc))
 
     async def sweep(self, discover_limit: int = 60, max_candidates: int = 25) -> SweepReport:
         report = SweepReport(started_at=utcnow())
