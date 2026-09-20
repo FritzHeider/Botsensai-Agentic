@@ -9,7 +9,7 @@ INSTANCE_ID="${1:-${BOTSENSAI_INSTANCE_ID:-i-0bb5f0e7d264a2937}}"
 LOCAL_PORT="${2:-8001}"
 REMOTE_PORT="${3:-8001}"
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
-PROFILE="${AWS_PROFILE:-agent-profile}"
+PROFILE="${AWS_PROFILE:-agent-toolkit}"
 
 PROFILE_FLAG=""
 if [ -n "$PROFILE" ]; then
