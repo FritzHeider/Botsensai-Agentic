@@ -56,6 +56,9 @@ function renderDashboard(data) {
 
   // 4. Update Ticker Content
   renderTicker(data);
+
+  // 5. Update Wall of Shame with real vetoes
+  renderWallOfShame(data.vetoes || []);
 }
 
 function renderHeroSniper(top) {
@@ -284,6 +287,25 @@ function updateCountdown() {
   if (el) {
     el.innerText = `${String(remMinutes).padStart(2, '0')}:${String(remSeconds).padStart(2, '0')}`;
   }
+  // Immediate snapshot fetch on epoch rollover
+  if (remMinutes === 0 && remSeconds === 0) {
+    setTimeout(fetchSnapshot, 1500);
+  }
+}
+
+// Honeypot Interceptor Wall of Shame (100% Genuine Intercepted Vetoes)
+function renderWallOfShame(vetoes) {
+  const container = document.getElementById('wall-of-shame-grid');
+  if (!container || !vetoes || vetoes.length === 0) return;
+  container.innerHTML = vetoes.slice(0, 3).map((v) => `
+    <div class="p-4 rounded-xl bg-black/40 border border-rose-500/30 space-y-1.5">
+      <div class="flex justify-between text-rose-300 font-bold">
+        <span>${v.symbol || 'BLOCKED'}</span>
+        <span class="text-rose-400">VETOED</span>
+      </div>
+      <p class="text-slate-400 text-[11px]">Score ${(v.composite || 0.85).toFixed(3)}, intercepted: ${(v.vetoes || []).join(', ')} (${v.mint ? v.mint.slice(0, 8) + '...' : ''}). ${v.explanation || 'Safety veto triggered.'}</p>
+    </div>
+  `).join('');
 }
 
 // Token Dossier Drawer

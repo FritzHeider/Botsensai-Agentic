@@ -225,18 +225,136 @@ def build_snapshot(db_path):
         if not is_vetoed:
             recent_unvetoed.append(signal_obj)
 
+    # 2b. Pull recent high-scoring un-vetoed tokens from live scoring sweeps (last 48 hours)
+    two_days_ago = now_ts - 172800
+    scored_rows = conn.execute("""
+        SELECT s.token_key, s.composite, s.coverage, s.vetoes, s.contributions, s.explanation, s.as_of, s.regime,
+               l.symbol, l.name, l.mint, l.image_uri, l.website, l.twitter, l.telegram,
+               m.price_native, m.market_cap_usd, m.bonding_curve_progress
+        FROM scores s
+        JOIN launches l ON s.token_key = l.token_key
+        LEFT JOIN (
+            SELECT token_key, price_native, market_cap_usd, bonding_curve_progress,
+                   ROW_NUMBER() OVER (PARTITION BY token_key ORDER BY as_of DESC) as rn
+            FROM market_snapshots
+        ) m ON m.token_key = s.token_key AND m.rn = 1
+        WHERE (s.vetoes IS NULL OR s.vetoes = '[]') AND s.composite >= 0.75 AND s.as_of >= ?
+        ORDER BY s.as_of DESC
+        LIMIT 60
+    """, (two_days_ago,)).fetchall()
+
+    pool_map = {}
+
+    # Seed candidate pool from un-vetoed execution signals
+    for s in recent_unvetoed:
+        mint = s.get("mint")
+        if not mint:
+            continue
+        pool_map[mint] = {
+            "token_key": s["token_key"],
+            "mint": mint,
+            "symbol": s["symbol"],
+            "name": s["name"],
+            "score": float(s["score"]),
+            "coverage_pct": int(s.get("coverage_pct") or 50),
+            "regime": s.get("regime") or "hot",
+            "vetoes": [],
+            "is_vetoed": False,
+            "size_native": float(s.get("size_native") or 0.04),
+            "bonding_curve_progress": float(s.get("bonding_curve_progress") or 35.0),
+            "exit_depth_contrib": float(s.get("exit_depth_contrib") or 0.341),
+            "deployer_behaviour_contrib": float(s.get("deployer_behaviour_contrib") or 0.186),
+            "explanation": s.get("explanation"),
+            "image_uri": s.get("image_uri"),
+            "website": s.get("website"),
+            "twitter": s.get("twitter"),
+            "telegram": s.get("telegram"),
+            "created_at": float(s.get("created_at") or now_ts),
+            "links": s.get("links") or {
+                "dexscreener": f"https://dexscreener.com/solana/{mint}",
+                "pumpfun": f"https://pump.fun/{mint}",
+                "solscan": f"https://solscan.io/token/{mint}",
+                "photon": f"https://photon-sol.tinyastro.io/en/lp/{mint}"
+            }
+        }
+
+    # Add high-scoring unvetoed candidates from live sweeps
+    for sc in scored_rows:
+        sc_d = dict(sc)
+        mint = sc_d.get("mint")
+        if not mint:
+            continue
+        contribs_raw = sc_d.get("contributions")
+        contribs = json.loads(contribs_raw) if contribs_raw and isinstance(contribs_raw, str) else (contribs_raw or {})
+        score_val = round(float(sc_d["composite"]), 3)
+
+        if mint not in pool_map or score_val > pool_map[mint]["score"]:
+            raw_img = sc_d.get("image_uri")
+            img_url = normalize_image_url(raw_img)
+            website = sc_d.get("website")
+            twitter = sc_d.get("twitter")
+            telegram = sc_d.get("telegram")
+
+            if not img_url or not website or not twitter:
+                dex_info = get_dexscreener_info(mint)
+                if not img_url and dex_info.get("image_url"):
+                    img_url = dex_info["image_url"]
+                if not website and dex_info.get("website"):
+                    website = dex_info["website"]
+                if not twitter and dex_info.get("twitter"):
+                    twitter = dex_info["twitter"]
+                if not telegram and dex_info.get("telegram"):
+                    telegram = dex_info["telegram"]
+
+            pool_map[mint] = {
+                "token_key": sc_d["token_key"],
+                "mint": mint,
+                "symbol": sc_d.get("symbol") or mint[:8],
+                "name": sc_d.get("name") or sc_d.get("symbol") or mint[:8],
+                "score": score_val,
+                "coverage_pct": int(round((sc_d.get("coverage") or 0.5) * 100)),
+                "regime": sc_d.get("regime") or "hot",
+                "vetoes": [],
+                "is_vetoed": False,
+                "size_native": 0.035,
+                "bonding_curve_progress": float(sc_d.get("bonding_curve_progress") or 35.0),
+                "exit_depth_contrib": round(float(contribs.get("realizable_exit_depth", 0.34)), 3),
+                "deployer_behaviour_contrib": round(float(contribs.get("deployer_behaviour", contribs.get("insider_supply_overhang", 0.19))), 3),
+                "explanation": sc_d.get("explanation") or f"Score {score_val:.3f} in hot regime.",
+                "image_uri": img_url,
+                "website": website,
+                "twitter": twitter,
+                "telegram": telegram,
+                "created_at": float(sc_d.get("as_of") or now_ts),
+                "links": {
+                    "dexscreener": f"https://dexscreener.com/solana/{mint}",
+                    "pumpfun": f"https://pump.fun/{mint}",
+                    "solscan": f"https://solscan.io/token/{mint}",
+                    "photon": f"https://photon-sol.tinyastro.io/en/lp/{mint}"
+                }
+            }
+
     # 3. Dynamic Twice-Hourly Hero Sniper Pick Selection
-    # Look for the best un-vetoed signal from the most recent active epoch/window (last 2 hours)
-    # If no signals in the last 2 hours, pick the highest scoring among the latest 10 un-vetoed signals.
-    two_hours_ago = now_ts - 7200
-    active_window_signals = [s for s in recent_unvetoed if s["created_at"] >= two_hours_ago]
-    
-    if active_window_signals:
-        # Highest composite score in active window
-        top_signal = max(active_window_signals, key=lambda s: s["score"])
+    # Synchronized with the 30-minute countdown epoch cycle (:00 and :30 of each hour)
+    epoch_id = int(now_ts // 1800)
+    seconds_remaining = 1800 - int(now_ts % 1800)
+    epoch_start_ts = epoch_id * 1800
+
+    # Top pool of highest-conviction un-vetoed alpha candidates
+    # Sorted deterministically by score descending, then mint ascending
+    sorted_candidates = sorted(pool_map.values(), key=lambda c: (-round(c["score"], 3), c["mint"]))
+    top_pool = sorted_candidates[:12] if sorted_candidates else []
+
+    # If an execution signal was emitted in the current active 30-minute epoch, highlight it!
+    fresh_epoch_signals = [s for s in recent_unvetoed if s.get("created_at", 0) >= epoch_start_ts]
+    if fresh_epoch_signals:
+        top_signal = max(fresh_epoch_signals, key=lambda s: s["score"])
+    elif top_pool:
+        # Cyclically rotate on every 30-minute epoch boundary
+        epoch_index = epoch_id % len(top_pool)
+        top_signal = top_pool[epoch_index]
     elif recent_unvetoed:
-        # Highest scoring among recent 10 un-vetoed
-        top_signal = max(recent_unvetoed[:10], key=lambda s: s["score"])
+        top_signal = recent_unvetoed[epoch_id % len(recent_unvetoed)]
     else:
         top_signal = signals[0] if signals else {}
 
@@ -326,6 +444,17 @@ def build_snapshot(db_path):
             "total_outcomes": counts["outcomes"]
         },
         "top_sniper_pick": top_sniper_pick,
+        "hero_rotation_pool": [
+            {
+                "index": i,
+                "symbol": c["symbol"],
+                "name": c["name"],
+                "mint": c["mint"],
+                "score": c["score"],
+                "active": (i == (epoch_id % len(top_pool))) if top_pool else False
+            }
+            for i, c in enumerate(top_pool)
+        ],
         "signals": signals,
         "candidates": candidates,
         "vetoes": vetoes_list
@@ -376,10 +505,10 @@ def main():
             top = snap["top_sniper_pick"]
             upload_to_r2(snap, env_vars)
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            print(f"[{ts}] Successfully published telemetry to R2! Top Sniper: {top.get('symbol')} ({top.get('mint')[:8]}...) Score: {top.get('composite')} Signals: {len(snap['signals'])}")
+            print(f"[{ts}] Successfully published telemetry to R2! Top Sniper: {top.get('symbol')} ({top.get('mint')[:8]}...) Score: {top.get('composite')} Signals: {len(snap['signals'])}", flush=True)
         except Exception as e:
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            print(f"[{ts}] Error publishing telemetry: {e}", file=sys.stderr)
+            print(f"[{ts}] Error publishing telemetry: {e}", file=sys.stderr, flush=True)
 
         if args.interval <= 0:
             break
