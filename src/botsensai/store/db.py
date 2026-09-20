@@ -371,6 +371,23 @@ CREATE TABLE IF NOT EXISTS execution_signals (
     executed_at       REAL
 );
 CREATE INDEX IF NOT EXISTS ix_signals_status ON execution_signals(status, created_at);
+
+CREATE TABLE IF NOT EXISTS paper_positions (
+    token_key          TEXT PRIMARY KEY,
+    symbol             TEXT,
+    mint               TEXT,
+    amount_token       REAL NOT NULL,
+    cost_basis_native  REAL NOT NULL,
+    entry_price_native REAL NOT NULL,
+    peak_price_native  REAL NOT NULL,
+    last_price_native  REAL NOT NULL,
+    opened_at          REAL NOT NULL,
+    closed_at          REAL,
+    exit_price_native  REAL,
+    exit_reason        TEXT,
+    status             TEXT NOT NULL DEFAULT 'OPEN'
+);
+CREATE INDEX IF NOT EXISTS ix_paper_positions_status ON paper_positions(status);
 """
 
 
@@ -1708,6 +1725,85 @@ class Database:
                 """,
                 (status, tx_hash, error, now if status != "PENDING" else None, signal_id),
             )
+
+    def upsert_paper_position(
+        self,
+        token_key: str,
+        symbol: str | None,
+        mint: str | None,
+        amount_token: float,
+        cost_basis_native: float,
+        entry_price_native: float,
+        peak_price_native: float,
+        last_price_native: float,
+        opened_at: datetime | float,
+        status: str = "OPEN",
+    ) -> None:
+        """Upsert a tracked paper trading position."""
+        opened_ts = _ts(opened_at)
+        with self.tx() as conn:
+            conn.execute(
+                """
+                INSERT INTO paper_positions (
+                    token_key, symbol, mint, amount_token, cost_basis_native,
+                    entry_price_native, peak_price_native, last_price_native,
+                    opened_at, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(token_key) DO UPDATE SET
+                    amount_token = excluded.amount_token,
+                    cost_basis_native = excluded.cost_basis_native,
+                    peak_price_native = MAX(peak_price_native, excluded.peak_price_native),
+                    last_price_native = excluded.last_price_native,
+                    status = excluded.status
+                """,
+                (
+                    token_key,
+                    symbol,
+                    mint,
+                    amount_token,
+                    cost_basis_native,
+                    entry_price_native,
+                    peak_price_native,
+                    last_price_native,
+                    opened_ts,
+                    status,
+                ),
+            )
+
+    def close_paper_position(
+        self,
+        token_key: str,
+        exit_price_native: float,
+        reason: str = "exit",
+        closed_at: datetime | float | None = None,
+    ) -> None:
+        """Mark an open paper position as closed."""
+        closed_ts = _ts(closed_at or utcnow())
+        with self.tx() as conn:
+            conn.execute(
+                """
+                UPDATE paper_positions
+                SET status = 'CLOSED',
+                    closed_at = ?,
+                    exit_price_native = ?,
+                    exit_reason = ?
+                WHERE token_key = ? AND status = 'OPEN'
+                """,
+                (closed_ts, exit_price_native, reason, token_key),
+            )
+
+    def open_paper_positions(self) -> list[dict[str, Any]]:
+        """Retrieve all currently open paper positions."""
+        rows = self.conn.execute(
+            """
+            SELECT token_key, symbol, mint, amount_token, cost_basis_native,
+                   entry_price_native, peak_price_native, last_price_native,
+                   opened_at, status
+            FROM paper_positions
+            WHERE status = 'OPEN'
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def _b(value: bool | None) -> int | None:

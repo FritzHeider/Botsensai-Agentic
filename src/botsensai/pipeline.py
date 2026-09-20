@@ -752,18 +752,22 @@ class Pipeline:
         if fill.rejected:
             return f"failed: {fill.reject_reason}"
 
-        self.db.upsert_paper_position(
-            token_key=launch.token.key,
-            symbol=launch.token.symbol,
-            mint=launch.token.mint,
-            amount_token=fill.amount_token,
-            cost_basis_native=fill.amount_native + fill.fee_native + fill.tip_native,
-            entry_price_native=fill.price_native,
-            peak_price_native=fill.price_native,
-            last_price_native=fill.price_native,
-            opened_at=fill.as_of,
-            status="OPEN",
-        )
+        try:
+            if hasattr(self.db, "upsert_paper_position"):
+                self.db.upsert_paper_position(
+                    token_key=launch.token.key,
+                    symbol=launch.token.symbol,
+                    mint=launch.token.mint,
+                    amount_token=fill.amount_token,
+                    cost_basis_native=fill.amount_native + fill.fee_native + fill.tip_native,
+                    entry_price_native=fill.price_native,
+                    peak_price_native=fill.price_native,
+                    last_price_native=fill.price_native,
+                    opened_at=fill.as_of,
+                    status="OPEN",
+                )
+        except Exception as exc:
+            log.warning("paper.upsert_failed", error=str(exc))
         if copy_alerts:
             for alert in copy_alerts:
                 self.copy_tracker.record_copy_event(alert)
