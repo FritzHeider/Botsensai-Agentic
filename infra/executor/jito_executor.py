@@ -316,6 +316,15 @@ class JitoExecutor:
         else:
             tip = max(tip, DEFAULT_MIN_TIP_LAMPORTS)
 
+        now = time.time()
+        age = now - signal["created_at"]
+        if age > 60.0:
+            log.warning(
+                f"Signal #{signal_id} is {age:.1f}s old (> 60.0s max age). Expiring to protect capital."
+            )
+            self.update_signal(signal_id, status="EXPIRED", error=f"Signal expired ({age:.1f}s old)")
+            return
+
         log.info(
             f"Processing signal #{signal_id}: {side} {size_sol:.4f} SOL for {signal.get('symbol') or mint[:8]} (score: {signal['score']:.3f})"
         )
