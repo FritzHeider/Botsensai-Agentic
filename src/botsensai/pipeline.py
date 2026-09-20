@@ -717,7 +717,14 @@ class Pipeline:
             self.settings.risk.max_position_native,
             stop_loss_fraction=self.settings.risk.stop_loss_pct,
         )
-        if size <= 1e-6:
+        if copy_alerts:
+            max_rec = max(a.recommended_size_sol for a in copy_alerts)
+            size = max(size, max_rec)
+
+        # Enforce minimum actionable trade floor (0.015 SOL) so orders don't fail as micro-dust
+        if size > 1e-6:
+            size = max(0.015, min(size, self.settings.risk.max_position_native))
+        else:
             return "skip: sizing produced zero"
 
         dynamic_tip = self.settings.execution.jito_tip_lamports

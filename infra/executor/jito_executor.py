@@ -226,7 +226,7 @@ class JitoExecutor:
                 "mint": mint,
                 "denominatedInSol": "true" if action.lower() == "buy" else "false",
                 "amount": amount_sol if action.lower() == "buy" else "100%",
-                "slippage": max(1, round(slippage_bps / 100)),
+                "slippage": max(5, round(slippage_bps / 100)),
                 "priorityFee": tip_sol,
                 "pool": "pump",
             }
@@ -263,6 +263,7 @@ class JitoExecutor:
             "params": [encoded_signed_txs],
         }
         data = json.dumps(payload).encode("utf-8")
+        last_errors: list[str] = []
 
         def _send(ep: str) -> str | None:
             req = urllib.request.Request(
@@ -278,9 +279,12 @@ class JitoExecutor:
                     if bundle_id:
                         return bundle_id
                     if "error" in result:
-                        log.debug(f"Jito endpoint {ep} returned error: {result['error']}")
+                        err_msg = str(result["error"])
+                        last_errors.append(f"{ep}: {err_msg}")
+                        log.warning(f"Jito endpoint {ep} returned error: {err_msg}")
             except Exception as e:
-                log.debug(f"Failed to submit bundle to Jito endpoint {ep}: {e}")
+                last_errors.append(f"{ep}: {e}")
+                log.warning(f"Failed to submit bundle to Jito endpoint {ep}: {e}")
             return None
 
         # Fan out concurrently to all endpoints to minimize network transit latency
@@ -292,7 +296,8 @@ class JitoExecutor:
                     log.info(f"Bundle successfully accepted by Jito Block Engine ({future_to_ep[future]}): {bid}")
                     return bid
 
-        log.error("All Jito Block Engine endpoints failed to accept bundle")
+        err_summary = "; ".join(last_errors[-2:]) if last_errors else "unknown"
+        log.error(f"All Jito Block Engine endpoints failed to accept bundle: {err_summary}")
         return None
 
     def execute_signal(self, signal: dict[str, Any]) -> None:

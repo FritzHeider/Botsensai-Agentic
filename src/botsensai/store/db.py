@@ -1740,6 +1740,7 @@ class Database:
         status: str = "OPEN",
     ) -> None:
         """Upsert a tracked paper trading position."""
+        now = utcnow().timestamp()
         opened_ts = _ts(opened_at)
         with self.tx() as conn:
             conn.execute(
@@ -1747,14 +1748,15 @@ class Database:
                 INSERT INTO paper_positions (
                     token_key, symbol, mint, amount_token, cost_basis_native,
                     entry_price_native, peak_price_native, last_price_native,
-                    opened_at, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    opened_at, status, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(token_key) DO UPDATE SET
                     amount_token = excluded.amount_token,
                     cost_basis_native = excluded.cost_basis_native,
                     peak_price_native = MAX(peak_price_native, excluded.peak_price_native),
                     last_price_native = excluded.last_price_native,
-                    status = excluded.status
+                    status = excluded.status,
+                    updated_at = excluded.updated_at
                 """,
                 (
                     token_key,
@@ -1767,6 +1769,7 @@ class Database:
                     last_price_native,
                     opened_ts,
                     status,
+                    now,
                 ),
             )
 
