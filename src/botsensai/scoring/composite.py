@@ -359,14 +359,36 @@ class CompositeScorer:
         self.settings = settings or get_settings()
         self.registry = registry or build_registry()
         self.weights = weights or self._load_weights()
+        self._last_weights_mtime: float | None = self._get_weights_mtime()
         self.vetoes = VetoEngine(self.settings.scoring)
         self._family_of = {m.id: m.family for m in self.registry}
+
+    def _get_weights_mtime(self) -> float | None:
+        path = self.settings.scoring.weights_path
+        if path:
+            p = self.settings.path(path)
+            if p.exists():
+                return p.stat().st_mtime
+        return None
 
     def _load_weights(self) -> Weights:
         path = self.settings.scoring.weights_path
         if path:
             return Weights.load(self.settings.path(path))
         return Weights()
+
+    def maybe_reload_weights(self) -> bool:
+        """Check if weights file was updated and reload without restarting."""
+        current_mtime = self._get_weights_mtime()
+        if current_mtime is not None and getattr(self, "_last_weights_mtime", None) is not None:
+            if current_mtime != self._last_weights_mtime:
+                self.weights = self._load_weights()
+                self._last_weights_mtime = current_mtime
+                log.info("weights.reloaded", version=self.weights.version, mtime=current_mtime)
+                return True
+        elif current_mtime is not None:
+            self._last_weights_mtime = current_mtime
+        return False
 
     # -- regime ------------------------------------------------------------- #
 

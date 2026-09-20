@@ -27,6 +27,8 @@ trades, then reads them back as inputs on the next pass.
 
 from __future__ import annotations
 
+from botsensai.copytrade.tracker import CopyTradeTracker
+
 import asyncio
 import uuid
 from collections import defaultdict
@@ -243,6 +245,8 @@ class Pipeline:
         #: need to report on a run that was interrupted rather than returned.
         self.last_session: CollectionSession | None = None
         self._consecutive_degraded_sweeps: int = 0
+        self.copy_tracker = CopyTradeTracker(self.db)
+        self._sweep_counter: int = 0
 
     def _default_collectors(self) -> list[Collector]:
         """Market surfaces first, then social.
@@ -674,6 +678,31 @@ class Pipeline:
 
     def decide(self, launch: Launch, result: Score) -> str:
         """Route a score through risk and the broker. Returns what happened."""
+        # Check for real-time smart money and followed top trader early entries
+        trades = self.db.trades_as_of(launch.token.key, result.as_of)
+        launch_ts = (
+            launch.created_at.timestamp()
+            if hasattr(launch.created_at, "timestamp")
+            else float(launch.created_at)
+        )
+        copy_alerts = self.copy_tracker.check_copy_trade(
+            token_key=launch.token.key,
+            symbol=launch.token.symbol,
+            mint=launch.token.mint,
+            launch_created_at=launch_ts,
+            trades=trades,
+        )
+        if copy_alerts:
+            copy_boost = max(a.conviction_boost for a in copy_alerts)
+            result.composite = min(1.0, result.composite + copy_boost)
+            best_alert = max(copy_alerts, key=lambda a: a.conviction_boost)
+            result.explanation = (
+                (result.explanation or "")
+                + f" [COPY TRADE: Followed top trader {best_alert.trader_wallet[:8]}... "
+                f"(skill {best_alert.trader_skill:.2f}, win rate {best_alert.trader_win_rate:.0%}) "
+                f"entered early with {best_alert.trader_buy_sol:.2f} SOL (+{copy_boost:.2f} boost)]"
+            )
+
         ok, reason = self.scorer.should_enter(result)
         if not ok:
             return f"skip: {reason}"
@@ -705,6 +734,22 @@ class Pipeline:
             return "skip: rejected by risk manager"
         if fill.rejected:
             return f"failed: {fill.reject_reason}"
+
+        self.db.upsert_paper_position(
+            token_key=launch.token.key,
+            symbol=launch.token.symbol,
+            mint=launch.token.mint,
+            amount_token=fill.amount_token,
+            cost_basis_native=fill.amount_native + fill.fee_native + fill.tip_native,
+            entry_price_native=fill.price_native,
+            peak_price_native=fill.price_native,
+            last_price_native=fill.price_native,
+            opened_at=fill.as_of,
+            status="OPEN",
+        )
+        if copy_alerts:
+            for alert in copy_alerts:
+                self.copy_tracker.record_copy_event(alert)
 
         self.db.record_signal(
             token_key=launch.token.key,
@@ -843,19 +888,79 @@ class Pipeline:
         return ranked
 
     def _manage_open_positions(self, report: SweepReport) -> None:
-        """Mark and exit anything already open against the freshest snapshot."""
+        """Mark and exit anything open against freshest snapshot and DB state."""
+        now = utcnow()
+        now_ts = now.timestamp()
+
+        # 1. Manage in-memory broker positions
         for key in list(self.broker.account.positions.keys()):
-            snapshots = self.db.snapshots_as_of(key, utcnow())
-            if not snapshots:
+            position = self.broker.account.positions.get(key)
+            if position is None or not position.is_open:
                 continue
-            latest = snapshots[-1]
-            position = self.broker.account.positions[key]
-            self.broker.mark(position.token, latest.price_native or 0.0)
-            fills = self.broker.apply_exits(position.token, latest, utcnow())
-            report.exited += sum(1 for f in fills if not f.rejected)
+
+            snapshots = self.db.snapshots_as_of(key, now)
+            if snapshots:
+                latest = snapshots[-1]
+                self.broker.mark(position.token, latest.price_native or 0.0)
+                fills = self.broker.apply_exits(position.token, latest, now)
+                for f in fills:
+                    if not f.rejected:
+                        report.exited += 1
+                        self.db.close_paper_position(
+                            key,
+                            exit_price_native=f.price_native,
+                            reason=getattr(position, "exit_reason", None) or "exit",
+                        )
+            else:
+                age_sec = (now - position.opened_at).total_seconds()
+                if age_sec >= self.settings.risk.max_hold_seconds:
+                    exit_px = position.last_price_native or (
+                        position.cost_basis_native / max(1e-6, position.amount_token)
+                    )
+                    self.broker.close_position(
+                        position.token, exit_px, now, reason="time_stop_max_hold"
+                    )
+                    report.exited += 1
+                    self.db.close_paper_position(
+                        key, exit_price_native=exit_px, reason="time_stop_max_hold"
+                    )
+
+        # 2. Reconcile DB open_paper_positions to guarantee no orphaned positions
+        try:
+            db_open = self.db.open_paper_positions()
+            for pos in db_open:
+                tok_key = pos["token_key"]
+                age_sec = max(0.0, now_ts - pos["opened_at"])
+                if age_sec >= self.settings.risk.max_hold_seconds:
+                    exit_px = pos.get("last_price_native") or pos.get("entry_price_native", 0.0)
+                    self.db.close_paper_position(
+                        tok_key, exit_price_native=exit_px, reason="time_stop_max_hold"
+                    )
+                    if tok_key in self.broker.account.positions:
+                        p = self.broker.account.positions[tok_key]
+                        if p.is_open:
+                            self.broker.close_position(
+                                p.token, exit_px, now, reason="time_stop_max_hold"
+                            )
+                    report.exited += 1
+                    log.info(
+                        "paper.auto_reconciled_time_stop",
+                        token=tok_key,
+                        age_hours=round(age_sec / 3600, 2),
+                    )
+        except Exception as exc:
+            log.warning("paper.reconcile_failed", error=str(exc))
 
     async def sweep(self, discover_limit: int = 60, max_candidates: int = 25) -> SweepReport:
         report = SweepReport(started_at=utcnow())
+
+        # Dynamically hot-reload newly fitted weights if optimizer deployed an update
+        if hasattr(self.scorer, "maybe_reload_weights"):
+            try:
+                if self.scorer.maybe_reload_weights():
+                    log.info("pipeline.weights_reloaded", version=self.scorer.weights.version)
+            except Exception as exc:
+                log.warning("pipeline.weights_reload_failed", error=str(exc))
 
         discovered = await self._sweep_discover(report, discover_limit)
         if discovered is None:
@@ -866,6 +971,13 @@ class Pipeline:
         regime = self.compute_regime()
         report.regime = CompositeScorer.classify_regime(regime, self.settings.scoring)
         self.write_regime_memory(regime)
+
+        if getattr(self, "_sweep_counter", 0) % 50 == 0:
+            try:
+                self.copy_tracker.refresh_top_traders(max_candidates=100)
+            except Exception as exc:
+                log.warning("copytrade.refresh_failed", error=str(exc))
+        self._sweep_counter = getattr(self, "_sweep_counter", 0) + 1
 
         candidates = self.screen(discovered.launches, max_candidates)
         report.screened_in = len(candidates)

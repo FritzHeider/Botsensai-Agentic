@@ -164,7 +164,7 @@ class ExecutionSettings(BaseModel):
 class ScoringSettings(BaseModel):
     weights_version: str = "v0"
     weights_path: str | None = "config/weights.json"
-    min_coverage: float = 0.5
+    min_coverage: float = 0.25
     entry_threshold: float = 0.68
     exit_threshold: float = 0.35
     regime_lookback_hours: float = 6.0
