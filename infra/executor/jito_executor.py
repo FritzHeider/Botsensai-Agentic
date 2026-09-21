@@ -91,7 +91,7 @@ JITO_TIP_ACCOUNTS = [
 ]
 
 DEFAULT_MAX_CANARY_SOL = 0.05
-DEFAULT_MIN_TIP_LAMPORTS = 100_000  # 0.0001 SOL
+DEFAULT_MIN_TIP_LAMPORTS = 1_000_000  # 0.001 SOL (viable Jito validator block auction floor)
 
 
 class JitoExecutor:
@@ -218,7 +218,7 @@ class JitoExecutor:
         tip_lamports: int,
     ) -> list[str] | None:
         """Call PumpPortal trade-local with bundle list format to receive unsigned transactions."""
-        tip_sol = max(tip_lamports / 1_000_000_000.0, 0.0001)
+        tip_sol = max(tip_lamports / 1_000_000_000.0, 0.001)
         payload = [
             {
                 "publicKey": self.public_key_b58,
@@ -251,6 +251,87 @@ class JitoExecutor:
         except Exception as e:
             log.error(f"Failed to build trade bundle via PumpPortal: {e}")
             return None
+
+    def get_token_balance(self, mint: str) -> float:
+        """Query on-chain token account balance for the specified mint."""
+        rpc_url = (
+            os.environ.get("BOTSENSAI_HELIUS_RPC_URL")
+            or os.environ.get("SOLANA_RPC_URL")
+            or "https://api.mainnet-beta.solana.com"
+        )
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTokenAccountsByOwner",
+            "params": [
+                self.public_key_b58,
+                {"mint": mint},
+                {"encoding": "jsonParsed"},
+            ],
+        }
+        try:
+            req = urllib.request.Request(
+                rpc_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                accounts = res.get("result", {}).get("value", [])
+                if not accounts:
+                    return 0.0
+                total = sum(
+                    float(
+                        acc.get("account", {})
+                        .get("data", {})
+                        .get("parsed", {})
+                        .get("info", {})
+                        .get("tokenAmount", {})
+                        .get("uiAmount", 0.0)
+                        or 0.0
+                    )
+                    for acc in accounts
+                )
+                return total
+        except Exception as e:
+            log.warning(f"Error checking token balance for {mint}: {e}")
+            return 0.0
+
+    def broadcast_rpc_tx(self, encoded_signed_tx: str) -> str | None:
+        """Dual-path fallback: broadcast signed transaction to Helius / Solana RPC."""
+        rpc_url = (
+            os.environ.get("BOTSENSAI_HELIUS_RPC_URL")
+            or os.environ.get("SOLANA_RPC_URL")
+            or "https://api.mainnet-beta.solana.com"
+        )
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendTransaction",
+            "params": [
+                encoded_signed_tx,
+                {"encoding": "base58", "skipPreflight": True, "maxRetries": 3},
+            ],
+        }
+        try:
+            req = urllib.request.Request(
+                rpc_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                sig = res.get("result")
+                if sig:
+                    log.info(f"Transaction successfully broadcast to RPC: {sig}")
+                    return str(sig)
+                if "error" in res:
+                    log.warning(f"RPC broadcast error: {res['error']}")
+        except Exception as e:
+            log.warning(f"RPC broadcast exception: {e}")
+        return None
 
     def submit_jito_bundle(self, encoded_signed_txs: list[str]) -> str | None:
         """Submit a signed transaction bundle to Jito Block Engine endpoints in parallel."""
@@ -332,6 +413,15 @@ class JitoExecutor:
             self.update_signal(signal_id, status="EXPIRED", error=f"Signal expired ({age:.1f}s old)")
             return
 
+        if side == "SELL":
+            bal = self.get_token_balance(mint)
+            if bal <= 0:
+                log.info(
+                    f"Wallet holds 0 balance for {signal.get('symbol') or mint[:8]}. Skipping live sell (paper or already closed)."
+                )
+                self.update_signal(signal_id, status="SKIPPED", error="Zero on-chain token balance")
+                return
+
         log.info(
             f"Processing signal #{signal_id}: {side} {size_sol:.4f} SOL for {signal.get('symbol') or mint[:8]} (score: {signal['score']:.3f})"
         )
@@ -373,11 +463,16 @@ class JitoExecutor:
                     first_sig = str(signed_tx.signatures[0])
 
             bundle_id = self.submit_jito_bundle(encoded_signed_txs)
-            if bundle_id:
-                log.info(f"Jito bundle submitted successfully! Bundle ID: {bundle_id}, Tx Sig: {first_sig}")
-                self.update_signal(signal_id, status="SUBMITTED", tx_hash=bundle_id)
+            rpc_sig = self.broadcast_rpc_tx(encoded_signed_txs[0]) if encoded_signed_txs else None
+
+            tx_ref = rpc_sig or bundle_id
+            if tx_ref:
+                log.info(
+                    f"Trade submitted via dual-path! Jito: {bundle_id}, RPC Sig: {rpc_sig or first_sig}"
+                )
+                self.update_signal(signal_id, status="SUBMITTED", tx_hash=rpc_sig or bundle_id)
             else:
-                self.update_signal(signal_id, status="FAILED", error="Jito bundle rejected")
+                self.update_signal(signal_id, status="FAILED", error="Both Jito and RPC submissions rejected")
         except Exception as e:
             log.error(f"Failed to sign or submit bundle: {e}")
             self.update_signal(signal_id, status="FAILED", error=str(e))

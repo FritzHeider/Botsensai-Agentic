@@ -315,7 +315,7 @@ class PaperBroker:
     def close_position(
         self,
         token: TokenRef,
-        snapshot: MarketSnapshot,
+        snapshot: MarketSnapshot | float | None,
         as_of: datetime,
         fraction: float = 1.0,
         reason: str = "",
@@ -324,6 +324,10 @@ class PaperBroker:
         position = self.account.positions.get(token.key)
         if position is None or not position.is_open:
             return None
+
+        if not isinstance(snapshot, MarketSnapshot):
+            px = float(snapshot) if isinstance(snapshot, (int, float)) and snapshot > 0 else getattr(position, "last_price_native", 1e-8)
+            snapshot = MarketSnapshot(token=token, as_of=as_of, price_native=px)
 
         tokens_to_sell = position.amount_token * max(0.0, min(1.0, fraction))
         if tokens_to_sell <= 0:
