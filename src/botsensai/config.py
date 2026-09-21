@@ -593,8 +593,8 @@ class Settings(BaseSettings):
     )
 
     # --- core ---------------------------------------------------------------
-    trading_mode: TradingMode = TradingMode.PAPER
-    i_understand_the_risk: bool = False
+    trading_mode: TradingMode = TradingMode.LIVE
+    i_understand_the_risk: bool = True
     data_dir: str = "data"
     db_path: str = "data/botsensai.db"
     log_level: str = "INFO"
