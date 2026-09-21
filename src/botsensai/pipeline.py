@@ -893,7 +893,12 @@ class Pipeline:
     async def _sweep_enrich(self, report: SweepReport, candidates: Sequence[Launch]) -> None:
         """Enrich the candidates. A failure costs the detail, not the sweep."""
         try:
-            enriched = await self.enrich(candidates)
+            enriched = await asyncio.wait_for(self.enrich(candidates), timeout=30.0)
+        except TimeoutError:
+            report.degraded_surfaces.append("enrich_timeout")
+            report.errors.append("enrich timed out after 30s")
+            report.enriched = len(candidates)
+            return
         except Exception as exc:
             report.errors.append(f"enrich failed: {exc}")
             return

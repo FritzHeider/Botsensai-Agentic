@@ -184,11 +184,9 @@ class Collector(abc.ABC):  # noqa: B024 — see note below
 
         t0 = time.monotonic()
         try:
-            # A collector that hangs is worse than one that fails: it stalls the
-            # whole sweep and the decision window for a new token is minutes.
-            produced = await asyncio.wait_for(
-                fn(), timeout=self.config.timeout_seconds * (self.config.max_retries + 2)
-            )
+            # Cap timeout to 15.0s maximum so dead external endpoints never stall the sweep
+            timeout_cap = min(15.0, float(self.config.timeout_seconds * (self.config.max_retries + 2)))
+            produced = await asyncio.wait_for(fn(), timeout=timeout_cap)
             result.merge(produced)
             result.ok = produced.ok
             result.degraded = produced.degraded
