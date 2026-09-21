@@ -217,20 +217,37 @@ class JitoExecutor:
         slippage_bps: int,
         tip_lamports: int,
     ) -> list[str] | None:
-        """Call PumpPortal trade-local with bundle list format to receive unsigned transactions."""
+        """Call PumpPortal trade-local to receive unsigned transactions.
+        
+        Buys are sent in bundle list format. Sells are sent in single dict format
+        with pool='auto' and decode raw binary transaction responses.
+        """
         tip_sol = max(tip_lamports / 1_000_000_000.0, 0.001)
-        payload = [
-            {
+        if action.lower() == "sell":
+            payload: Any = {
                 "publicKey": self.public_key_b58,
-                "action": action.lower(),
+                "action": "sell",
                 "mint": mint,
-                "denominatedInSol": "true" if action.lower() == "buy" else "false",
-                "amount": amount_sol if action.lower() == "buy" else "100%",
+                "denominatedInSol": "false",
+                "amount": "100%",
                 "slippage": max(5, round(slippage_bps / 100)),
                 "priorityFee": tip_sol,
-                "pool": "pump",
+                "pool": "auto",
             }
-        ]
+        else:
+            payload = [
+                {
+                    "publicKey": self.public_key_b58,
+                    "action": "buy",
+                    "mint": mint,
+                    "denominatedInSol": "true",
+                    "amount": amount_sol,
+                    "slippage": max(5, round(slippage_bps / 100)),
+                    "priorityFee": tip_sol,
+                    "pool": "pump",
+                }
+            ]
+
         url = "https://pumpportal.fun/api/trade-local"
         req = urllib.request.Request(
             url,
@@ -240,13 +257,20 @@ class JitoExecutor:
         )
         try:
             with urllib.request.urlopen(req, timeout=10.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if isinstance(data, list):
-                    return data
-                elif isinstance(data, dict) and "error" in data:
-                    log.error(f"PumpPortal bundle error: {data['error']}")
-                    return None
-                log.error(f"Unexpected PumpPortal response: {data}")
+                raw = resp.read()
+                try:
+                    data = json.loads(raw.decode("utf-8"))
+                    if isinstance(data, list):
+                        return data
+                    elif isinstance(data, dict) and "error" in data:
+                        log.error(f"PumpPortal error: {data['error']}")
+                        return None
+                except Exception:
+                    pass
+                # If raw binary transaction bytes returned
+                if len(raw) > 50:
+                    return [b58encode(raw)]
+                log.error(f"Unexpected PumpPortal response: {raw[:100]}")
                 return None
         except Exception as e:
             log.error(f"Failed to build trade bundle via PumpPortal: {e}")
