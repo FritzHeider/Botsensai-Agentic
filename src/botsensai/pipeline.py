@@ -939,47 +939,93 @@ class Pipeline:
                 for f in fills:
                     if not f.rejected:
                         report.exited += 1
+                        reason = getattr(position, "exit_reason", None) or "exit"
                         if hasattr(self.db, "close_paper_position"):
                             self.db.close_paper_position(
                                 key,
                                 exit_price_native=f.price_native,
-                                reason=getattr(position, "exit_reason", None) or "exit",
+                                reason=reason,
                             )
+                        # Emit live SELL execution signal to convert tokens back to SOL
+                        try:
+                            self.db.record_signal(
+                                token_key=position.token.key,
+                                symbol=position.token.symbol,
+                                side="SELL",
+                                size_native=0.0,
+                                max_slippage_bps=500,
+                                jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+                                score=1.0,
+                                as_of=now,
+                            )
+                            log.info("pipeline.sell_signal_emitted", token=key, symbol=position.token.symbol, reason=reason)
+                        except Exception as sig_err:
+                            log.warning("pipeline.sell_signal_failed", token=key, error=str(sig_err))
             else:
                 age_sec = (now - position.opened_at).total_seconds()
-                if age_sec >= self.settings.risk.max_hold_seconds:
+                # If no market snapshot available, do not hold stagnant pump.fun tokens for hours — exit at 5m
+                stale_cutoff = min(300.0, self.settings.risk.max_hold_seconds)
+                if age_sec >= stale_cutoff:
                     exit_px = position.last_price_native or (
                         position.cost_basis_native / max(1e-6, position.amount_token)
                     )
                     self.broker.close_position(
-                        position.token, exit_px, now, reason="time_stop_max_hold"
+                        position.token, exit_px, now, reason="stale_time_stop"
                     )
                     report.exited += 1
                     if hasattr(self.db, "close_paper_position"):
                         self.db.close_paper_position(
-                            key, exit_price_native=exit_px, reason="time_stop_max_hold"
+                            key, exit_price_native=exit_px, reason="stale_time_stop"
                         )
+                    try:
+                        self.db.record_signal(
+                            token_key=position.token.key,
+                            symbol=position.token.symbol,
+                            side="SELL",
+                            size_native=0.0,
+                            max_slippage_bps=500,
+                            jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+                            score=1.0,
+                            as_of=now,
+                        )
+                        log.info("pipeline.sell_signal_emitted", token=key, symbol=position.token.symbol, reason="stale_time_stop")
+                    except Exception as sig_err:
+                        log.warning("pipeline.sell_signal_failed", token=key, error=str(sig_err))
 
         # 2. Reconcile DB open_paper_positions to guarantee no orphaned positions
         if hasattr(self.db, "open_paper_positions"):
             try:
                 db_open = self.db.open_paper_positions()
+                stale_cutoff = min(300.0, self.settings.risk.max_hold_seconds)
                 for pos in db_open:
                     tok_key = pos["token_key"]
                     age_sec = max(0.0, now_ts - pos["opened_at"])
-                    if age_sec >= self.settings.risk.max_hold_seconds:
+                    if age_sec >= stale_cutoff:
                         exit_px = pos.get("last_price_native") or pos.get("entry_price_native", 0.0)
                         if hasattr(self.db, "close_paper_position"):
                             self.db.close_paper_position(
-                                tok_key, exit_price_native=exit_px, reason="time_stop_max_hold"
+                                tok_key, exit_price_native=exit_px, reason="stale_time_stop"
                             )
                         if tok_key in self.broker.account.positions:
                             p = self.broker.account.positions[tok_key]
                             if p.is_open:
                                 self.broker.close_position(
-                                    p.token, exit_px, now, reason="time_stop_max_hold"
+                                    p.token, exit_px, now, reason="stale_time_stop"
                                 )
                         report.exited += 1
+                        try:
+                            self.db.record_signal(
+                                token_key=tok_key,
+                                symbol=pos.get("symbol"),
+                                side="SELL",
+                                size_native=0.0,
+                                max_slippage_bps=500,
+                                jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+                                score=1.0,
+                                as_of=now,
+                            )
+                        except Exception:
+                            pass
                         log.info(
                             "paper.auto_reconciled_time_stop",
                             token=tok_key,

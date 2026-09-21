@@ -115,7 +115,7 @@ class RiskSettings(BaseModel):
 
     max_position_native: float = 0.25
     max_portfolio_exposure_native: float = 2.0
-    max_concurrent_positions: int = 8
+    max_concurrent_positions: int = 15
     max_daily_loss_native: float = 1.0
     max_trades_per_hour: int = 20
     min_liquidity_usd: float = 5_000.0
@@ -181,7 +181,7 @@ class ExecutionSettings(BaseModel):
 class ScoringSettings(BaseModel):
     weights_version: str = "v0"
     weights_path: str | None = "config/weights.json"
-    min_coverage: float = 0.5
+    min_coverage: float = 0.25
     entry_threshold: float = 0.68
     exit_threshold: float = 0.35
     regime_lookback_hours: float = 6.0
