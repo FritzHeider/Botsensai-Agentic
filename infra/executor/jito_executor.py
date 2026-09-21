@@ -287,14 +287,16 @@ class JitoExecutor:
                 log.warning(f"Failed to submit bundle to Jito endpoint {ep}: {e}")
             return None
 
-        # Fan out concurrently to all endpoints to minimize network transit latency
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(JITO_BLOCK_ENGINES)) as executor:
-            future_to_ep = {executor.submit(_send, ep): ep for ep in JITO_BLOCK_ENGINES}
-            for future in concurrent.futures.as_completed(future_to_ep):
-                bid = future.result()
-                if bid:
-                    log.info(f"Bundle successfully accepted by Jito Block Engine ({future_to_ep[future]}): {bid}")
-                    return bid
+        for attempt in range(2):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(JITO_BLOCK_ENGINES)) as executor:
+                future_to_ep = {executor.submit(_send, ep): ep for ep in JITO_BLOCK_ENGINES}
+                for future in concurrent.futures.as_completed(future_to_ep):
+                    bid = future.result()
+                    if bid:
+                        log.info(f"Bundle successfully accepted by Jito Block Engine ({future_to_ep[future]}): {bid}")
+                        return bid
+            if attempt == 0 and any("429" in err for err in last_errors):
+                time.sleep(1.5)
 
         err_summary = "; ".join(last_errors[-2:]) if last_errors else "unknown"
         log.error(f"All Jito Block Engine endpoints failed to accept bundle: {err_summary}")
@@ -387,6 +389,7 @@ class JitoExecutor:
                 signals = self.fetch_pending_signals()
                 for signal in signals:
                     self.execute_signal(signal)
+                    time.sleep(0.5)
             except Exception as e:
                 log.error(f"Executor loop error: {e}")
             time.sleep(poll_interval)
