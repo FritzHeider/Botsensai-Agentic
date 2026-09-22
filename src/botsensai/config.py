@@ -595,11 +595,11 @@ class Settings(BaseSettings):
     # --- core ---------------------------------------------------------------
     trading_mode: TradingMode = TradingMode.LIVE
     i_understand_the_risk: bool = True
+    dry_run: bool = False
     data_dir: str = "data"
     db_path: str = "data/botsensai.db"
     log_level: str = "INFO"
     log_json: bool = False
-    dry_run: bool = True
     seed: int = 1337
 
     # --- chains and rpc -----------------------------------------------------
