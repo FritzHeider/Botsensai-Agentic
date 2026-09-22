@@ -1,0 +1,6132 @@
+[
+  {
+    "rank": 1,
+    "address": "GpTXmkdvrTajqkzX1fBmC4BUjSboF9dHgfnqPqj8WAc4",
+    "weight": 1,
+    "name": "",
+    "twitter": "",
+    "winrate": 83.6,
+    "profit_7d": 88173,
+    "txs_1d": 382,
+    "sol_balance": 77.44,
+    "tags": [
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 2,
+    "address": "6gAgy3F1tLxeBWb8UhGEnmXYVRoaz3w1Lzv6APyhfoHk",
+    "weight": 0.999,
+    "name": "",
+    "twitter": "",
+    "winrate": 90.5,
+    "profit_7d": 49552,
+    "txs_1d": 213,
+    "sol_balance": 23.61,
+    "tags": [
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 3,
+    "address": "8i5U2uNBEuTc4zskYP14zbebDg2RSwrrG8REhEnJb97K",
+    "weight": 0.997,
+    "name": "",
+    "twitter": "",
+    "winrate": 83.2,
+    "profit_7d": 47113,
+    "txs_1d": 165,
+    "sol_balance": 149.07,
+    "tags": [
+      "photon",
+      "top_followed",
+      "top_renamed",
+      "axiom",
+      "launchpad_smart"
+    ]
+  },
+  {
+    "rank": 4,
+    "address": "D9gQ6RhKEpnobPBUdWY5bPQt2p3zGk3iVz6ChpUi2ArA",
+    "weight": 0.996,
+    "name": "",
+    "twitter": "",
+    "winrate": 78.8,
+    "profit_7d": 128875,
+    "txs_1d": 525,
+    "sol_balance": 99.93,
+    "tags": [
+      "launchpad_smart",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 5,
+    "address": "8NJ7Ujpji8uMF2675mqaTSEm2DCbfJA7fiRKtiaqkaLN",
+    "weight": 0.995,
+    "name": "Danny",
+    "twitter": "nikitadevelops",
+    "winrate": 80.5,
+    "profit_7d": 70093,
+    "txs_1d": 501,
+    "sol_balance": 37.34,
+    "tags": [
+      "gmgn",
+      "top_followed",
+      "top_renamed",
+      "launchpad_smart",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 6,
+    "address": "CNudZYFgpbT26fidsiNrWfHeGTBMMeVWqruZXsEkcUPc",
+    "weight": 0.994,
+    "name": "",
+    "twitter": "",
+    "winrate": 78.6,
+    "profit_7d": 9005,
+    "txs_1d": 27,
+    "sol_balance": 412.89,
+    "tags": [
+      "app_smart_money",
+      "top_followed",
+      "top_renamed",
+      "smart_degen",
+      "trojan"
+    ]
+  },
+  {
+    "rank": 7,
+    "address": "GH9yk8vgFvHnAD8JZqXxr3hBN1Lr1mJ9NPzrP5mVqiJe",
+    "weight": 0.992,
+    "name": "",
+    "twitter": "",
+    "winrate": 74.5,
+    "profit_7d": 21209,
+    "txs_1d": 206,
+    "sol_balance": 165.3,
+    "tags": [
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 8,
+    "address": "J56M2D9BeigqKVTNGSegVho8s8d9XtFueFDurN5z9Fxf",
+    "weight": 0.991,
+    "name": "",
+    "twitter": "",
+    "winrate": 68.4,
+    "profit_7d": 80193,
+    "txs_1d": 35,
+    "sol_balance": 53.99,
+    "tags": [
+      "smart_degen",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 9,
+    "address": "FVZRwUp6E4m9jV4VumF8q7m8q3mF9fpikRrJSCCfFAdP",
+    "weight": 0.99,
+    "name": "000",
+    "twitter": "000xy_0",
+    "winrate": 100,
+    "profit_7d": 3422,
+    "txs_1d": 7,
+    "sol_balance": 1171.6,
+    "tags": [
+      "launchpad_smart",
+      "gmgn_go",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 10,
+    "address": "8vwTtv6SzGdBHrysJ8jmd35KTU7fsi6PhuB78HucJxrK",
+    "weight": 0.988,
+    "name": "",
+    "twitter": "",
+    "winrate": 70.6,
+    "profit_7d": 73075,
+    "txs_1d": 10,
+    "sol_balance": 1.92,
+    "tags": [
+      "top_followed"
+    ]
+  },
+  {
+    "rank": 11,
+    "address": "5aLY85pyxiuX3fd4RgM3Yc1e3MAL6b7UgaZz6MS3JUfG",
+    "weight": 0.987,
+    "name": "",
+    "twitter": "",
+    "winrate": 53.9,
+    "profit_7d": 136746,
+    "txs_1d": 3832,
+    "sol_balance": 103.84,
+    "tags": [
+      "top_followed"
+    ]
+  },
+  {
+    "rank": 12,
+    "address": "Ar2Y6o1QmrRAskjii1cRfijeKugHH13ycxW5cd7rro1x",
+    "weight": 0.986,
+    "name": "",
+    "twitter": "",
+    "winrate": 57.3,
+    "profit_7d": 73059,
+    "txs_1d": 5609,
+    "sol_balance": 70.06,
+    "tags": [
+      "top_followed"
+    ]
+  },
+  {
+    "rank": 13,
+    "address": "5hAgYC8TJCcEZV7LTXAzkTrm7YL29YXyQQJPCNrG84zM",
+    "weight": 0.984,
+    "name": "",
+    "twitter": "",
+    "winrate": 52.7,
+    "profit_7d": 40267,
+    "txs_1d": 399,
+    "sol_balance": 631.61,
+    "tags": [
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 14,
+    "address": "7moqFjvm2MwAiMtCZoqYoTAPzRBxxMRT2ddyHThQuWjr",
+    "weight": 0.983,
+    "name": "",
+    "twitter": "",
+    "winrate": 65.1,
+    "profit_7d": 22373,
+    "txs_1d": 282,
+    "sol_balance": 43.59,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 15,
+    "address": "4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk",
+    "weight": 0.982,
+    "name": "jijo",
+    "twitter": "jijo_exe",
+    "winrate": 52.8,
+    "profit_7d": 20868,
+    "txs_1d": 286,
+    "sol_balance": 1932.23,
+    "tags": [
+      "kol",
+      "photon",
+      "launchpad_smart",
+      "top_followed",
+      "padre",
+      "top_renamed",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 16,
+    "address": "6qudAN2kV8mtCcYJxb5QQ6Vr15itdHHdeVbYm99NKMhy",
+    "weight": 0.981,
+    "name": "",
+    "twitter": "",
+    "winrate": 65.3,
+    "profit_7d": 26366,
+    "txs_1d": 321,
+    "sol_balance": 10.96,
+    "tags": [
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 17,
+    "address": "BprdjjAzFLoS2gVJqUVR1pdJpwCacNK4kctLTiMmcdSh",
+    "weight": 0.979,
+    "name": "",
+    "twitter": "",
+    "winrate": 44.7,
+    "profit_7d": 53932,
+    "txs_1d": 809,
+    "sol_balance": 631.67,
+    "tags": [
+      "launchpad_smart",
+      "smart_degen",
+      "padre",
+      "axiom",
+      "bluechip_owner",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 18,
+    "address": "8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ",
+    "weight": 0.978,
+    "name": "",
+    "twitter": "",
+    "winrate": 49.4,
+    "profit_7d": 74622,
+    "txs_1d": 2613,
+    "sol_balance": 93.7,
+    "tags": [
+      "top_followed"
+    ]
+  },
+  {
+    "rank": 19,
+    "address": "7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5",
+    "weight": 0.977,
+    "name": "",
+    "twitter": "",
+    "winrate": 47.1,
+    "profit_7d": 99166,
+    "txs_1d": 2247,
+    "sol_balance": 95.16,
+    "tags": [
+      "bluechip_owner",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 20,
+    "address": "3GzBLpxTWWTPWwBYQ8Jgrz5XLUCg9aY6HiB3GEBUBAv6",
+    "weight": 0.975,
+    "name": "",
+    "twitter": "",
+    "winrate": 45.1,
+    "profit_7d": 46522,
+    "txs_1d": 114,
+    "sol_balance": 975.53,
+    "tags": [
+      "top_renamed",
+      "trojan"
+    ]
+  },
+  {
+    "rank": 21,
+    "address": "4fZFcK8ms3bFMpo1ACzEUz8bH741fQW4zhAMGd5yZMHu",
+    "weight": 0.974,
+    "name": "Rilsio",
+    "twitter": "CryptoRilsio",
+    "winrate": 63.5,
+    "profit_7d": 24363,
+    "txs_1d": 147,
+    "sol_balance": 18.63,
+    "tags": [
+      "kol",
+      "arbitrager",
+      "padre",
+      "axiom",
+      "gmgn",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 22,
+    "address": "6HJetMbdHBuk3mLUainxAPpBpWzDgYbHGTS2TqDAUSX2",
+    "weight": 0.973,
+    "name": "LJC",
+    "twitter": "OnlyLJC",
+    "winrate": 47.2,
+    "profit_7d": 125357,
+    "txs_1d": 40,
+    "sol_balance": 59.21,
+    "tags": [
+      "arbitrager",
+      "axiom",
+      "padre",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 23,
+    "address": "CgmwCcCoF5YNhWrVBz2R2iH4MopfvYLfxLgSZsrnemi6",
+    "weight": 0.971,
+    "name": "Quant",
+    "twitter": "quantisthename",
+    "winrate": 62.5,
+    "profit_7d": 10650,
+    "txs_1d": 169,
+    "sol_balance": 86.9,
+    "tags": [
+      "gmgn",
+      "axiom",
+      "padre",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 24,
+    "address": "Gfsk5ZojnHSLoxRhUBD5vviJELFuTGkyBh9QTqEo7Ehg",
+    "weight": 0.97,
+    "name": "",
+    "twitter": "",
+    "winrate": 67.1,
+    "profit_7d": 9395,
+    "txs_1d": 5,
+    "sol_balance": 24.97,
+    "tags": [
+      "smart_degen",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 25,
+    "address": "GijFWw4oNyh9ko3FaZforNsi3jk6wDovARpkKahPD4o5",
+    "weight": 0.969,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.2,
+    "profit_7d": 50807,
+    "txs_1d": 1286,
+    "sol_balance": 1126.17,
+    "tags": [
+      "photon",
+      "smart_degen",
+      "padre",
+      "gmgn",
+      "top_followed",
+      "top_renamed",
+      "axiom",
+      "bluechip_owner",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 26,
+    "address": "GapKqefWtpzNaMPMB6BWXt5Ad9E99RX2muyVLoK8hJt8",
+    "weight": 0.968,
+    "name": "JB (33.3%) \ud83c\udf5f\ud83d\udd95",
+    "twitter": "justjb",
+    "winrate": 100,
+    "profit_7d": 5348,
+    "txs_1d": 0,
+    "sol_balance": 166.34,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 27,
+    "address": "F5CbRKW1AzRXZayzh7czPVPf1ytqDrwy5giQuzoZGFUZ",
+    "weight": 0.966,
+    "name": "",
+    "twitter": "",
+    "winrate": 69.2,
+    "profit_7d": 4654,
+    "txs_1d": 64,
+    "sol_balance": 45.63,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 28,
+    "address": "HSeCG7T2KCTuVAARGXZuxBNZg6pas1EdJdjn7Xyy1ENB",
+    "weight": 0.965,
+    "name": "",
+    "twitter": "",
+    "winrate": 45.2,
+    "profit_7d": -6589,
+    "txs_1d": 43,
+    "sol_balance": 178.12,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 29,
+    "address": "7E9jfxCczubz4FXkkVKzUMHXGwzJxyppC4m7y3ew8ATg",
+    "weight": 0.964,
+    "name": "",
+    "twitter": "",
+    "winrate": 63.2,
+    "profit_7d": 9240,
+    "txs_1d": 66,
+    "sol_balance": 50.42,
+    "tags": [
+      "axiom",
+      "arbitrager",
+      "top_followed",
+      "padre",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 30,
+    "address": "D3zAG2Kb6dAWvfuJtxhMun9dT3VurJcFjRDJvVkApZ3d",
+    "weight": 0.962,
+    "name": "",
+    "twitter": "",
+    "winrate": 59.2,
+    "profit_7d": 22222,
+    "txs_1d": 30,
+    "sol_balance": 23.14,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 31,
+    "address": "a16ZRRPYzkCgED9ECcFd9vdrFzW775Z2DqmAEsSZDGE",
+    "weight": 0.961,
+    "name": "",
+    "twitter": "",
+    "winrate": 38.5,
+    "profit_7d": 80661,
+    "txs_1d": 199,
+    "sol_balance": 411.99,
+    "tags": [
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 32,
+    "address": "BNnN2MqfWLvgThYBsv6v8JQaYZXYKYahC5YCy27Ct1cX",
+    "weight": 0.96,
+    "name": "",
+    "twitter": "",
+    "winrate": 50,
+    "profit_7d": 13275,
+    "txs_1d": 116,
+    "sol_balance": 1301.11,
+    "tags": [
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "trojan"
+    ]
+  },
+  {
+    "rank": 33,
+    "address": "3NRzXAZhkDwiq2aXSKJnY4QZnremVQfwtsMmoh4tYQoJ",
+    "weight": 0.958,
+    "name": "0x\u8001\u7941",
+    "twitter": "riskqi0x",
+    "winrate": 80,
+    "profit_7d": 22870,
+    "txs_1d": 0,
+    "sol_balance": 471.52,
+    "tags": [
+      "gmgn",
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 34,
+    "address": "VJSDW6S74YXR4rRR9P4xwhMvLZJQMhrUb8XMFirUsy1",
+    "weight": 0.957,
+    "name": "",
+    "twitter": "",
+    "winrate": 36.8,
+    "profit_7d": 208660,
+    "txs_1d": 2086,
+    "sol_balance": 260.93,
+    "tags": [
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 35,
+    "address": "gy1mJNas5fLZyNpK3RP6dPpYFE3Z6kE9oxSX7ZvLVR1",
+    "weight": 0.956,
+    "name": "",
+    "twitter": "",
+    "winrate": 64.1,
+    "profit_7d": 6229,
+    "txs_1d": 70,
+    "sol_balance": 47,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 36,
+    "address": "DjM7Tu7whh6P3pGVBfDzwXAx2zaw51GJWrJE3PwtuN7s",
+    "weight": 0.955,
+    "name": "",
+    "twitter": "",
+    "winrate": 54.7,
+    "profit_7d": 20002,
+    "txs_1d": 22,
+    "sol_balance": 40.99,
+    "tags": [
+      "arbitrager",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 37,
+    "address": "D9UiteKBjbVp8UYGRSKi4fJRsXYp8Csk7zcrnaCvq6LS",
+    "weight": 0.953,
+    "name": "",
+    "twitter": "",
+    "winrate": 51.7,
+    "profit_7d": 15600,
+    "txs_1d": 469,
+    "sol_balance": 142.96,
+    "tags": [
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 38,
+    "address": "GUjYXh4aR9tDJ1yU1gsa91LtivS5t84CZF3mP5SBkKhz",
+    "weight": 0.952,
+    "name": "",
+    "twitter": "",
+    "winrate": 52.7,
+    "profit_7d": 12537,
+    "txs_1d": 0,
+    "sol_balance": 124.8,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 39,
+    "address": "2nHsHJpkXmHb43BqSjnQFMbUcU2kWEqFqoXsbe2zv2Wi",
+    "weight": 0.951,
+    "name": "",
+    "twitter": "",
+    "winrate": 56.5,
+    "profit_7d": 6654,
+    "txs_1d": 22,
+    "sol_balance": 151.83,
+    "tags": [
+      "smart_degen",
+      "padre",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 40,
+    "address": "4k92XBen2ofaTYi5ntXX9TVjMPgFaaZRK5K8UmtLKqez",
+    "weight": 0.949,
+    "name": "",
+    "twitter": "",
+    "winrate": 42.3,
+    "profit_7d": 58902,
+    "txs_1d": 1307,
+    "sol_balance": 63.37,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 41,
+    "address": "4Nx72xL9vdN2Z1oZebrMieGuai98DyPVGqVjJwAsJz9R",
+    "weight": 0.948,
+    "name": "",
+    "twitter": "",
+    "winrate": 64.9,
+    "profit_7d": 4050,
+    "txs_1d": 69,
+    "sol_balance": 30.54,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 42,
+    "address": "AreSXNRAsnwrKaQvg2H5trpQNqfprRPT62Y5EDU5h7xf",
+    "weight": 0.947,
+    "name": "",
+    "twitter": "",
+    "winrate": 45.2,
+    "profit_7d": 10982,
+    "txs_1d": 191,
+    "sol_balance": 642.99,
+    "tags": [
+      "launchpad_smart",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 43,
+    "address": "814xLErdgHd9zU42L75ZtGQo957vrTNDXhv4oJWFK26g",
+    "weight": 0.945,
+    "name": "",
+    "twitter": "",
+    "winrate": 66.3,
+    "profit_7d": 2784,
+    "txs_1d": 318,
+    "sol_balance": 34.49,
+    "tags": [
+      "smart_degen",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 44,
+    "address": "7q15WZ4iSUDvqfs5Kdh9bfptkQhs6qKUyCUq6GY6PGxg",
+    "weight": 0.944,
+    "name": "",
+    "twitter": "",
+    "winrate": 70.1,
+    "profit_7d": 4037,
+    "txs_1d": 32,
+    "sol_balance": 4.98,
+    "tags": [
+      "axiom",
+      "smart_degen",
+      "arbitrager",
+      "gmgn_go"
+    ]
+  },
+  {
+    "rank": 45,
+    "address": "3hxVcXUVCiV9L3FQvRjFmd2kPqpsmZY4M4czCQftd8QQ",
+    "weight": 0.943,
+    "name": "",
+    "twitter": "",
+    "winrate": 100,
+    "profit_7d": 918,
+    "txs_1d": 10,
+    "sol_balance": 8.91,
+    "tags": [
+      "launchpad_smart"
+    ]
+  },
+  {
+    "rank": 46,
+    "address": "2X4H5Y9C4Fy6Pf3wpq8Q4gMvLcWvfrrwDv2bdR8AAwQv",
+    "weight": 0.942,
+    "name": "Orange",
+    "twitter": "OrangeSBS",
+    "winrate": 33.3,
+    "profit_7d": 43191,
+    "txs_1d": 11,
+    "sol_balance": 1155.41,
+    "tags": [
+      "launchpad_smart",
+      "gmgn_go",
+      "gmgn",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 47,
+    "address": "SoLoR8292gki11FuFVCYUV5XkVi3dMr9kUJD5YGbui9",
+    "weight": 0.94,
+    "name": "\u2b50\ufe0f",
+    "twitter": "solvenant",
+    "winrate": 100,
+    "profit_7d": 3364,
+    "txs_1d": 9,
+    "sol_balance": 0,
+    "tags": [
+      "kol",
+      "trojan",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 48,
+    "address": "AC44afvZ8zpWa3CXBM1iCQEcPVktaPck4qYG8vKfiYi6",
+    "weight": 0.939,
+    "name": "",
+    "twitter": "",
+    "winrate": 43,
+    "profit_7d": 27077,
+    "txs_1d": 86,
+    "sol_balance": 133.3,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 49,
+    "address": "56S29mZ3wqvw8hATuUUFqKhGcSGYFASRRFNT38W8q7G3",
+    "weight": 0.938,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.8,
+    "profit_7d": 38955,
+    "txs_1d": 2707,
+    "sol_balance": 83.47,
+    "tags": [
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 50,
+    "address": "CxWRfadzmKT3vQtX76UXcHVqTd2GrMWuMMNi2jHAVrz4",
+    "weight": 0.936,
+    "name": "",
+    "twitter": "",
+    "winrate": 51.2,
+    "profit_7d": 16398,
+    "txs_1d": 342,
+    "sol_balance": 38.55,
+    "tags": [
+      "smart_degen",
+      "gmgn",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 51,
+    "address": "215nhcAHjQQGgwpQSJQ7zR26etbjjtVdW74NLzwEgQjP",
+    "weight": 0.935,
+    "name": "OGAntD",
+    "twitter": "0GAntD",
+    "winrate": 38.5,
+    "profit_7d": 38221,
+    "txs_1d": 98,
+    "sol_balance": 200.13,
+    "tags": [
+      "photon",
+      "kol",
+      "app_smart_money",
+      "gmgn",
+      "gmgn_go",
+      "axiom",
+      "bluechip_owner",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 52,
+    "address": "CgaA9a1JwAXJyfHuvZ7VW8YfTVRkdiT5mjBBSKcg7Rz5",
+    "weight": 0.934,
+    "name": "Art",
+    "twitter": "ArtCryptoz",
+    "winrate": 46.2,
+    "profit_7d": 18661,
+    "txs_1d": 739,
+    "sol_balance": 102.03,
+    "tags": [
+      "gmgn_go",
+      "arbitrager",
+      "padre",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 53,
+    "address": "B32QbbdDAyhvUQzjcaM5j6ZVKwjCxAwGH5Xgvb9SJqnC",
+    "weight": 0.932,
+    "name": "",
+    "twitter": "",
+    "winrate": 44.1,
+    "profit_7d": 52923,
+    "txs_1d": 687,
+    "sol_balance": 17.77,
+    "tags": [
+      "launchpad_smart",
+      "padre",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 54,
+    "address": "4mdMHfiMjBLNGwirfmVwH4N4B5LzPBqadqBrgkY6Z5q5",
+    "weight": 0.931,
+    "name": "",
+    "twitter": "",
+    "winrate": 48.5,
+    "profit_7d": 11476,
+    "txs_1d": 174,
+    "sol_balance": 114.47,
+    "tags": [
+      "smart_degen",
+      "gmgn",
+      "arbitrager",
+      "axiom",
+      "padre"
+    ]
+  },
+  {
+    "rank": 55,
+    "address": "7BVpH77rgXUt5mKcxtE6oZ9WmPUoDhUk2dfvpVYUM5FX",
+    "weight": 0.93,
+    "name": "",
+    "twitter": "",
+    "winrate": 53.4,
+    "profit_7d": 5613,
+    "txs_1d": 180,
+    "sol_balance": 106.58,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 56,
+    "address": "Beqv6dzTcjV2eodo8RRXCiCcnSYrS1vkQKhfqwHXqeit",
+    "weight": 0.928,
+    "name": "",
+    "twitter": "",
+    "winrate": 48.9,
+    "profit_7d": 196392,
+    "txs_1d": 1863,
+    "sol_balance": 0,
+    "tags": [
+      "top_renamed",
+      "bluechip_owner",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 57,
+    "address": "2dEpwaujMteZsFYCX3hwaavYKkU7kRwAwJe9XGuWNRGA",
+    "weight": 0.927,
+    "name": "",
+    "twitter": "",
+    "winrate": 51.1,
+    "profit_7d": 4386,
+    "txs_1d": 54,
+    "sol_balance": 288.2,
+    "tags": [
+      "photon",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 58,
+    "address": "mDR91ufq4S2uSHa9E2PYL7xg4LwcQXaQFP7YK864a1z",
+    "weight": 0.926,
+    "name": "",
+    "twitter": "",
+    "winrate": 48.9,
+    "profit_7d": 149705,
+    "txs_1d": 81,
+    "sol_balance": 0,
+    "tags": [
+      "top_renamed",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 59,
+    "address": "498g1rVnFcnjBjpfw1xyqA1WvgQXUU8RWuELjxkjAayQ",
+    "weight": 0.925,
+    "name": "Frank",
+    "twitter": "frankdegods",
+    "winrate": 39.2,
+    "profit_7d": 80263,
+    "txs_1d": 54,
+    "sol_balance": 15.38,
+    "tags": [
+      "kol",
+      "top_followed",
+      "top_renamed",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 60,
+    "address": "HTM87R4mgjDdiF6Yfn8duK9vbDmZxiPCTRbGvm7eCAJY",
+    "weight": 0.923,
+    "name": "",
+    "twitter": "",
+    "winrate": 71.4,
+    "profit_7d": 7209,
+    "txs_1d": 0,
+    "sol_balance": 16.91,
+    "tags": [
+      "trojan",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 61,
+    "address": "8DgVVtnNZQRKu4Cx6xeAMTukUHMTE3f2Cqb1wMzJ9beU",
+    "weight": 0.922,
+    "name": "",
+    "twitter": "",
+    "winrate": 50.2,
+    "profit_7d": 17884,
+    "txs_1d": 251,
+    "sol_balance": 14.77,
+    "tags": [
+      "bullx",
+      "top_followed",
+      "top_renamed",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 62,
+    "address": "Eq7kXPwxF5qZZjjgTZ3BaEAgH2uMFvZtYi9yeLRHafeA",
+    "weight": 0.921,
+    "name": "",
+    "twitter": "",
+    "winrate": 49.8,
+    "profit_7d": 17892,
+    "txs_1d": 350,
+    "sol_balance": 15.22,
+    "tags": [
+      "smart_degen",
+      "gmgn",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 63,
+    "address": "F9zT1F46HAoPanR4NC1Yw7TyP8Z9tCavTe48mrzK7aN4",
+    "weight": 0.919,
+    "name": "",
+    "twitter": "",
+    "winrate": 39.8,
+    "profit_7d": 36353,
+    "txs_1d": 494,
+    "sol_balance": 52.52,
+    "tags": [
+      "launchpad_smart",
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 64,
+    "address": "DEdEW3SMPU2dCfXEcgj2YppmX9H3bnMDJaU4ctn2BQDQ",
+    "weight": 0.918,
+    "name": "King Solomon",
+    "twitter": "0xsolomon",
+    "winrate": 48.1,
+    "profit_7d": 6224,
+    "txs_1d": 40,
+    "sol_balance": 180.06,
+    "tags": [
+      "app_smart_money",
+      "top_followed",
+      "top_renamed",
+      "trojan"
+    ]
+  },
+  {
+    "rank": 65,
+    "address": "E7gozEiAPNhpJsdS52amhhN2XCAqLZa7WPrhyR6C8o4S",
+    "weight": 0.917,
+    "name": "evening",
+    "twitter": "eveningbtc",
+    "winrate": 36.6,
+    "profit_7d": -12499,
+    "txs_1d": 55,
+    "sol_balance": 75.29,
+    "tags": [
+      "kol",
+      "axiom",
+      "smart_degen",
+      "arbitrager",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 66,
+    "address": "DHv5f18TC5YzWwj6CArjrwGYhnQxu43cRtvHwr7H5XA8",
+    "weight": 0.915,
+    "name": "",
+    "twitter": "",
+    "winrate": 50.9,
+    "profit_7d": 8271,
+    "txs_1d": 69,
+    "sol_balance": 40.11,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 67,
+    "address": "3PFEFjRtEJydqiXSWbiMnaqMPwtUMdNwSfbwVZxtMrr9",
+    "weight": 0.914,
+    "name": "",
+    "twitter": "",
+    "winrate": 48.9,
+    "profit_7d": 3941,
+    "txs_1d": 54,
+    "sol_balance": 269.93,
+    "tags": [
+      "photon",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 68,
+    "address": "4EsYuWFZAt1PfNJq8Jr7monip43gNqrQ7k2Kne1npqJx",
+    "weight": 0.913,
+    "name": "",
+    "twitter": "",
+    "winrate": 42.6,
+    "profit_7d": 9557,
+    "txs_1d": 143,
+    "sol_balance": 235.52,
+    "tags": [
+      "padre",
+      "top_followed",
+      "top_renamed",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 69,
+    "address": "2h7s3FpSvc6v2oHke6Uqg191B5fPCeFTmMGnh5oPWhX7",
+    "weight": 0.912,
+    "name": "",
+    "twitter": "",
+    "winrate": 71.4,
+    "profit_7d": 6977,
+    "txs_1d": 0,
+    "sol_balance": 95.82,
+    "tags": [
+      "photon",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 70,
+    "address": "8gV31ab8mT4N4wKdu4rWNA6GgfZtuJtimtvVJrMaH13U",
+    "weight": 0.91,
+    "name": "",
+    "twitter": "",
+    "winrate": 52.3,
+    "profit_7d": 17147,
+    "txs_1d": 351,
+    "sol_balance": 3.77,
+    "tags": [
+      "smart_degen",
+      "gmgn",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 71,
+    "address": "FqamE7xrahg7FEWoByrx1o8SeyHt44rpmE6ZQfT7zrve",
+    "weight": 0.909,
+    "name": "EustazZ",
+    "twitter": "Eustazzeus",
+    "winrate": 48,
+    "profit_7d": 19274,
+    "txs_1d": 579,
+    "sol_balance": 10.22,
+    "tags": [
+      "launchpad_smart",
+      "gmgn_go",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "padre",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 72,
+    "address": "6aXFYXbFob1ZKAEDCcqZnX2vooA3TgEqDoy5dAQbeWoV",
+    "weight": 0.908,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.3,
+    "profit_7d": 45525,
+    "txs_1d": 534,
+    "sol_balance": 91,
+    "tags": [
+      "arbitrager",
+      "padre",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 73,
+    "address": "2snHHreXbpJ7UwZxPe37gnUNf7Wx7wv6UKDSR2JckKuS",
+    "weight": 0.906,
+    "name": "",
+    "twitter": "",
+    "winrate": 27.6,
+    "profit_7d": 34405,
+    "txs_1d": 693,
+    "sol_balance": 5647.16,
+    "tags": [
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 74,
+    "address": "CyehxLtyh7RNcLLKHbLLvsR1ap3hAJ5Lvei1GH3Wm6Li",
+    "weight": 0.905,
+    "name": "",
+    "twitter": "",
+    "winrate": 55.2,
+    "profit_7d": 2285,
+    "txs_1d": 43,
+    "sol_balance": 108.01,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 75,
+    "address": "6KqVAU5CW47JSKtH24vnGo5an3SAGJLZY2VQuhaD2igu",
+    "weight": 0.904,
+    "name": "",
+    "twitter": "",
+    "winrate": 42.3,
+    "profit_7d": -2019,
+    "txs_1d": 229,
+    "sol_balance": 1.32,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 76,
+    "address": "EeXvxkcGqMDZeTaVeawzxm9mbzZwqDUMmfG3bF7uzumH",
+    "weight": 0.902,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.9,
+    "profit_7d": 22222,
+    "txs_1d": 999,
+    "sol_balance": 250.84,
+    "tags": [
+      "launchpad_smart",
+      "padre",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 77,
+    "address": "53AdLBM2YmWGVd2KA9TYeZsDdXe2gy3QSbyBJz4aaTt",
+    "weight": 0.901,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.7,
+    "profit_7d": 11959,
+    "txs_1d": 103,
+    "sol_balance": 97.14,
+    "tags": [
+      "padre",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 78,
+    "address": "2kW5wLFQw1wLuepZTJux1DZsTJSbNi2PGQ1E6hC7xeY8",
+    "weight": 0.9,
+    "name": "",
+    "twitter": "",
+    "winrate": 50.9,
+    "profit_7d": 3511,
+    "txs_1d": 18,
+    "sol_balance": 94.51,
+    "tags": [
+      "launchpad_smart",
+      "padre",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 79,
+    "address": "Go9BEhJGCpbXFzky6SWcofqQyuiKrtE1m9Knx1aiZCc8",
+    "weight": 0.899,
+    "name": "",
+    "twitter": "",
+    "winrate": 51.5,
+    "profit_7d": 5481,
+    "txs_1d": 229,
+    "sol_balance": 31.28,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 80,
+    "address": "BCrTEXmWutwPz8qv6w1S5gDbaLnSLpXKM5kSGVWyyfxu",
+    "weight": 0.897,
+    "name": "",
+    "twitter": "",
+    "winrate": 48.2,
+    "profit_7d": 17399,
+    "txs_1d": 103,
+    "sol_balance": 6.63,
+    "tags": [
+      "top_followed",
+      "top_renamed",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 81,
+    "address": "DAEdBmTPEKM6xkwfzC3d411QUe6coKpkND6UURa4CvHC",
+    "weight": 0.896,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.7,
+    "profit_7d": 4194,
+    "txs_1d": 13,
+    "sol_balance": 2088.27,
+    "tags": [
+      "arbitrager",
+      "bluechip_owner",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 82,
+    "address": "J485YzQjuJPLYoFEYjrjxd7NAoLHTiyUU63JwK7kLxRr",
+    "weight": 0.895,
+    "name": "\u91d1\u72d7\u6316\u6398\u673a | 0xDavid",
+    "twitter": "HunterOnlyETH",
+    "winrate": 100,
+    "profit_7d": 860,
+    "txs_1d": 0,
+    "sol_balance": 39.49,
+    "tags": [
+      "kol",
+      "app_smart_money",
+      "axiom",
+      "arbitrager",
+      "gmgn",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 83,
+    "address": "6FZ1RasKHCPa9DnNYzg2v6ppDBhMigPM9X3L5fUY8kab",
+    "weight": 0.893,
+    "name": "",
+    "twitter": "",
+    "winrate": 49.3,
+    "profit_7d": 3308,
+    "txs_1d": 172,
+    "sol_balance": 126.3,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 84,
+    "address": "5d3jQcuUvsuHyZkhdp78FFqc7WogrzZpTtec1X9VNkuE",
+    "weight": 0.892,
+    "name": "tech",
+    "twitter": "technoviking46",
+    "winrate": 47.9,
+    "profit_7d": 2541,
+    "txs_1d": 22,
+    "sol_balance": 295.31,
+    "tags": [
+      "bullx",
+      "photon",
+      "kol",
+      "padre",
+      "arbitrager",
+      "top_followed",
+      "axiom",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 85,
+    "address": "3t5huYEZvcj7kR9gtiFWuSiLkJ3vSpmWZ1PPE2ht7JRN",
+    "weight": 0.891,
+    "name": "",
+    "twitter": "",
+    "winrate": 43.8,
+    "profit_7d": 8763,
+    "txs_1d": 103,
+    "sol_balance": 69.62,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 86,
+    "address": "6bQSN4d6anoTwnE6XDPGLA9RV8cqZPeNJro4iQUsWmso",
+    "weight": 0.889,
+    "name": "",
+    "twitter": "",
+    "winrate": 46.2,
+    "profit_7d": 44332,
+    "txs_1d": 63,
+    "sol_balance": 0.43,
+    "tags": [
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 87,
+    "address": "ENkZtLj1onzQRGnEeRkQfFzBeeY2dCeiQMXDzh8XbQbj",
+    "weight": 0.888,
+    "name": "Game",
+    "twitter": "game_for_one",
+    "winrate": 56.3,
+    "profit_7d": 12993,
+    "txs_1d": 104,
+    "sol_balance": 0.06,
+    "tags": [
+      "kol",
+      "gmgn_go",
+      "gmgn",
+      "fomo",
+      "top_followed"
+    ]
+  },
+  {
+    "rank": 88,
+    "address": "3g4D4n67vUFSDUwW8NWvzkQSUqD4J5H8zW1sbKJrrczi",
+    "weight": 0.887,
+    "name": "",
+    "twitter": "",
+    "winrate": 63.6,
+    "profit_7d": 4980,
+    "txs_1d": 23,
+    "sol_balance": 0,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 89,
+    "address": "J865X6P4QDE7xp5JmkuPhyeRHZqddnVKR9pZiAJtZEAm",
+    "weight": 0.886,
+    "name": "",
+    "twitter": "",
+    "winrate": 37.9,
+    "profit_7d": 14428,
+    "txs_1d": 42,
+    "sol_balance": 99.21,
+    "tags": [
+      "pepeboost",
+      "pump_smart",
+      "app_smart_money",
+      "gmgn_go",
+      "gmgn",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 90,
+    "address": "3bbjkWuHD1FYxu2XYPrSb9bNtXTcJ8UaZ38EmwtAV6xR",
+    "weight": 0.884,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.1,
+    "profit_7d": 10197,
+    "txs_1d": 98,
+    "sol_balance": 83.5,
+    "tags": [
+      "bullx",
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 91,
+    "address": "BQVz7fQ1WsQmSTMY3umdPEPPTm1sdcBcX9sP7o6kPRmB",
+    "weight": 0.883,
+    "name": "Limfork",
+    "twitter": "Limfork",
+    "winrate": 37.9,
+    "profit_7d": 11528,
+    "txs_1d": 115,
+    "sol_balance": 146.86,
+    "tags": [
+      "kol",
+      "bullx",
+      "launchpad_smart",
+      "axiom",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 92,
+    "address": "8MoW9mtbEz6z3gPuAdYb1yWhjCAxQSYqpcTb1CQgN5qb",
+    "weight": 0.882,
+    "name": "Ashtoshii",
+    "twitter": "ashtoshii",
+    "winrate": 37.9,
+    "profit_7d": 8127,
+    "txs_1d": 154,
+    "sol_balance": 297.43,
+    "tags": [
+      "kol",
+      "smart_degen",
+      "gmgn_go",
+      "top_followed",
+      "padre",
+      "gmgn",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 93,
+    "address": "DXoDAgRazixoGnnBsoG7Y1JKk2anmzjjpqHGcj75kCsz",
+    "weight": 0.88,
+    "name": "",
+    "twitter": "",
+    "winrate": 39.4,
+    "profit_7d": 11835,
+    "txs_1d": 110,
+    "sol_balance": 91.33,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 94,
+    "address": "H44zceMf6tP8cH6NGcKov2nNjGWrtC7a1LEVRNBvcaPf",
+    "weight": 0.879,
+    "name": "chen\u4e0b\u73ed\u4e86",
+    "twitter": "chen_afterwork",
+    "winrate": 66.7,
+    "profit_7d": -1208,
+    "txs_1d": 0,
+    "sol_balance": 307.17,
+    "tags": [
+      "photon",
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 95,
+    "address": "BDR2wYZPervKaGtGbco2KRh4hSQ4wp3szW2rNTMS4Ne5",
+    "weight": 0.878,
+    "name": "",
+    "twitter": "",
+    "winrate": 40.4,
+    "profit_7d": 10540,
+    "txs_1d": 107,
+    "sol_balance": 80.43,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 96,
+    "address": "BieeZkdnBAgNYknzo3RH2vku7FcPkFZMZmRJANh2TpW",
+    "weight": 0.876,
+    "name": "",
+    "twitter": "",
+    "winrate": 37.2,
+    "profit_7d": -3572,
+    "txs_1d": 66,
+    "sol_balance": 5.92,
+    "tags": [
+      "pump_smart",
+      "app_smart_money",
+      "arbitrager",
+      "trojan",
+      "bluechip_owner",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 97,
+    "address": "9s6e4f2eYni3hURKfDkqfbPRCJwiXCGsSrjfoUiB9VoS",
+    "weight": 0.875,
+    "name": "",
+    "twitter": "",
+    "winrate": 35,
+    "profit_7d": 23648,
+    "txs_1d": 114,
+    "sol_balance": 59.06,
+    "tags": [
+      "smart_degen",
+      "padre",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 98,
+    "address": "AdKiZFt1EsGTApV7KuuSeqLRJdZwtD79TmQRg9mD1HZJ",
+    "weight": 0.874,
+    "name": "",
+    "twitter": "",
+    "winrate": 77.8,
+    "profit_7d": 628,
+    "txs_1d": 15,
+    "sol_balance": 0.03,
+    "tags": [
+      "smart_degen",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 99,
+    "address": "AcKpsk3AKJR8YiTrHr2XCFZ2WV8gcM3zjgcr4P1MjHD1",
+    "weight": 0.873,
+    "name": "Wukong",
+    "twitter": "wukong_bl",
+    "winrate": 37.6,
+    "profit_7d": 37661,
+    "txs_1d": 170,
+    "sol_balance": 10.05,
+    "tags": [
+      "app_smart_money",
+      "launchpad_smart",
+      "trojan",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 100,
+    "address": "GfXQesPe3Zuwg8JhAt6Cg8euJDTVx751enp9EQQmhzPH",
+    "weight": 0.871,
+    "name": "spuno",
+    "twitter": "spunosounds",
+    "winrate": 37,
+    "profit_7d": 23081,
+    "txs_1d": 198,
+    "sol_balance": 32.1,
+    "tags": [
+      "kol",
+      "photon",
+      "gmgn_go",
+      "gmgn",
+      "arbitrager",
+      "padre",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 101,
+    "address": "5wHBg65RsM9t2tu4Bqn8xUTwP9X1q1jgf67WDMXsTmT5",
+    "weight": 0.87,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.5,
+    "profit_7d": 142733,
+    "txs_1d": 426,
+    "sol_balance": 3.13,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 102,
+    "address": "32jWbRSfbH7pMbBhyfroxAAMFEEFE9ALYCHKD4rH4uEG",
+    "weight": 0.869,
+    "name": "",
+    "twitter": "",
+    "winrate": 53.9,
+    "profit_7d": 3876,
+    "txs_1d": 129,
+    "sol_balance": 11.4,
+    "tags": [
+      "gmgn",
+      "smart_degen",
+      "gmgn_go",
+      "trojan",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 103,
+    "address": "nya666pQkP3PzWxi7JngU3rRMHuc7zbLK8c8wxQ4qpT",
+    "weight": 0.867,
+    "name": "\u041a\u043e\u043f\u0430\u0442\u044b\u0447",
+    "twitter": "kopatych42069",
+    "winrate": 29.2,
+    "profit_7d": 12415,
+    "txs_1d": 3066,
+    "sol_balance": 1272.17,
+    "tags": [
+      "app_smart_money",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 104,
+    "address": "6S8GezkxYUfZy9JPtYnanbcZTMB87Wjt1qx3c6ELajKC",
+    "weight": 0.866,
+    "name": "nyhrox",
+    "twitter": "nyhrox",
+    "winrate": 33.9,
+    "profit_7d": -11114,
+    "txs_1d": 21,
+    "sol_balance": 525.89,
+    "tags": [
+      "photon",
+      "kol",
+      "smart_degen",
+      "axiom",
+      "arbitrager",
+      "padre",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 105,
+    "address": "GJA1HEbxGnqBhBifH9uQauzXSB53to5rhDrzmKxhSU65",
+    "weight": 0.865,
+    "name": "Latuche",
+    "twitter": "Latuche95",
+    "winrate": 40.1,
+    "profit_7d": 9356,
+    "txs_1d": 106,
+    "sol_balance": 69.17,
+    "tags": [
+      "kol",
+      "app_smart_money",
+      "photon",
+      "smart_degen",
+      "gmgn_go",
+      "gmgn",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 106,
+    "address": "CKcWAvvDYr2H3Wj3ACr5zRynrYRSzir2zE5bTf8wiUmT",
+    "weight": 0.863,
+    "name": "",
+    "twitter": "",
+    "winrate": 40.7,
+    "profit_7d": 6007,
+    "txs_1d": 597,
+    "sol_balance": 137.73,
+    "tags": [
+      "launchpad_smart",
+      "gmgn",
+      "gmgn_go",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 107,
+    "address": "GV3xVMBcrHoUaq9daSkff9byhq1eiHjbC5z6dbdTEUpA",
+    "weight": 0.862,
+    "name": "",
+    "twitter": "",
+    "winrate": 44.8,
+    "profit_7d": 6512,
+    "txs_1d": 326,
+    "sol_balance": 35.63,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 108,
+    "address": "FK5z4HVnGCLbMNATcAVm81551Ng6NZU6uRFezzMKdF3k",
+    "weight": 0.861,
+    "name": "",
+    "twitter": "",
+    "winrate": 37.1,
+    "profit_7d": 6033,
+    "txs_1d": 160,
+    "sol_balance": 318.66,
+    "tags": [
+      "launchpad_smart",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 109,
+    "address": "2dqe7VxbsajyPU1nVAJhgQYC2yGGEZLJJwW2yeNCq9rt",
+    "weight": 0.86,
+    "name": "",
+    "twitter": "",
+    "winrate": 39,
+    "profit_7d": 16295,
+    "txs_1d": 405,
+    "sol_balance": 23.44,
+    "tags": [
+      "bluechip_owner",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 110,
+    "address": "A2XqEiR18CMSk5CQwt6gsKwCnw1Xduyn4BDLnRmWZ18s",
+    "weight": 0.858,
+    "name": "",
+    "twitter": "",
+    "winrate": 30.3,
+    "profit_7d": 16958,
+    "txs_1d": 354,
+    "sol_balance": 218.11,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 111,
+    "address": "Dgehc8YMv6dHsiPJVoumvq4pSBkMVvrTgTUg7wdcYJPJ",
+    "weight": 0.857,
+    "name": "",
+    "twitter": "",
+    "winrate": 26.2,
+    "profit_7d": 21394,
+    "txs_1d": 348,
+    "sol_balance": 376.95,
+    "tags": [
+      "photon",
+      "arbitrager",
+      "padre",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 112,
+    "address": "CFkdHRybyzwFffHcjMAkzZmWBtxV5PjwofDNWge8tjG3",
+    "weight": 0.856,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.9,
+    "profit_7d": 8973,
+    "txs_1d": 99,
+    "sol_balance": 33.5,
+    "tags": [
+      "launchpad_smart",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 113,
+    "address": "DYAn4XpAkN5mhiXkRB7dGq4Jadnx6XYgu8L5b3WGhbrt",
+    "weight": 0.854,
+    "name": "Doc \ud83e\uddf2",
+    "twitter": "KayTheDoc",
+    "winrate": 39,
+    "profit_7d": 9835,
+    "txs_1d": 88,
+    "sol_balance": 59.55,
+    "tags": [
+      "trojan",
+      "kol",
+      "app_smart_money",
+      "smart_degen",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "padre",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 114,
+    "address": "2tVnqzRozPkkB8ar6UwaKK48nm1MNK616QN33ooA1i8A",
+    "weight": 0.853,
+    "name": "",
+    "twitter": "",
+    "winrate": 39,
+    "profit_7d": 16037,
+    "txs_1d": 144,
+    "sol_balance": 19.11,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 115,
+    "address": "Eshi7tLm2yKnuwiXgHPvY2bWc5L7sRtTMXYJciizbEM9",
+    "weight": 0.852,
+    "name": "",
+    "twitter": "",
+    "winrate": 49,
+    "profit_7d": 2576,
+    "txs_1d": 36,
+    "sol_balance": 49.73,
+    "tags": [
+      "gmgn",
+      "smart_degen",
+      "gmgn_go",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 116,
+    "address": "F1WT79Jkw3BkBDUfCbrKKo15ghZNCEjvnjxQpiCfPuRM",
+    "weight": 0.851,
+    "name": "flock (6'3)",
+    "twitter": "flocko",
+    "winrate": 80,
+    "profit_7d": 2491,
+    "txs_1d": 0,
+    "sol_balance": 149.14,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 117,
+    "address": "BeEN5iWBiEfJsNthuQnQKkKVWg9YkygcQHebNGoVUzik",
+    "weight": 0.849,
+    "name": "",
+    "twitter": "",
+    "winrate": 24.8,
+    "profit_7d": 24344,
+    "txs_1d": 362,
+    "sol_balance": 291.35,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 118,
+    "address": "5YRgrP3mjGzrzirYYN5HAQH19cTYREYwGxW6XRJQUzij",
+    "weight": 0.848,
+    "name": "",
+    "twitter": "",
+    "winrate": 18.7,
+    "profit_7d": 326033,
+    "txs_1d": 302,
+    "sol_balance": 82.29,
+    "tags": [
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "top_dev"
+    ]
+  },
+  {
+    "rank": 119,
+    "address": "7UBjMaYsE3tKcanfgGrtso6aHAMhVNSVHkkX5j3t7f5y",
+    "weight": 0.847,
+    "name": "",
+    "twitter": "",
+    "winrate": 43.8,
+    "profit_7d": 33333,
+    "txs_1d": 216,
+    "sol_balance": 0,
+    "tags": [
+      "arbitrager",
+      "top_followed",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 120,
+    "address": "C86oRMyUqzsXKXEAsCUbrhJuYuMbqXxE886s9MpUFF88",
+    "weight": 0.845,
+    "name": "",
+    "twitter": "",
+    "winrate": 69.6,
+    "profit_7d": 639,
+    "txs_1d": 136,
+    "sol_balance": 1.86,
+    "tags": [
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 121,
+    "address": "AupfaAvTz189QKFgqg7jRtw36xaNp6pcpvUqisJmWaXP",
+    "weight": 0.844,
+    "name": "",
+    "twitter": "",
+    "winrate": 39.5,
+    "profit_7d": 5134,
+    "txs_1d": 82,
+    "sol_balance": 113.32,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 122,
+    "address": "GVsqHmkysT4WGgNNXnRvA53eC6mqd433MMaMz1DtJQQT",
+    "weight": 0.843,
+    "name": "\u591c\u73ed\u68ee",
+    "twitter": "nightshift__sol",
+    "winrate": 66.7,
+    "profit_7d": 5898,
+    "txs_1d": 0,
+    "sol_balance": 75.66,
+    "tags": [
+      "photon",
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 123,
+    "address": "Aemby6yXpjA8CzFoq7cDbgPah5iuTgdnmLt8rFHBTUi8",
+    "weight": 0.841,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.5,
+    "profit_7d": 9142,
+    "txs_1d": 678,
+    "sol_balance": 215.67,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 124,
+    "address": "HZGy7Kwh5UvhnPjCSmkB4e8G6t8ZeREsWTFhhK7as39B",
+    "weight": 0.84,
+    "name": "",
+    "twitter": "",
+    "winrate": 57.9,
+    "profit_7d": 1317,
+    "txs_1d": 110,
+    "sol_balance": 11.25,
+    "tags": [
+      "padre",
+      "launchpad_smart"
+    ]
+  },
+  {
+    "rank": 125,
+    "address": "HyYNVYmnFmi87NsQqWzLJhUTPBKQUfgfhdbBa554nMFF",
+    "weight": 0.839,
+    "name": "",
+    "twitter": "",
+    "winrate": 50,
+    "profit_7d": -981,
+    "txs_1d": 0,
+    "sol_balance": 170.85,
+    "tags": [
+      "app_smart_money",
+      "photon",
+      "smart_degen",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 126,
+    "address": "4TS24wgLBMucbZt7zqhM3KakXwdNTT2ECxDXEpsn5AhZ",
+    "weight": 0.838,
+    "name": "",
+    "twitter": "",
+    "winrate": 36.7,
+    "profit_7d": 5474,
+    "txs_1d": 180,
+    "sol_balance": 172.01,
+    "tags": [
+      "bullx",
+      "smart_degen",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 127,
+    "address": "8n9tnbCAbnqHhotzibKEtzMpv1eeXCy9LyXKboZgUYB1",
+    "weight": 0.836,
+    "name": "",
+    "twitter": "",
+    "winrate": 50,
+    "profit_7d": 4391,
+    "txs_1d": 9,
+    "sol_balance": 40.2,
+    "tags": [
+      "smart_degen",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 128,
+    "address": "7tkPWE2cZ3uQncuiF9DzpAdR7YLSG2Q14M8cjZMCaAqr",
+    "weight": 0.835,
+    "name": "",
+    "twitter": "",
+    "winrate": 40.5,
+    "profit_7d": 8407,
+    "txs_1d": 98,
+    "sol_balance": 25.48,
+    "tags": [
+      "launchpad_smart",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 129,
+    "address": "2zvSYhoejqAdAsH52gmWHM1dm179yDmBGcFbFxatHf6x",
+    "weight": 0.834,
+    "name": "",
+    "twitter": "",
+    "winrate": 28.6,
+    "profit_7d": 18557,
+    "txs_1d": 353,
+    "sol_balance": 115.65,
+    "tags": [
+      "photon",
+      "launchpad_smart",
+      "arbitrager",
+      "padre",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 130,
+    "address": "Aeg9rNNqNPw6qQ2RgzBHvz25AF1fPqiVBKupd6YQNZmT",
+    "weight": 0.832,
+    "name": "",
+    "twitter": "",
+    "winrate": 43.3,
+    "profit_7d": 6510,
+    "txs_1d": 335,
+    "sol_balance": 17.27,
+    "tags": [
+      "launchpad_smart",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 131,
+    "address": "4A2GsbyNfQdqvf1Upz8GTXf6f3j5tcx8qko5yMbiFD8D",
+    "weight": 0.831,
+    "name": "",
+    "twitter": "",
+    "winrate": 37.5,
+    "profit_7d": 30994,
+    "txs_1d": 255,
+    "sol_balance": 2.53,
+    "tags": [
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 132,
+    "address": "ACTbvbNm5qTLuofNRPxFPMtHAAtdH1CtzhCZatYHy831",
+    "weight": 0.83,
+    "name": "",
+    "twitter": "",
+    "winrate": 21.2,
+    "profit_7d": 23485,
+    "txs_1d": 1826,
+    "sol_balance": 427.81,
+    "tags": [
+      "photon",
+      "arbitrager",
+      "top_followed",
+      "axiom",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 133,
+    "address": "77n6X7LtGy5AZprsvjZu1eaekJpxqLeVRZLPJZdBYyg9",
+    "weight": 0.828,
+    "name": "Rubi",
+    "twitter": "zRubizz",
+    "winrate": 39.6,
+    "profit_7d": 12373,
+    "txs_1d": 63,
+    "sol_balance": 10.86,
+    "tags": [
+      "smart_degen",
+      "trojan",
+      "gmgn_go",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 134,
+    "address": "HEBov96RdNZC7vrH9taLXwJ3b7MTHBemSee8nuvwDz3P",
+    "weight": 0.827,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.6,
+    "profit_7d": 15744,
+    "txs_1d": 127,
+    "sol_balance": 45.04,
+    "tags": [
+      "smart_degen",
+      "padre",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 135,
+    "address": "FRa5xvWrvgYBHEukozdhJPCJRuJZcTn2WKj2u6L75Rmj",
+    "weight": 0.826,
+    "name": "",
+    "twitter": "",
+    "winrate": 29.5,
+    "profit_7d": 10518,
+    "txs_1d": 43,
+    "sol_balance": 227.07,
+    "tags": [
+      "app_smart_money",
+      "padre",
+      "photon",
+      "gmgn",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 136,
+    "address": "9G7Vq23iCSq2GmY94exbpzckbS4UDSPt3nTn98b72bxM",
+    "weight": 0.825,
+    "name": "",
+    "twitter": "",
+    "winrate": 35.9,
+    "profit_7d": 6113,
+    "txs_1d": 91,
+    "sol_balance": 101.61,
+    "tags": [
+      "smart_degen",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 137,
+    "address": "5XQrQ9uAtHCAXzpNJvUEyrTkEYhndf8Zonk7uSN5MKHx",
+    "weight": 0.823,
+    "name": "notsofast",
+    "twitter": "notsofast",
+    "winrate": 100,
+    "profit_7d": 1677,
+    "txs_1d": 0,
+    "sol_balance": 0.04,
+    "tags": [
+      "kol"
+    ]
+  },
+  {
+    "rank": 138,
+    "address": "EB9rURAEFFHHvcuTig6R2jfaPMzWWwmRnzeoPnigGer",
+    "weight": 0.822,
+    "name": "",
+    "twitter": "",
+    "winrate": 38.5,
+    "profit_7d": 4721,
+    "txs_1d": 257,
+    "sol_balance": 75.06,
+    "tags": [
+      "bullx",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 139,
+    "address": "FMX8cSCPyFo4qTHTxuU1hYrWRXNU3NsTqxcL55jwR81f",
+    "weight": 0.821,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.2,
+    "profit_7d": 3267,
+    "txs_1d": 61,
+    "sol_balance": 74.04,
+    "tags": [
+      "smart_degen",
+      "gmgn",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 140,
+    "address": "DxM1hfY8FQ8dNGrucuJzhJcF8KRbjk8WBwrgKvQ9spPv",
+    "weight": 0.819,
+    "name": "RC",
+    "twitter": "ResellCalendar",
+    "winrate": 38.9,
+    "profit_7d": 25188,
+    "txs_1d": 18,
+    "sol_balance": 1.11,
+    "tags": [
+      "kol",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 141,
+    "address": "7fnq9wNj5WoMxasNcWNWS88peQjdWb1m5k8qS7grxGt2",
+    "weight": 0.818,
+    "name": "",
+    "twitter": "",
+    "winrate": 37.4,
+    "profit_7d": 6290,
+    "txs_1d": 95,
+    "sol_balance": 48.49,
+    "tags": [
+      "smart_degen",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 142,
+    "address": "4y96HLdkD6Bxt7YT8WwKBXoJ9R4sg4W6hjmLdR1ZuQXz",
+    "weight": 0.817,
+    "name": "Fear \ud83e\udd87",
+    "twitter": "FearSOLx",
+    "winrate": 28.9,
+    "profit_7d": 11977,
+    "txs_1d": 232,
+    "sol_balance": 123.03,
+    "tags": [
+      "gmgn",
+      "gmgn_go",
+      "arbitrager",
+      "top_followed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 143,
+    "address": "4nwfXw7n98jEQn93VWY7Cuf1jnn1scHXuXCPGVYS9k6T",
+    "weight": 0.815,
+    "name": "Frost",
+    "twitter": "FrostBallin",
+    "winrate": 34.9,
+    "profit_7d": 5362,
+    "txs_1d": 50,
+    "sol_balance": 126.74,
+    "tags": [
+      "pepeboost",
+      "app_smart_money",
+      "photon",
+      "launchpad_smart",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 144,
+    "address": "HACKERpKcBpUjEucqpMPHQ4AJgf4kvpaY1t2VKFfmJxY",
+    "weight": 0.814,
+    "name": "",
+    "twitter": "",
+    "winrate": 34.3,
+    "profit_7d": -541,
+    "txs_1d": 703,
+    "sol_balance": 4.07,
+    "tags": [
+      "smart_degen",
+      "trojan",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 145,
+    "address": "HiRJG1uaNcfBpZGVt3wnbFRinxsSGaMfaamx8wnPN7gX",
+    "weight": 0.813,
+    "name": "",
+    "twitter": "",
+    "winrate": 43.3,
+    "profit_7d": 3554,
+    "txs_1d": 107,
+    "sol_balance": 27.99,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 146,
+    "address": "CCUcjek5p6DLoH2YNtjizxYhAnStXAQAGVxhp1cYJF7w",
+    "weight": 0.811,
+    "name": "el charto",
+    "twitter": "elchartox",
+    "winrate": 50,
+    "profit_7d": 736,
+    "txs_1d": 55,
+    "sol_balance": 115.44,
+    "tags": [
+      "axiom",
+      "bullx",
+      "kol",
+      "smart_degen",
+      "padre",
+      "top_followed",
+      "top_renamed",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 147,
+    "address": "J1XAE4onKYG1kTghgaytnyFgR3otQs1xEnJRRWM3djSQ",
+    "weight": 0.81,
+    "name": "",
+    "twitter": "",
+    "winrate": 38.3,
+    "profit_7d": 3689,
+    "txs_1d": 92,
+    "sol_balance": 97.21,
+    "tags": [
+      "padre",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 148,
+    "address": "77XV9rBiwk6WAXjzTWiwtCQfmB6CXsw1j7Kp3G5xUyez",
+    "weight": 0.809,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.3,
+    "profit_7d": -6907,
+    "txs_1d": 125,
+    "sol_balance": 18.61,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "axiom",
+      "gmgn",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 149,
+    "address": "AeLaMjzxErZt4drbWVWvcxpVyo8p94xu5vrg41eZPFe3",
+    "weight": 0.808,
+    "name": "^1s1mple",
+    "twitter": "s1mple_s1mple",
+    "winrate": 44.4,
+    "profit_7d": 2171,
+    "txs_1d": 0,
+    "sol_balance": 47.85,
+    "tags": [
+      "kol",
+      "gmgn",
+      "gmgn_go",
+      "arbitrager",
+      "padre",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 150,
+    "address": "H5T9MYu8SA9PCrhXQ9sjTmPJHiBuuzYLwhn7MtyNPgfz",
+    "weight": 0.806,
+    "name": "",
+    "twitter": "",
+    "winrate": 37.4,
+    "profit_7d": 5097,
+    "txs_1d": 463,
+    "sol_balance": 54.43,
+    "tags": [
+      "trojan",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 151,
+    "address": "FRnCwxrExtHV3Q8dgNq9mm4Eb6S3aQZZiNQ8BBHBhMye",
+    "weight": 0.805,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.8,
+    "profit_7d": 7013,
+    "txs_1d": 108,
+    "sol_balance": 87.61,
+    "tags": [
+      "smart_degen",
+      "photon",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 152,
+    "address": "Di75xbVUg3u1qcmZci3NcZ8rjFMj7tsnYEoFdEMjS4ow",
+    "weight": 0.804,
+    "name": "N\u2019o",
+    "twitter": "Nosa1x",
+    "winrate": 36.4,
+    "profit_7d": 4234,
+    "txs_1d": 244,
+    "sol_balance": 85.2,
+    "tags": [
+      "gmgn_go",
+      "padre",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 153,
+    "address": "GZ1yiJKTq8Mc6RiY2WQrzph8wJcizSLGgyhr4RSgnuUo",
+    "weight": 0.802,
+    "name": "Nova",
+    "twitter": "badattrading_",
+    "winrate": 36.9,
+    "profit_7d": 8224,
+    "txs_1d": 230,
+    "sol_balance": 18.76,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "top_followed",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 154,
+    "address": "DsqRyTUh1R37asYcVf1KdX4CNnz5DKEFmnXvgT4NfTPE",
+    "weight": 0.801,
+    "name": "windy (dev arc)",
+    "twitter": "simplyclassic69",
+    "winrate": 36.1,
+    "profit_7d": 7067,
+    "txs_1d": 243,
+    "sol_balance": 32.31,
+    "tags": [
+      "bullx",
+      "launchpad_smart",
+      "gmgn_go",
+      "gmgn",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 155,
+    "address": "35ymPRRC1cPRt3XtwE46o79t734k8ZyCmXDbiibNd3M4",
+    "weight": 0.8,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.7,
+    "profit_7d": 3496,
+    "txs_1d": 57,
+    "sol_balance": 29.78,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "arbitrager",
+      "axiom",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 156,
+    "address": "Gmh3Wt423pU6GsS3FQyZjknifnAFW7g3J8HhbF2TrbZL",
+    "weight": 0.798,
+    "name": "",
+    "twitter": "",
+    "winrate": 47.7,
+    "profit_7d": 5904,
+    "txs_1d": 199,
+    "sol_balance": 1.03,
+    "tags": [
+      "arbitrager",
+      "photon",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 157,
+    "address": "86AEJExyjeNNgcp7GrAvCXTDicf5aGWgoERbXFiG1EdD",
+    "weight": 0.797,
+    "name": "",
+    "twitter": "",
+    "winrate": 28.4,
+    "profit_7d": 15857,
+    "txs_1d": 465,
+    "sol_balance": 41.98,
+    "tags": [
+      "pepeboost",
+      "photon",
+      "padre",
+      "gmgn_go",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 158,
+    "address": "67Nwfi9hgwqhxGoovT2JGLU67uxfomLwQAWncjXXzU6U",
+    "weight": 0.796,
+    "name": "Lake",
+    "twitter": "0xLake",
+    "winrate": 26.3,
+    "profit_7d": -5049,
+    "txs_1d": 44,
+    "sol_balance": 25.77,
+    "tags": [
+      "gmgn",
+      "kol",
+      "launchpad_smart",
+      "gmgn_go",
+      "padre",
+      "top_followed",
+      "top_renamed",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 159,
+    "address": "EjtQrPTbcMevStBkpnjsH23NfUCMhGHusTYsHuGVQZp2",
+    "weight": 0.795,
+    "name": "",
+    "twitter": "",
+    "winrate": 23.3,
+    "profit_7d": 11387,
+    "txs_1d": 125,
+    "sol_balance": 311.41,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 160,
+    "address": "99xnE2zEFi8YhmKDaikc1EvH6ELTQJppnqUwMzmpLXrs",
+    "weight": 0.793,
+    "name": "Coler",
+    "twitter": "ColerCooks",
+    "winrate": 31.3,
+    "profit_7d": 5937,
+    "txs_1d": 141,
+    "sol_balance": 141.97,
+    "tags": [
+      "gmgn",
+      "gmgn_go",
+      "padre",
+      "top_followed",
+      "axiom",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 161,
+    "address": "EYLStFNCmXNeMQhrZTsy4jtbqyaqvYjDx8xe5oqGvhAw",
+    "weight": 0.792,
+    "name": "",
+    "twitter": "",
+    "winrate": 35.2,
+    "profit_7d": 17343,
+    "txs_1d": 101,
+    "sol_balance": 4.86,
+    "tags": [
+      "trojan",
+      "smart_degen",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 162,
+    "address": "xyzfhxfy8NhfeNG3Um3WaUvFXzNuHkrhrZMD8dsStB6",
+    "weight": 0.791,
+    "name": "",
+    "twitter": "",
+    "winrate": 27.5,
+    "profit_7d": 6746,
+    "txs_1d": 939,
+    "sol_balance": 288.09,
+    "tags": [
+      "padre",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 163,
+    "address": "D8kKvpeGujoUifhumESFahjauzyddzYei8TKPNoYPzPa",
+    "weight": 0.789,
+    "name": "",
+    "twitter": "",
+    "winrate": 39.8,
+    "profit_7d": 11687,
+    "txs_1d": 105,
+    "sol_balance": 2.65,
+    "tags": [
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 164,
+    "address": "6ANGS6SSCxkv6hV3iymHHMESqDz7EFaecCwHA8qTswpr",
+    "weight": 0.788,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.4,
+    "profit_7d": 5915,
+    "txs_1d": 258,
+    "sol_balance": 97.39,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 165,
+    "address": "He5TP6oZo6ZZsXvS1R9NJJJ8BUAZ2Zc6rLsab4yiPkVR",
+    "weight": 0.787,
+    "name": "",
+    "twitter": "",
+    "winrate": 35.1,
+    "profit_7d": 5548,
+    "txs_1d": 275,
+    "sol_balance": 48.4,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 166,
+    "address": "HxEY1ULfsK9eWKvsFYWPdkxuWUAeSPsXPNPrvSGxFw7c",
+    "weight": 0.785,
+    "name": "",
+    "twitter": "",
+    "winrate": 100,
+    "profit_7d": 230,
+    "txs_1d": 1,
+    "sol_balance": 10.31,
+    "tags": [
+      "smart_degen",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 167,
+    "address": "5KWE4mhhfe8yQyXEydDZoDFdz9VJhteHB36d9RfTrJEJ",
+    "weight": 0.784,
+    "name": "",
+    "twitter": "",
+    "winrate": 46.8,
+    "profit_7d": 3895,
+    "txs_1d": 1461,
+    "sol_balance": 3.35,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 168,
+    "address": "3wERCwv3tht8ZtQurP2or8KGon6Q8nWXcBKxAuXcBS9G",
+    "weight": 0.783,
+    "name": "",
+    "twitter": "",
+    "winrate": 48.9,
+    "profit_7d": 1496,
+    "txs_1d": 20,
+    "sol_balance": 15.95,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 169,
+    "address": "2p2mgFLmzN82sShZeAaBGmj9zFpam4xu8g4g3wqx2ks6",
+    "weight": 0.782,
+    "name": "",
+    "twitter": "",
+    "winrate": 28.6,
+    "profit_7d": 4557,
+    "txs_1d": 158,
+    "sol_balance": 357.56,
+    "tags": [
+      "smart_degen",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 170,
+    "address": "Hsu75uJhEidV5Zkj21XBEYUBaFZmjb8Rd6qUpweWGbTo",
+    "weight": 0.78,
+    "name": "",
+    "twitter": "",
+    "winrate": 30.5,
+    "profit_7d": 13842,
+    "txs_1d": 176,
+    "sol_balance": 22.58,
+    "tags": [
+      "padre",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 171,
+    "address": "5t9xBNuDdGTGpjaPTx6hKd7sdRJbvtKS8Mhq6qVbo8Qz",
+    "weight": 0.779,
+    "name": "Smokez",
+    "twitter": "SmokezXBT",
+    "winrate": 33.8,
+    "profit_7d": -4975,
+    "txs_1d": 55,
+    "sol_balance": 0.55,
+    "tags": [
+      "trojan",
+      "kol",
+      "app_smart_money",
+      "axiom",
+      "photon",
+      "smart_degen",
+      "arbitrager",
+      "padre",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 172,
+    "address": "pwZpq97vcUqG5r79PMYJ2rPdJeVfuqdTaxmNvj5KYMR",
+    "weight": 0.778,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.5,
+    "profit_7d": 6890,
+    "txs_1d": 232,
+    "sol_balance": 51.94,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 173,
+    "address": "4AHgEkTsGqY77qtde4UJn9yZCrbGcM7UM3vjT3qM4G5H",
+    "weight": 0.776,
+    "name": "BagCalls \ud83c\udf92",
+    "twitter": "BagCalls",
+    "winrate": 23.8,
+    "profit_7d": -1269,
+    "txs_1d": 39,
+    "sol_balance": 222.16,
+    "tags": [
+      "axiom",
+      "bullx",
+      "kol",
+      "padre",
+      "arbitrager",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 174,
+    "address": "pTbCAyYsxKWf88fy13w8vZ2R9rChKtuJZa4pSLrxfGz",
+    "weight": 0.775,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.3,
+    "profit_7d": -81,
+    "txs_1d": 0,
+    "sol_balance": 23.08,
+    "tags": [
+      "launchpad_smart",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 175,
+    "address": "Eh3q5AXnopCFULMLGv6QeVqpZhRvPgkWHBMKqNGQvQTX",
+    "weight": 0.774,
+    "name": "",
+    "twitter": "",
+    "winrate": 40.1,
+    "profit_7d": 2475,
+    "txs_1d": 724,
+    "sol_balance": 45.63,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 176,
+    "address": "BJ3WPii1DLJ1GiSGiSP5jip7DDugwoQpqFP4tQTYBtZp",
+    "weight": 0.772,
+    "name": "",
+    "twitter": "",
+    "winrate": 34.6,
+    "profit_7d": 7698,
+    "txs_1d": 762,
+    "sol_balance": 18.33,
+    "tags": [
+      "photon",
+      "launchpad_smart",
+      "arbitrager",
+      "top_followed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 177,
+    "address": "DHDhS1jUa1PkJmkqNqAnAzYYfC4y2Xkc5TpKUWKGMaSe",
+    "weight": 0.771,
+    "name": "",
+    "twitter": "",
+    "winrate": 35.5,
+    "profit_7d": 6321,
+    "txs_1d": 115,
+    "sol_balance": 20.53,
+    "tags": [
+      "bullx",
+      "smart_degen",
+      "gmgn",
+      "trojan"
+    ]
+  },
+  {
+    "rank": 178,
+    "address": "9qcHMAe2TD1JXzztJrQdCCCcRoPM3CmGsZuP7zGJ3sdS",
+    "weight": 0.77,
+    "name": "",
+    "twitter": "",
+    "winrate": 21.3,
+    "profit_7d": 12021,
+    "txs_1d": 198,
+    "sol_balance": 243.02,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "padre",
+      "gmgn",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 179,
+    "address": "4LQuLeQYrAsqHtsJ3s15dT8A4Jpbr6iEKnK2DJAL7ZNo",
+    "weight": 0.769,
+    "name": "",
+    "twitter": "",
+    "winrate": 33,
+    "profit_7d": 7842,
+    "txs_1d": 698,
+    "sol_balance": 24.43,
+    "tags": [
+      "app_smart_money",
+      "launchpad_smart",
+      "smart_degen",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 180,
+    "address": "DuQabFqdC9eeBULVa7TTdZYxe8vK8ct5DZr4Xcf7docy",
+    "weight": 0.767,
+    "name": "orangie",
+    "twitter": "orangie",
+    "winrate": 40.2,
+    "profit_7d": 2828,
+    "txs_1d": 269,
+    "sol_balance": 27.7,
+    "tags": [
+      "kol",
+      "app_smart_money",
+      "padre",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 181,
+    "address": "DZAa55HwXgv5hStwaTEJGXZz1DhHejvpb7Yr762urXam",
+    "weight": 0.766,
+    "name": "ozark",
+    "twitter": "ohzarke",
+    "winrate": 30.9,
+    "profit_7d": 3370,
+    "txs_1d": 166,
+    "sol_balance": 209.75,
+    "tags": [
+      "bullx",
+      "kol",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 182,
+    "address": "GNrmKZCxYyNiSUsjduwwPJzhed3LATjciiKVuSGrsHEC",
+    "weight": 0.765,
+    "name": "Giann",
+    "twitter": "Giann2K",
+    "winrate": 23.1,
+    "profit_7d": 9911,
+    "txs_1d": 166,
+    "sol_balance": 169.78,
+    "tags": [
+      "gmgn",
+      "launchpad_smart",
+      "smart_degen",
+      "padre",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 183,
+    "address": "2X9M7fJ8nX7ogUw4R2mXndWMMqENe456fKgg25CeKkhJ",
+    "weight": 0.763,
+    "name": "ClauseLab",
+    "twitter": "clauselab_ai",
+    "winrate": 28.6,
+    "profit_7d": 9756,
+    "txs_1d": 4,
+    "sol_balance": 97.03,
+    "tags": [
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 184,
+    "address": "9W69DaLY58ZmLDBuqxVPKRhEWBPD61QQgQ4qH8m6qAJD",
+    "weight": 0.762,
+    "name": "Xelf",
+    "twitter": "ImmortalXelf",
+    "winrate": 51.4,
+    "profit_7d": 1308,
+    "txs_1d": 19,
+    "sol_balance": 4.12,
+    "tags": [
+      "gmgn",
+      "kol",
+      "gmgn_go",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 185,
+    "address": "2JptG7VJTuohCNrEE2iVT43UtjTNqRTVMsgNs8xeotbC",
+    "weight": 0.761,
+    "name": "",
+    "twitter": "",
+    "winrate": 38.4,
+    "profit_7d": 15260,
+    "txs_1d": 506,
+    "sol_balance": 0.11,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "arbitrager",
+      "padre",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 186,
+    "address": "9n3SRU1zgHV3ZSvZc5igYDLivwM7RyRAZarctU8vaM9j",
+    "weight": 0.76,
+    "name": "Mondoggg",
+    "twitter": "mondoggg",
+    "winrate": 100,
+    "profit_7d": -12,
+    "txs_1d": 0,
+    "sol_balance": 0.04,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 187,
+    "address": "B7cRRKmjDt5KkFKfhD3NicgwywvkicgHvqVySU4LN4od",
+    "weight": 0.758,
+    "name": "",
+    "twitter": "",
+    "winrate": 20.4,
+    "profit_7d": 15493,
+    "txs_1d": 282,
+    "sol_balance": 111.49,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "arbitrager",
+      "fomo",
+      "gmgn",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 188,
+    "address": "AyGA2dRZ4NE7Wi6ZvFphiJBJJVehRFovRtWidH3Y51BN",
+    "weight": 0.757,
+    "name": "",
+    "twitter": "",
+    "winrate": 24.5,
+    "profit_7d": 22851,
+    "txs_1d": 137,
+    "sol_balance": 15.99,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 189,
+    "address": "4FKdCMRVErM4vLXPm4TEEYcunSVC3vDqRWtiveFQ99uH",
+    "weight": 0.756,
+    "name": "",
+    "twitter": "",
+    "winrate": 36.4,
+    "profit_7d": 3823,
+    "txs_1d": 765,
+    "sol_balance": 25.63,
+    "tags": [
+      "photon",
+      "smart_degen",
+      "gmgn",
+      "axiom",
+      "gmgn_go",
+      "arbitrager",
+      "padre",
+      "trojan"
+    ]
+  },
+  {
+    "rank": 190,
+    "address": "8hKS83ezrd7pVDZfWYqpDEUsC52MH4u7MjUV9FU8Zjxb",
+    "weight": 0.754,
+    "name": "",
+    "twitter": "",
+    "winrate": 50,
+    "profit_7d": -613,
+    "txs_1d": 66,
+    "sol_balance": 7.17,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 191,
+    "address": "BF6GFz4xJHXzvPXMzawRQ9DK1CgXhnXNeqiC9jTnfPKx",
+    "weight": 0.753,
+    "name": "",
+    "twitter": "",
+    "winrate": 39.7,
+    "profit_7d": 2611,
+    "txs_1d": 276,
+    "sol_balance": 21.56,
+    "tags": [
+      "bullx",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 192,
+    "address": "DS22w2we1qvcPtAKJhBCBf7aLdC4cqcrNtgSZLroeFv9",
+    "weight": 0.752,
+    "name": "",
+    "twitter": "",
+    "winrate": 40.7,
+    "profit_7d": 3578,
+    "txs_1d": 2,
+    "sol_balance": 8.2,
+    "tags": [
+      "padre",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 193,
+    "address": "5BzBjwiKz7tBn5sYA7KzqvwqCjYWdQKdFSirqFhNYJ3Q",
+    "weight": 0.75,
+    "name": "",
+    "twitter": "",
+    "winrate": 27.4,
+    "profit_7d": 6689,
+    "txs_1d": 130,
+    "sol_balance": 84.49,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 194,
+    "address": "5kidNviTucvoHuFGuPQUikWokMxsLZMncGrS5gK9Cujs",
+    "weight": 0.749,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.6,
+    "profit_7d": 3880,
+    "txs_1d": 380,
+    "sol_balance": 61.48,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 195,
+    "address": "BTAyNAFhBJY38ZXp6yvNJGP4V6SqxJzpcXUQkXhwW5zP",
+    "weight": 0.748,
+    "name": "",
+    "twitter": "",
+    "winrate": 28.6,
+    "profit_7d": 3513,
+    "txs_1d": 39,
+    "sol_balance": 219.22,
+    "tags": [
+      "photon",
+      "smart_degen",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 196,
+    "address": "5SWEzzxJDDzvWGe3PF83PLA2WpNWFeAXWW3ezkT2tPue",
+    "weight": 0.746,
+    "name": "",
+    "twitter": "",
+    "winrate": 48.3,
+    "profit_7d": 1235,
+    "txs_1d": 0,
+    "sol_balance": 8.74,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 197,
+    "address": "J898BLdjUWFPsvqwraj1rjg33rE9B6zJY6HvWFKx71fo",
+    "weight": 0.745,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.2,
+    "profit_7d": 4013,
+    "txs_1d": 183,
+    "sol_balance": 56.96,
+    "tags": [
+      "bullx",
+      "trojan",
+      "app_smart_money",
+      "smart_degen",
+      "padre",
+      "arbitrager",
+      "gmgn",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 198,
+    "address": "GnBbV25vuKvW8z8gGyutt1JxLYnDBPnNAuWEbcAhvS84",
+    "weight": 0.744,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.3,
+    "profit_7d": 2957,
+    "txs_1d": 185,
+    "sol_balance": 102.62,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 199,
+    "address": "FhsbQzAJWVDNwaH61cTo6XkkfEsmSYMZKs9VJHH32bVG",
+    "weight": 0.743,
+    "name": "",
+    "twitter": "",
+    "winrate": 45.7,
+    "profit_7d": 5048,
+    "txs_1d": 73,
+    "sol_balance": 0,
+    "tags": [
+      "top_followed",
+      "top_renamed",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 200,
+    "address": "BtMBMPkoNbnLF9Xn552guQq528KKXcsNBNNBre3oaQtr",
+    "weight": 0.741,
+    "name": "letterbomb",
+    "twitter": "gardenersbed",
+    "winrate": 24.3,
+    "profit_7d": 45603,
+    "txs_1d": 375,
+    "sol_balance": 2.47,
+    "tags": [
+      "trojan",
+      "kol",
+      "app_smart_money",
+      "photon",
+      "arbitrager",
+      "gmgn_go",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 201,
+    "address": "9PLz3xVWBvr6frWQetsjtCftTgNpk1xwL6BAEf8endQm",
+    "weight": 0.74,
+    "name": "",
+    "twitter": "",
+    "winrate": 25.7,
+    "profit_7d": 3510,
+    "txs_1d": 135,
+    "sol_balance": 393.57,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "top_followed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 202,
+    "address": "GBERKNpahPnBGmeUGWQVjGBDBj6CcJKpGz34FqegmTgu",
+    "weight": 0.739,
+    "name": "mircs",
+    "twitter": "mircs",
+    "winrate": 31.3,
+    "profit_7d": 10755,
+    "txs_1d": 56,
+    "sol_balance": 8.35,
+    "tags": [
+      "bullx",
+      "kol",
+      "trojan",
+      "axiom",
+      "gmgn",
+      "gmgn_go",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 203,
+    "address": "GZVSEAajExLJEvACHHQcujBw7nJq98GWUEZtood9LM9b",
+    "weight": 0.737,
+    "name": "",
+    "twitter": "",
+    "winrate": 22.8,
+    "profit_7d": 4654,
+    "txs_1d": 250,
+    "sol_balance": 415.35,
+    "tags": [
+      "bullx",
+      "launchpad_smart",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 204,
+    "address": "HbYd46DFHe7vLRGKW122XDPiUzcxLw4g8hPUtwfCNpV2",
+    "weight": 0.736,
+    "name": "",
+    "twitter": "",
+    "winrate": 36.2,
+    "profit_7d": 2620,
+    "txs_1d": 6,
+    "sol_balance": 37.57,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 205,
+    "address": "7gdo83WqcXvown8aHUrgma716BEwGdjRA9CtdUThBy5U",
+    "weight": 0.735,
+    "name": "",
+    "twitter": "",
+    "winrate": 38.2,
+    "profit_7d": 4344,
+    "txs_1d": 423,
+    "sol_balance": 7.08,
+    "tags": [
+      "padre",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 206,
+    "address": "2T7W5XtariS53AbHY42u8CZzAyrzvNzGpeWcHsARNGkx",
+    "weight": 0.734,
+    "name": "",
+    "twitter": "",
+    "winrate": 38.4,
+    "profit_7d": 2541,
+    "txs_1d": 87,
+    "sol_balance": 20.54,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 207,
+    "address": "BCnqsPEtA1TkgednYEebRpkmwFRJDCjMQcKZMMtEdArc",
+    "weight": 0.732,
+    "name": "kreo",
+    "twitter": "kreo444",
+    "winrate": 18.9,
+    "profit_7d": -2435,
+    "txs_1d": 15,
+    "sol_balance": 92.34,
+    "tags": [
+      "photon",
+      "kol",
+      "launchpad_smart",
+      "padre",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 208,
+    "address": "FG8JjLyvhfuB7eFQPL7Dc4MzfTpeXx4fPm3YGQRGeG9K",
+    "weight": 0.731,
+    "name": "",
+    "twitter": "",
+    "winrate": 28.4,
+    "profit_7d": 4987,
+    "txs_1d": 235,
+    "sol_balance": 76.75,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 209,
+    "address": "CzeYKKJJNakBSqPP4i9AQ5GvmFZvTmkWwwfUj1zVYtYV",
+    "weight": 0.73,
+    "name": "",
+    "twitter": "",
+    "winrate": 48.6,
+    "profit_7d": 915,
+    "txs_1d": 29,
+    "sol_balance": 9.6,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 210,
+    "address": "7j7AA3HZR2zEjwAQEKPFh2qucLY4fqZpB9iodf39w8xW",
+    "weight": 0.728,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.3,
+    "profit_7d": 4775,
+    "txs_1d": 254,
+    "sol_balance": 17.72,
+    "tags": [
+      "kol",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 211,
+    "address": "8zztAqrxCtxbKW2Cy7MgmGrrCpGotsp1Ar1pFTuhVE7w",
+    "weight": 0.727,
+    "name": "",
+    "twitter": "",
+    "winrate": 52.5,
+    "profit_7d": 974,
+    "txs_1d": 230,
+    "sol_balance": 1.77,
+    "tags": [
+      "smart_degen",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 212,
+    "address": "3QXGszKsHsPcAToqPKcoyKng4Fknn2f8PRkHA689pBkb",
+    "weight": 0.726,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.7,
+    "profit_7d": -1404,
+    "txs_1d": 42,
+    "sol_balance": 1.92,
+    "tags": [
+      "axiom",
+      "smart_degen",
+      "padre",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 213,
+    "address": "9bPSz9QGH62BD8YQarZEnfCmNk6kXGMoGgTxFVxcYZfU",
+    "weight": 0.724,
+    "name": "",
+    "twitter": "",
+    "winrate": 34.6,
+    "profit_7d": 2627,
+    "txs_1d": 6,
+    "sol_balance": 37.95,
+    "tags": [
+      "launchpad_smart",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 214,
+    "address": "GKjgm63HQqUQjL12DQdcS6Dh9matC1CnG23Y4gyYuWyR",
+    "weight": 0.723,
+    "name": "",
+    "twitter": "",
+    "winrate": 31.3,
+    "profit_7d": 2689,
+    "txs_1d": 184,
+    "sol_balance": 77.25,
+    "tags": [
+      "smart_degen",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 215,
+    "address": "4pk3EMPrhwUsQeU9T2AXY1oYSFW6FmKLcHBcqiLtGdsV",
+    "weight": 0.722,
+    "name": "",
+    "twitter": "",
+    "winrate": 44.9,
+    "profit_7d": 704,
+    "txs_1d": 35,
+    "sol_balance": 30.12,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "padre",
+      "gmgn",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 216,
+    "address": "4vUSqvRtjGcZXqdJta28XrCdyyLM1CYzQufF2wK5eU2d",
+    "weight": 0.72,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.3,
+    "profit_7d": -544,
+    "txs_1d": 0,
+    "sol_balance": 86.27,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 217,
+    "address": "9onwB5w4Rzug88e3msoeiuVP9KwZnBCL3hcNC69nbLWU",
+    "weight": 0.719,
+    "name": "",
+    "twitter": "",
+    "winrate": 50,
+    "profit_7d": 1753,
+    "txs_1d": 31,
+    "sol_balance": 0.2,
+    "tags": [
+      "smart_degen",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 218,
+    "address": "77Uy6sLLggDg9ZB7Yu7xbtCShVTVvJsVNrPdyQFjLVD5",
+    "weight": 0.718,
+    "name": "",
+    "twitter": "",
+    "winrate": 45.2,
+    "profit_7d": 974,
+    "txs_1d": 30,
+    "sol_balance": 12.3,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 219,
+    "address": "3V3WRUCxTc8EBLY7PLvhzsJUVuzYNFMfvfSZpQLfvWov",
+    "weight": 0.717,
+    "name": "",
+    "twitter": "",
+    "winrate": 27.4,
+    "profit_7d": 3458,
+    "txs_1d": 372,
+    "sol_balance": 97.25,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 220,
+    "address": "2THw1KnYQLCm9HqWx4j9nXSXsyC57VboGz9ft2zCYCHH",
+    "weight": 0.715,
+    "name": "\u2b50\ufe0f",
+    "twitter": "solvenant",
+    "winrate": 100,
+    "profit_7d": 87,
+    "txs_1d": 6,
+    "sol_balance": 0,
+    "tags": [
+      "gmgn",
+      "bullx",
+      "trojan",
+      "photon",
+      "kol",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 221,
+    "address": "HLd36zMuxj3Mh2iKtChYnuj8wU4eCU4RexFxhBfHNMDN",
+    "weight": 0.714,
+    "name": "",
+    "twitter": "",
+    "winrate": 28.8,
+    "profit_7d": 7577,
+    "txs_1d": 0,
+    "sol_balance": 11.28,
+    "tags": [
+      "photon",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 222,
+    "address": "J4ACdkc5oLpoXwWtsuKX6q5KRRS4fJHK9sfmwRyfKW3W",
+    "weight": 0.713,
+    "name": "\u2b50\ufe0f",
+    "twitter": "solvenant",
+    "winrate": 100,
+    "profit_7d": 80,
+    "txs_1d": 6,
+    "sol_balance": 0,
+    "tags": [
+      "bullx",
+      "kol",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 223,
+    "address": "EA4MXkyF8C2NzY8fw2acJPuarmoU271KRCCAYpLzMBJr",
+    "weight": 0.711,
+    "name": "Grimace",
+    "twitter": "naughtygrimace",
+    "winrate": 40.2,
+    "profit_7d": 1240,
+    "txs_1d": 0,
+    "sol_balance": 19.54,
+    "tags": [
+      "kol",
+      "launchpad_smart",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 224,
+    "address": "BAFMNmiNvfg5JwiKQjDSF4agRkC1PwTcBtcJqiMkETD3",
+    "weight": 0.71,
+    "name": "",
+    "twitter": "",
+    "winrate": 29.3,
+    "profit_7d": 5216,
+    "txs_1d": 84,
+    "sol_balance": 18.35,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 225,
+    "address": "Ci4qecoTMPkkhXSr7Ttw8tp4sF5i8BhQtKKE26vDR8RZ",
+    "weight": 0.709,
+    "name": "",
+    "twitter": "",
+    "winrate": 26,
+    "profit_7d": 4384,
+    "txs_1d": 202,
+    "sol_balance": 62.44,
+    "tags": [
+      "padre",
+      "smart_degen",
+      "top_followed",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 226,
+    "address": "DPGcsm6NwPMFK6VLaYcoTEWpCnEZrekiFn4LoRHf67Qo",
+    "weight": 0.708,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.6,
+    "profit_7d": 9610,
+    "txs_1d": 12,
+    "sol_balance": 0.71,
+    "tags": [
+      "bullx",
+      "smart_degen",
+      "gmgn_go",
+      "arbitrager",
+      "trojan",
+      "gmgn",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 227,
+    "address": "XXXXXahGswEH6i3Czn19XbGxQrobJoY1TYJegPxp3ex",
+    "weight": 0.706,
+    "name": "",
+    "twitter": "",
+    "winrate": 19,
+    "profit_7d": 5463,
+    "txs_1d": 97,
+    "sol_balance": 224.24,
+    "tags": [
+      "app_smart_money",
+      "gmgn_go",
+      "padre",
+      "gmgn",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 228,
+    "address": "LuitxRGMJErT1N5JDArXVuxtsomBUsLZHf9Yf1TVBBn",
+    "weight": 0.705,
+    "name": "",
+    "twitter": "",
+    "winrate": 22.2,
+    "profit_7d": 4998,
+    "txs_1d": 4,
+    "sol_balance": 115.65,
+    "tags": [
+      "arbitrager",
+      "axiom",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 229,
+    "address": "foKYfEAunXfe8eZCp9gXqey6afmfDdfTxsFMGQFBxeb",
+    "weight": 0.704,
+    "name": "",
+    "twitter": "",
+    "winrate": 40.9,
+    "profit_7d": 653,
+    "txs_1d": 86,
+    "sol_balance": 46.55,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 230,
+    "address": "9St6ETbe3CFitw6UNSd8kg7kZ6STXy71wEGiERqQj89U",
+    "weight": 0.702,
+    "name": "Trench Guerilla \ud83d\udc02\ud83c\udc04\ufe0f",
+    "twitter": "trenchguerilla",
+    "winrate": 31.9,
+    "profit_7d": 6422,
+    "txs_1d": 81,
+    "sol_balance": 4.14,
+    "tags": [
+      "kol",
+      "gmgn_go",
+      "padre",
+      "axiom",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 231,
+    "address": "7iPPqPyrqcmfenRs4xZ72ab4pyuUofXB5YaQB83WJmT9",
+    "weight": 0.701,
+    "name": "Wood",
+    "twitter": "notanicecat69",
+    "winrate": 27.3,
+    "profit_7d": 48137,
+    "txs_1d": 9,
+    "sol_balance": 0.02,
+    "tags": [
+      "kol",
+      "arbitrager",
+      "top_followed",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 232,
+    "address": "9kXD8iMVpTy44kqBBzMKHuQ66VFdkf21xZNJGYLkq4FV",
+    "weight": 0.7,
+    "name": "",
+    "twitter": "",
+    "winrate": 29.5,
+    "profit_7d": -1768,
+    "txs_1d": 385,
+    "sol_balance": 145.28,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "padre",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 233,
+    "address": "GsuchvzRPSiSFSvx2QUEzkxVhGemppuZaTzkhcjxiv8L",
+    "weight": 0.698,
+    "name": "",
+    "twitter": "",
+    "winrate": 39.8,
+    "profit_7d": 3098,
+    "txs_1d": 186,
+    "sol_balance": 1.53,
+    "tags": [
+      "smart_degen",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 234,
+    "address": "BopgSXVHNqks8GNMp5UJ3g54mKP1Wgfs8j6DcRNSCoBb",
+    "weight": 0.697,
+    "name": "",
+    "twitter": "",
+    "winrate": 34.8,
+    "profit_7d": 1797,
+    "txs_1d": 248,
+    "sol_balance": 23.39,
+    "tags": [
+      "photon",
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 235,
+    "address": "4N4mW6oEarkJSR52TwgTQVRjpkUM7tkf2qrNnkE1uaHm",
+    "weight": 0.696,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.8,
+    "profit_7d": 2651,
+    "txs_1d": 248,
+    "sol_balance": 15.59,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 236,
+    "address": "8auBVoCFGe8SetWGZABiXAR91xNZ7kMqJLPvtvZe8aSq",
+    "weight": 0.695,
+    "name": "",
+    "twitter": "",
+    "winrate": 29.7,
+    "profit_7d": 3548,
+    "txs_1d": 138,
+    "sol_balance": 18.99,
+    "tags": [
+      "smart_degen",
+      "gmgn",
+      "padre"
+    ]
+  },
+  {
+    "rank": 237,
+    "address": "78qpVLBrsFAYz6BtoXbGTpeaPUrSH54wNbhvYEH8gUuy",
+    "weight": 0.693,
+    "name": "",
+    "twitter": "",
+    "winrate": 37.5,
+    "profit_7d": 1302,
+    "txs_1d": 64,
+    "sol_balance": 17.46,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 238,
+    "address": "AyVr86YXLg5ZC2JgLjPQYWvxjr74sC7CBGMznoStNzao",
+    "weight": 0.692,
+    "name": "",
+    "twitter": "",
+    "winrate": 31.9,
+    "profit_7d": 1704,
+    "txs_1d": 92,
+    "sol_balance": 41.96,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 239,
+    "address": "B1zkhdN6aU1aQAHqktevuWBXU7RhnJgmwFDyhCtgNPX5",
+    "weight": 0.691,
+    "name": "",
+    "twitter": "",
+    "winrate": 30.7,
+    "profit_7d": -2809,
+    "txs_1d": 383,
+    "sol_balance": 165.68,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "padre",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 240,
+    "address": "99oJjUUjXMuE8yPAuaXsJumDKPsts2TE6CYPZV5tj1es",
+    "weight": 0.689,
+    "name": "",
+    "twitter": "",
+    "winrate": 31.1,
+    "profit_7d": 2697,
+    "txs_1d": 11,
+    "sol_balance": 16.05,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 241,
+    "address": "8FjipgAr2qxD7hVVkidEmTodNa1pCv1eMEFHk7TbJmED",
+    "weight": 0.688,
+    "name": "",
+    "twitter": "",
+    "winrate": 36,
+    "profit_7d": 5372,
+    "txs_1d": 2,
+    "sol_balance": 0.18,
+    "tags": [
+      "launchpad_smart",
+      "padre",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 242,
+    "address": "BMEEwRvbzEoTm455UfFmhb4PGpRvTQFiWv1Xx5DCRsKX",
+    "weight": 0.687,
+    "name": "BTC_Canary",
+    "twitter": "btc_Canary",
+    "winrate": 44,
+    "profit_7d": 1005,
+    "txs_1d": 92,
+    "sol_balance": 2.56,
+    "tags": [
+      "kol"
+    ]
+  },
+  {
+    "rank": 243,
+    "address": "8U3rggHbZK1VtFMA55JDyhPPy66eF8UZAQtENCo2Ur57",
+    "weight": 0.685,
+    "name": "",
+    "twitter": "",
+    "winrate": 34.5,
+    "profit_7d": 1940,
+    "txs_1d": 293,
+    "sol_balance": 9.63,
+    "tags": [
+      "launchpad_smart",
+      "gmgn_go",
+      "arbitrager",
+      "padre",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 244,
+    "address": "8dwubKnL4FmmZsFt9cobpneFWH5azwRqDvciT2vsuQxS",
+    "weight": 0.684,
+    "name": "",
+    "twitter": "",
+    "winrate": 36.9,
+    "profit_7d": 4112,
+    "txs_1d": 2,
+    "sol_balance": 0.18,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "padre",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 245,
+    "address": "Bf4zji6S979QySiGNjPJ2VMZ5i2SRVtAzfx8QUBScJm6",
+    "weight": 0.683,
+    "name": "",
+    "twitter": "",
+    "winrate": 16.7,
+    "profit_7d": 8184,
+    "txs_1d": 54,
+    "sol_balance": 60.35,
+    "tags": [
+      "fomo",
+      "axiom",
+      "padre",
+      "top_followed",
+      "top_renamed",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 246,
+    "address": "5x8tfrJSn4Pt5gjQEMWDnoLvAzZ8rgJVTXiTpcwhbxmN",
+    "weight": 0.681,
+    "name": "Tahi",
+    "twitter": "Tahifn",
+    "winrate": 36.1,
+    "profit_7d": 4905,
+    "txs_1d": 0,
+    "sol_balance": 0.01,
+    "tags": [
+      "photon",
+      "kol",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 247,
+    "address": "5yzVtM9eYzgRwQ3HkaJXpGqduhBv9c9VEq8JyUEDxjDh",
+    "weight": 0.68,
+    "name": "",
+    "twitter": "",
+    "winrate": 24.1,
+    "profit_7d": 2970,
+    "txs_1d": 168,
+    "sol_balance": 60.45,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 248,
+    "address": "EDXHdSFdadFbYFFjxPXBqMe1kCEDFqpPu552uvp48HR8",
+    "weight": 0.679,
+    "name": "Clown",
+    "twitter": "ClownsTrenches",
+    "winrate": 17.2,
+    "profit_7d": 9988,
+    "txs_1d": 951,
+    "sol_balance": 28.16,
+    "tags": [
+      "launchpad_smart",
+      "gmgn_go",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "padre",
+      "gmgn",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 249,
+    "address": "VVV4C8wbLVU5Yw2JmdF7SPmoG2ubmJmmcjzHAJcdHgH",
+    "weight": 0.678,
+    "name": "Cupsey",
+    "twitter": "CupseyV",
+    "winrate": 40.3,
+    "profit_7d": 1051,
+    "txs_1d": 168,
+    "sol_balance": 5.02,
+    "tags": [
+      "kol",
+      "smart_degen",
+      "top_followed",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 250,
+    "address": "icex9CXxQHVdVTyLaFzM972zeHESgKmaS8jsJfA8HhA",
+    "weight": 0.676,
+    "name": "",
+    "twitter": "",
+    "winrate": 28.8,
+    "profit_7d": 4002,
+    "txs_1d": 217,
+    "sol_balance": 7.35,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "gmgn_go",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 251,
+    "address": "AUqecMFs5jxCv5mnMsBE6zgEA5rXcZqsWJ8pDMq9Cyp9",
+    "weight": 0.675,
+    "name": "",
+    "twitter": "",
+    "winrate": 42.3,
+    "profit_7d": 621,
+    "txs_1d": 6,
+    "sol_balance": 8.14,
+    "tags": [
+      "launchpad_smart",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 252,
+    "address": "kiLogfWUXp7nby7Xi6R9t7u8ERQyRdAzg6wBjvuE49u",
+    "weight": 0.674,
+    "name": "kilo",
+    "twitter": "kilorippy",
+    "winrate": 29.5,
+    "profit_7d": 2920,
+    "txs_1d": 393,
+    "sol_balance": 10.88,
+    "tags": [
+      "kol",
+      "axiom",
+      "arbitrager",
+      "top_followed",
+      "padre"
+    ]
+  },
+  {
+    "rank": 253,
+    "address": "EHXRqrpttvDLXxsgvav5mHQ8RX7pcUZd2nCzystxmYGe",
+    "weight": 0.672,
+    "name": "",
+    "twitter": "",
+    "winrate": 41.2,
+    "profit_7d": 8192,
+    "txs_1d": 2,
+    "sol_balance": 8.18,
+    "tags": [
+      "axiom",
+      "top_renamed",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 254,
+    "address": "A73unoJqKuLqfJCHqjvS7SccneuzY8FoXq47x2UwoCKe",
+    "weight": 0.671,
+    "name": "Louz",
+    "twitter": "louz514",
+    "winrate": 21.4,
+    "profit_7d": 45569,
+    "txs_1d": 6,
+    "sol_balance": 8.3,
+    "tags": [
+      "bullx",
+      "photon",
+      "kol",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 255,
+    "address": "82FGz8pkSNcWqNioVgFTC4vVseRJWDhdqjysjXfwR6m1",
+    "weight": 0.67,
+    "name": "",
+    "twitter": "",
+    "winrate": 40.5,
+    "profit_7d": 896,
+    "txs_1d": 155,
+    "sol_balance": 5.55,
+    "tags": [
+      "smart_degen",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 256,
+    "address": "7QESuFHmaHPJEEvUcGbeQos4YLoaazhJPrPr4kejAd1S",
+    "weight": 0.668,
+    "name": "",
+    "twitter": "",
+    "winrate": 36.1,
+    "profit_7d": 513,
+    "txs_1d": 61,
+    "sol_balance": 49.36,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 257,
+    "address": "Gf9XgdmvNHt8fUTFsWAccNbKeyDXsgJyZN8iFJKg5Pbd",
+    "weight": 0.667,
+    "name": "0x\u1d1c\u1d07zh\u1d00ng|985.eth",
+    "twitter": "Unipioneer",
+    "winrate": 45.5,
+    "profit_7d": -49,
+    "txs_1d": 15,
+    "sol_balance": 12.25,
+    "tags": [
+      "kol",
+      "app_smart_money",
+      "gmgn_go",
+      "top_followed",
+      "top_renamed",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 258,
+    "address": "64ymeD9XTAkNJgHtXgrG6JCNZmBC9fSVcmgkL54pFikE",
+    "weight": 0.666,
+    "name": "Phineas",
+    "twitter": "Phineas_Sol",
+    "winrate": 36.5,
+    "profit_7d": 920,
+    "txs_1d": 26,
+    "sol_balance": 10.15,
+    "tags": [
+      "kol",
+      "launchpad_smart",
+      "axiom",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 259,
+    "address": "CEUA7zVoDRqRYoeHTP58UHU6TR8yvtVbeLrX1dppqoXJ",
+    "weight": 0.665,
+    "name": "Tom",
+    "twitter": "tdmilky",
+    "winrate": 7.2,
+    "profit_7d": 9391,
+    "txs_1d": 157,
+    "sol_balance": 234.69,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "gmgn",
+      "gmgn_go",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 260,
+    "address": "5sPSxYJP4Zm4ZjSG46JKE7257se4P6HbUricApTA7tS7",
+    "weight": 0.663,
+    "name": "",
+    "twitter": "",
+    "winrate": 35.9,
+    "profit_7d": 1454,
+    "txs_1d": 112,
+    "sol_balance": 4.05,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 261,
+    "address": "4XMPyWFsYdNcCN4FG8geyytyTeUNacn4QundBzMqbGGT",
+    "weight": 0.662,
+    "name": "",
+    "twitter": "",
+    "winrate": 38.5,
+    "profit_7d": 2212,
+    "txs_1d": 61,
+    "sol_balance": 0.03,
+    "tags": [
+      "photon",
+      "launchpad_smart",
+      "smart_degen",
+      "gmgn_go",
+      "arbitrager",
+      "top_followed",
+      "axiom",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 262,
+    "address": "8KK6NK47UD5Mo5HzuyW6XsYWdCmmDprzgLB75UsvCJWi",
+    "weight": 0.661,
+    "name": "",
+    "twitter": "",
+    "winrate": 32.4,
+    "profit_7d": 1735,
+    "txs_1d": 101,
+    "sol_balance": 7.08,
+    "tags": [
+      "launchpad_smart",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 263,
+    "address": "DPV7YaUK5tmMgCyzwDL1uxyykpmoYnDvSdoYEkWqaMy7",
+    "weight": 0.659,
+    "name": "",
+    "twitter": "",
+    "winrate": 33.7,
+    "profit_7d": 4048,
+    "txs_1d": 23,
+    "sol_balance": 0,
+    "tags": [
+      "smart_degen",
+      "gmgn",
+      "trojan"
+    ]
+  },
+  {
+    "rank": 264,
+    "address": "Fnur5HTvr8GNhka5y7eFGz9k5RBREhgZ9W64X7A8n8ww",
+    "weight": 0.658,
+    "name": "DALEK\ud83d\udc7d\ud83d\udc7b",
+    "twitter": "DALEKSPACEMONKY",
+    "winrate": 61.5,
+    "profit_7d": 72,
+    "txs_1d": 28,
+    "sol_balance": 0.81,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 265,
+    "address": "GPLmVnDTjo4f6zsKQLzuzvqRouCNrnA6LPJyGw1iL8aW",
+    "weight": 0.657,
+    "name": "",
+    "twitter": "",
+    "winrate": 27.7,
+    "profit_7d": 1046,
+    "txs_1d": 351,
+    "sol_balance": 59.66,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 266,
+    "address": "DfMxre4cKmvogbLrPigxmibVTTQDuzjdXojWzjCXXhzj",
+    "weight": 0.655,
+    "name": "_",
+    "twitter": "Euris_x",
+    "winrate": 32.9,
+    "profit_7d": -119,
+    "txs_1d": 6,
+    "sol_balance": 148.48,
+    "tags": [
+      "pump_smart",
+      "photon"
+    ]
+  },
+  {
+    "rank": 267,
+    "address": "9yBBP5sekcJ9m68rbB3Ghaivjwpj2K2vmTtMqVg6yqur",
+    "weight": 0.654,
+    "name": "",
+    "twitter": "",
+    "winrate": 66.7,
+    "profit_7d": 689,
+    "txs_1d": 5,
+    "sol_balance": 6.34,
+    "tags": [
+      "smart_degen",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 268,
+    "address": "DAtJJbckkqADvpt7bhCqNHMpitYBVHfFP3ZsisNvbBTC",
+    "weight": 0.653,
+    "name": "",
+    "twitter": "",
+    "winrate": 31.3,
+    "profit_7d": 766,
+    "txs_1d": 158,
+    "sol_balance": 31.19,
+    "tags": [
+      "smart_degen",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 269,
+    "address": "Ey5BDKdGD5QV4jND3zXXnPRBPjct9WaXPCQryVKBssLp",
+    "weight": 0.652,
+    "name": "",
+    "twitter": "",
+    "winrate": 16.3,
+    "profit_7d": 3563,
+    "txs_1d": 64,
+    "sol_balance": 65.34,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 270,
+    "address": "34g3jxDmp2NkUYhz2VknCRGAEqicyX37K1DYzh33ape7",
+    "weight": 0.65,
+    "name": "",
+    "twitter": "",
+    "winrate": 44.8,
+    "profit_7d": 3375,
+    "txs_1d": 2,
+    "sol_balance": 0.05,
+    "tags": [
+      "smart_degen",
+      "bluechip_owner",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 271,
+    "address": "HufuiW43p5ekUTCmgiHJMqS6JuHcf9jLE5hqDrvyTKHN",
+    "weight": 0.649,
+    "name": "Steven.",
+    "twitter": "0xStevenRe",
+    "winrate": 34.1,
+    "profit_7d": 2704,
+    "txs_1d": 322,
+    "sol_balance": 0.05,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "trojan",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 272,
+    "address": "2kv8X2a9bxnBM8NKLc6BBTX2z13GFNRL4oRotMUJRva9",
+    "weight": 0.648,
+    "name": "GH0STEE",
+    "twitter": "gh0stee",
+    "winrate": 11.8,
+    "profit_7d": 4601,
+    "txs_1d": 73,
+    "sol_balance": 124.1,
+    "tags": [
+      "kol",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 273,
+    "address": "3Vsx9RN9jvnKwdMkHxn6Z2cehtffgghk4Kd4MStHT1P6",
+    "weight": 0.646,
+    "name": "sjdjkskscn c d",
+    "twitter": "sjdjkskscn7pul6",
+    "winrate": 15.5,
+    "profit_7d": -13899,
+    "txs_1d": 722,
+    "sol_balance": 76.23,
+    "tags": [
+      "photon",
+      "pump_smart",
+      "top_followed",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 274,
+    "address": "2CXbN6nuTTb4vCrtYM89SfQHMMKGPAW4mvFe6Ht4Yo6z",
+    "weight": 0.645,
+    "name": "moneymaykah",
+    "twitter": "moneymaykah_",
+    "winrate": 28.8,
+    "profit_7d": 744,
+    "txs_1d": 89,
+    "sol_balance": 40.04,
+    "tags": [
+      "trojan",
+      "kol",
+      "arbitrager",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 275,
+    "address": "aGc4KvhoC5HZXqYfY2eMb19tUe6C1joCs6HoeAUECAa",
+    "weight": 0.644,
+    "name": "Akhil | Stronghold Validator",
+    "twitter": "akh1l_sol",
+    "winrate": 87.5,
+    "profit_7d": 156,
+    "txs_1d": 0,
+    "sol_balance": 0.02,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 276,
+    "address": "4LvmNAc4QF2cztiP4ZySmsa1syScx3Xmg4kWd3K3Zh3w",
+    "weight": 0.642,
+    "name": "Redlioneye.eth(\u2764\ufe0f\u200d\ud83d\udd25,\ud83e\udd81)",
+    "twitter": "redlioneye",
+    "winrate": 80,
+    "profit_7d": -457,
+    "txs_1d": 0,
+    "sol_balance": 0.96,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 277,
+    "address": "9BaZhbv7CBA8PBsZ19FSsGWUZxF8LGox2dEcwxxWz2QE",
+    "weight": 0.641,
+    "name": "",
+    "twitter": "",
+    "winrate": 23.2,
+    "profit_7d": 959,
+    "txs_1d": 142,
+    "sol_balance": 78.96,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 278,
+    "address": "5QXMkhu3ycDtwsbkpE7xfVYtUiJxFBg8BU16KzbCkvkx",
+    "weight": 0.64,
+    "name": "",
+    "twitter": "",
+    "winrate": 22.3,
+    "profit_7d": -1105,
+    "txs_1d": 80,
+    "sol_balance": 39.72,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 279,
+    "address": "28p85QHkQWeRNRuRxewJ7YzQE6vwr3BWtyvSXLkgM2QZ",
+    "weight": 0.639,
+    "name": "\u00d6zg\u00fcr EFE",
+    "twitter": "ozgurefe67",
+    "winrate": 100,
+    "profit_7d": -1,
+    "txs_1d": 1,
+    "sol_balance": 0.01,
+    "tags": [
+      "kol"
+    ]
+  },
+  {
+    "rank": 280,
+    "address": "CyJLNEWdAuPZfumE3WoQYDFh2fjryKb7MdHUiDtWFJT8",
+    "weight": 0.637,
+    "name": "",
+    "twitter": "",
+    "winrate": 19.2,
+    "profit_7d": 4828,
+    "txs_1d": 55,
+    "sol_balance": 7.59,
+    "tags": [
+      "launchpad_smart",
+      "smart_degen",
+      "gmgn_go",
+      "padre",
+      "gmgn",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 281,
+    "address": "53BnNc49Ajgstciq3CRoyxuBpkkW1r8pgPyvr7JGYnsh",
+    "weight": 0.636,
+    "name": "Monki",
+    "twitter": "m0nkicrypto",
+    "winrate": 6.1,
+    "profit_7d": 8143,
+    "txs_1d": 308,
+    "sol_balance": 86.4,
+    "tags": [
+      "gmgn",
+      "padre",
+      "launchpad_smart",
+      "gmgn_go",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 282,
+    "address": "CUPZsnwieacis8yRh7KDJCpo9uKFzhnocZMJkMgayXgB",
+    "weight": 0.635,
+    "name": "",
+    "twitter": "",
+    "winrate": 34.5,
+    "profit_7d": 719,
+    "txs_1d": 294,
+    "sol_balance": 4.11,
+    "tags": [
+      "launchpad_smart",
+      "smart_degen",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 283,
+    "address": "5TvRsbPtiaejKgRbzRFBawFninamiCV3BazKq7MmKVS3",
+    "weight": 0.633,
+    "name": "Zolo",
+    "twitter": "zolozeth",
+    "winrate": 100,
+    "profit_7d": 0,
+    "txs_1d": 1,
+    "sol_balance": 0,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 284,
+    "address": "3CAaRmmPpd2apXuiNVErXYP4DJaWrXEudFntPXQHo6eh",
+    "weight": 0.632,
+    "name": "",
+    "twitter": "",
+    "winrate": 37.5,
+    "profit_7d": 776,
+    "txs_1d": 6,
+    "sol_balance": 130.43,
+    "tags": [
+      "pepeboost",
+      "smart_degen",
+      "arbitrager",
+      "gmgn_go",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 285,
+    "address": "4rTVypfbz3z3tfjwc9G3QVa7UFRcJpp47iJdb8189sM3",
+    "weight": 0.631,
+    "name": "",
+    "twitter": "",
+    "winrate": 50,
+    "profit_7d": -238,
+    "txs_1d": 0,
+    "sol_balance": 1.6,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 286,
+    "address": "fgrd9SjDJnBX94n8BEhGDmyupA8nMKSJjBxfH6AwoCq",
+    "weight": 0.629,
+    "name": "",
+    "twitter": "",
+    "winrate": 30,
+    "profit_7d": 2317,
+    "txs_1d": 8,
+    "sol_balance": 0.02,
+    "tags": [
+      "launchpad_smart",
+      "gmgn_go",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 287,
+    "address": "65NRohHfdjJhm7oW9kvPfvT8jRWpxg2KbhecVGQSJ3jR",
+    "weight": 0.628,
+    "name": "Arez",
+    "twitter": "MageArez",
+    "winrate": 33.6,
+    "profit_7d": 760,
+    "txs_1d": 25,
+    "sol_balance": 2.38,
+    "tags": [
+      "kol",
+      "padre",
+      "gmgn",
+      "gmgn_go",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 288,
+    "address": "4t9bWuZsXXKGMgmd96nFD4KWxyPNTsPm4q9jEMH4jD2i",
+    "weight": 0.627,
+    "name": "",
+    "twitter": "",
+    "winrate": 73.3,
+    "profit_7d": 157,
+    "txs_1d": 0,
+    "sol_balance": 5.89,
+    "tags": [
+      "gmgn",
+      "pepeboost",
+      "pump_smart",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 289,
+    "address": "57hdTgdcVDyYrZJ3ieeBRn4CDiLWVvBrgjsuDa3gSfzD",
+    "weight": 0.626,
+    "name": "",
+    "twitter": "",
+    "winrate": 70,
+    "profit_7d": 165,
+    "txs_1d": 2,
+    "sol_balance": 10.23,
+    "tags": [
+      "smart_degen",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 290,
+    "address": "3bvV5yUfYFo9PrLBX7eUpFDC6TCQFTchaHKMmioQDnv5",
+    "weight": 0.624,
+    "name": "",
+    "twitter": "",
+    "winrate": 43.9,
+    "profit_7d": -301,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "launchpad_smart",
+      "gmgn",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 291,
+    "address": "2FPk33kw4YTsmESjWwW8QoXfVwEWeQ9D5ryWuDsfYR4e",
+    "weight": 0.623,
+    "name": "",
+    "twitter": "",
+    "winrate": 26.4,
+    "profit_7d": 595,
+    "txs_1d": 63,
+    "sol_balance": 18.31,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 292,
+    "address": "9N9XJVzCQs2zJg7u3jYuAxMmR2VR9cuqxhGjCZjuGG6c",
+    "weight": 0.622,
+    "name": "Nikolai",
+    "twitter": "NikolaiHauckx",
+    "winrate": 49.5,
+    "profit_7d": -13,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "launchpad_smart",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 293,
+    "address": "F82f3U718zvtRrRthaaY73Uuj5bVM7kSmCS8oFtPJ3YL",
+    "weight": 0.62,
+    "name": "",
+    "twitter": "",
+    "winrate": 66.7,
+    "profit_7d": 151,
+    "txs_1d": 10,
+    "sol_balance": 0,
+    "tags": [
+      "smart_degen",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 294,
+    "address": "AsEqwGCNfnB4LK7ewMGc9i9LJ1nsQRNzBGrADY1GNm8Z",
+    "weight": 0.619,
+    "name": "Jay Jones",
+    "twitter": "iprintcash",
+    "winrate": 22.6,
+    "profit_7d": 1622,
+    "txs_1d": 130,
+    "sol_balance": 3.07,
+    "tags": [
+      "gmgn",
+      "trojan",
+      "bullx",
+      "kol",
+      "padre",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 295,
+    "address": "nVA7TLYmiK1EjFbts6mCXihM8jtjrtR9t4JuqUtuuUc",
+    "weight": 0.618,
+    "name": "",
+    "twitter": "",
+    "winrate": 26.7,
+    "profit_7d": 381,
+    "txs_1d": 62,
+    "sol_balance": 17.77,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 296,
+    "address": "JAj2wKJmW54nyBFYxUea7Nq3fYTE3G69iwaa8NLjTRFr",
+    "weight": 0.617,
+    "name": "",
+    "twitter": "",
+    "winrate": 25.5,
+    "profit_7d": 393,
+    "txs_1d": 107,
+    "sol_balance": 18.78,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom",
+      "padre"
+    ]
+  },
+  {
+    "rank": 297,
+    "address": "FuqGF5LnmKdooMtKyrSqWRwBAho8JzncL1qRLQMPyDZJ",
+    "weight": 0.615,
+    "name": "",
+    "twitter": "",
+    "winrate": 63.6,
+    "profit_7d": 186,
+    "txs_1d": 2,
+    "sol_balance": 11.07,
+    "tags": [
+      "smart_degen",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 298,
+    "address": "72YiE4crBv2UhxRgRYKs4GaTGT2avbacfL4HNCfQLqsm",
+    "weight": 0.614,
+    "name": "kyz",
+    "twitter": "kyzenill",
+    "winrate": 7.3,
+    "profit_7d": 4902,
+    "txs_1d": 351,
+    "sol_balance": 11.78,
+    "tags": [
+      "bullx",
+      "photon",
+      "smart_degen",
+      "arbitrager",
+      "padre",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 299,
+    "address": "EP5mvfhGv6x1XR33Fd8eioiYjtRXAawafPmkz9xBpDvG",
+    "weight": 0.613,
+    "name": "Zemrics",
+    "twitter": "Zemrics",
+    "winrate": 3.7,
+    "profit_7d": 3312,
+    "txs_1d": 613,
+    "sol_balance": 69.81,
+    "tags": [
+      "photon",
+      "kol",
+      "padre",
+      "gmgn",
+      "gmgn_go",
+      "arbitrager",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 300,
+    "address": "9iaawVBEsFG35PSwd4PahwT8fYNQe9XYuRdWm872dUqY",
+    "weight": 0.611,
+    "name": "meechie",
+    "twitter": "meechie",
+    "winrate": 17.3,
+    "profit_7d": 4355,
+    "txs_1d": 298,
+    "sol_balance": 0.04,
+    "tags": [
+      "kol",
+      "arbitrager",
+      "padre",
+      "top_followed",
+      "top_renamed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 301,
+    "address": "MiLSTQNcHDmZ1cHTo7fC5kvUYMFDBuEDk2HQ2hAGs3Y",
+    "weight": 0.61,
+    "name": "Milst",
+    "twitter": "MilstG",
+    "winrate": 42.9,
+    "profit_7d": -913,
+    "txs_1d": 0,
+    "sol_balance": 0.06,
+    "tags": [
+      "axiom",
+      "kol",
+      "gmgn_go",
+      "gmgn",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 302,
+    "address": "CCfP329GYDGG9paqGgJKBrupJbgrAJN2ot9aBPAkucaF",
+    "weight": 0.609,
+    "name": "Crazy White Boy",
+    "twitter": "crazywhiteboydj",
+    "winrate": 33.3,
+    "profit_7d": 481,
+    "txs_1d": 40,
+    "sol_balance": 0.02,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 303,
+    "address": "6ttRrzGunSwKAJKakF4ZGibMEMVPYvuh74XWxGA9gWLb",
+    "weight": 0.607,
+    "name": "",
+    "twitter": "",
+    "winrate": 21.9,
+    "profit_7d": -193,
+    "txs_1d": 180,
+    "sol_balance": 5.66,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 304,
+    "address": "951wq3qDowjKHaycrNaiRB5WpovYVKXnqhnrcKPh46zt",
+    "weight": 0.606,
+    "name": "jrus",
+    "twitter": "savemejrus",
+    "winrate": 6.1,
+    "profit_7d": 3611,
+    "txs_1d": 65,
+    "sol_balance": 16.71,
+    "tags": [
+      "smart_degen",
+      "gmgn",
+      "padre",
+      "axiom",
+      "top_followed",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 305,
+    "address": "2yavzzNeqWjtUBXYR7Fx8RhdbWNHDfRcRhx6VuexLFjT",
+    "weight": 0.605,
+    "name": "",
+    "twitter": "",
+    "winrate": 22.2,
+    "profit_7d": 1797,
+    "txs_1d": 8,
+    "sol_balance": 8.36,
+    "tags": [
+      "smart_degen",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 306,
+    "address": "BfG7WYmravgBhNdWpGoiFmF8L1duw2vdqdDHiZid2hoJ",
+    "weight": 0.603,
+    "name": "",
+    "twitter": "",
+    "winrate": 29.8,
+    "profit_7d": -613,
+    "txs_1d": 197,
+    "sol_balance": 0.54,
+    "tags": [
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 307,
+    "address": "CWryqL8F79bCUPfRMnFHxXpJEyW5TixWe59hEuFXWYnD",
+    "weight": 0.602,
+    "name": "",
+    "twitter": "",
+    "winrate": 19,
+    "profit_7d": 1035,
+    "txs_1d": 323,
+    "sol_balance": 5.42,
+    "tags": [
+      "smart_degen",
+      "photon",
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 308,
+    "address": "5aeAZL8unb9mGbpNbeUWBQQrxFpupqx1EkhRQXEit45m",
+    "weight": 0.601,
+    "name": "",
+    "twitter": "",
+    "winrate": 34.6,
+    "profit_7d": 108,
+    "txs_1d": 78,
+    "sol_balance": 8.32,
+    "tags": [
+      "smart_degen",
+      "launchpad_smart",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 309,
+    "address": "5LCniWCFQFBqcPiZNf1VrRqt4qr73sqfzZHRCYcXS6VS",
+    "weight": 0.6,
+    "name": "Cowboy\ud83d\udd36BNB \uff5c\u7248\u672c\u4e4b\u725b",
+    "twitter": "feibo03",
+    "winrate": 40,
+    "profit_7d": 245,
+    "txs_1d": 11,
+    "sol_balance": 47.55,
+    "tags": [
+      "fresh_wallet",
+      "kol",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 310,
+    "address": "GR2RsM31d2eTghNHSTfv27nUGh66r6UfZTgPWwG3P3RL",
+    "weight": 0.598,
+    "name": "",
+    "twitter": "",
+    "winrate": 25,
+    "profit_7d": 266,
+    "txs_1d": 117,
+    "sol_balance": 13.94,
+    "tags": [
+      "smart_degen",
+      "padre",
+      "gmgn",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 311,
+    "address": "9FEHWFjgbYnFCRRHkesJNq6znHjc5Aaq7TiKi1rCVSnH",
+    "weight": 0.597,
+    "name": "fomo \ud83e\udde0",
+    "twitter": "fomomofosol",
+    "winrate": 3.5,
+    "profit_7d": 2265,
+    "txs_1d": 614,
+    "sol_balance": 44.44,
+    "tags": [
+      "kol",
+      "gmgn",
+      "gmgn_go",
+      "bluechip_owner",
+      "trojan",
+      "top_followed",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 312,
+    "address": "615szHoP3xhRZjFagPAxhYe1ESjHSyxMz25b9byxfHqj",
+    "weight": 0.596,
+    "name": "",
+    "twitter": "",
+    "winrate": 50,
+    "profit_7d": -1,
+    "txs_1d": 3,
+    "sol_balance": 0.05,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 313,
+    "address": "14HDbSrjCJKgwCXDBXv8PGRGFaLrAqDBq2mCwSA46q5x",
+    "weight": 0.594,
+    "name": "0xMistBlade \ud83d\udde1\ufe0f",
+    "twitter": "0xMistBlade",
+    "winrate": 100,
+    "profit_7d": 4,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "kol",
+      "axiom",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 314,
+    "address": "4S8YBCt6hhi7Nr1NnKF6jF856LLN8JJFzD1a8nF5UuHA",
+    "weight": 0.593,
+    "name": "shaka",
+    "twitter": "solanashaka",
+    "winrate": 23.9,
+    "profit_7d": 689,
+    "txs_1d": 283,
+    "sol_balance": 0.2,
+    "tags": [
+      "trojan",
+      "axiom",
+      "bullx",
+      "kol",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 315,
+    "address": "G1G1jvfDBRBjbLrptBqjBVvsCG64MScu85DdhippCqpm",
+    "weight": 0.592,
+    "name": "",
+    "twitter": "",
+    "winrate": 36.4,
+    "profit_7d": 811,
+    "txs_1d": 3,
+    "sol_balance": 9.44,
+    "tags": [
+      "launchpad_smart",
+      "gmgn_go",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 316,
+    "address": "6VHxuussrXXhN8jTwgpQ8oKv6ZbXxqNCj2HfY6sq5SaL",
+    "weight": 0.591,
+    "name": "CryptoLucky",
+    "twitter": "sol_lucky_",
+    "winrate": 50,
+    "profit_7d": -72,
+    "txs_1d": 0,
+    "sol_balance": 0.05,
+    "tags": [
+      "kol",
+      "axiom",
+      "gmgn_go",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 317,
+    "address": "34ZUUC8mDtEkAaHjLFkaU8mKLQvS6DR7HsUeydnz982Q",
+    "weight": 0.589,
+    "name": "Wei",
+    "twitter": "wei_crypto8888",
+    "winrate": 66.7,
+    "profit_7d": -3,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "app_smart_money",
+      "kol"
+    ]
+  },
+  {
+    "rank": 318,
+    "address": "8fMq3Kz6CnayEJaZ7SfFnX1KPCpNjCSdoa8F2kMzewjd",
+    "weight": 0.588,
+    "name": "",
+    "twitter": "",
+    "winrate": 23.1,
+    "profit_7d": 673,
+    "txs_1d": 129,
+    "sol_balance": 0.01,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 319,
+    "address": "A2EmHoWKfuVkLEPAFQ5aPktmigrjm16M4hKXcK5edgjb",
+    "weight": 0.587,
+    "name": "w\u00d8lf",
+    "twitter": "a92B_",
+    "winrate": 33.3,
+    "profit_7d": -841,
+    "txs_1d": 1,
+    "sol_balance": 44.96,
+    "tags": [
+      "bullx",
+      "kol",
+      "gmgn",
+      "gmgn_go",
+      "padre",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 320,
+    "address": "H6zpaY14WgkEmB3MJTvC7Wb5PQJkBVLd4KwLD2ktVgop",
+    "weight": 0.585,
+    "name": "",
+    "twitter": "",
+    "winrate": 16.7,
+    "profit_7d": 11007,
+    "txs_1d": 1,
+    "sol_balance": 79.1,
+    "tags": [
+      "padre",
+      "axiom",
+      "top_followed",
+      "top_renamed",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 321,
+    "address": "B7a42GRCTE4k1c5eaMYfbrZWwq5wJxHBLj5ta1GXFiVf",
+    "weight": 0.584,
+    "name": "Degen Camp\ud83c\udfd5\ufe0f\ud83e\udd87\ud83d\udd0a",
+    "twitter": "DegenCamp",
+    "winrate": 28.6,
+    "profit_7d": 212,
+    "txs_1d": 21,
+    "sol_balance": 0.13,
+    "tags": [
+      "kol",
+      "arbitrager",
+      "gmgn_go",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 322,
+    "address": "5zV5iXB54RmCoVV5B5MfmiD14NhbxRXRgtsEBcw4yn1y",
+    "weight": 0.583,
+    "name": "",
+    "twitter": "",
+    "winrate": 25.9,
+    "profit_7d": 64,
+    "txs_1d": 192,
+    "sol_balance": 17.22,
+    "tags": [
+      "launchpad_smart",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 323,
+    "address": "3Mxqdms1hdwFvaWpTSZYAwvRSpohQ1xKwASW9FceNzEj",
+    "weight": 0.581,
+    "name": "",
+    "twitter": "",
+    "winrate": 24.8,
+    "profit_7d": -19,
+    "txs_1d": 46,
+    "sol_balance": 13.08,
+    "tags": [
+      "launchpad_smart",
+      "trojan",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 324,
+    "address": "6D8ftcLjzgebfqmoGcxNrT1sZ6vEpXqNwE5XDNhVBQra",
+    "weight": 0.58,
+    "name": "",
+    "twitter": "",
+    "winrate": 30.8,
+    "profit_7d": -108,
+    "txs_1d": 9,
+    "sol_balance": 0.01,
+    "tags": [
+      "launchpad_smart",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 325,
+    "address": "HGGE5cv1uwacVz5tLsF8SHc6in2y26XP3iSAk5zGmYFg",
+    "weight": 0.579,
+    "name": "Xip",
+    "twitter": "Xipezyyy",
+    "winrate": 21.1,
+    "profit_7d": 818,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "kol",
+      "gmgn_go",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 326,
+    "address": "GVg2bv2LvzM2DKbJhCiQjzabuWroJcHrEpQGKyaJyy9v",
+    "weight": 0.577,
+    "name": "",
+    "twitter": "",
+    "winrate": 28.6,
+    "profit_7d": 1182,
+    "txs_1d": 2,
+    "sol_balance": 14.42,
+    "tags": [
+      "smart_degen",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 327,
+    "address": "AtqZAYh4aKM3c4ay5L4ZE9WQvCi9hE3k65WbcWidr37D",
+    "weight": 0.576,
+    "name": "troupe\u67ef\u514b",
+    "twitter": "knightk64",
+    "winrate": 7.7,
+    "profit_7d": 1075,
+    "txs_1d": 39,
+    "sol_balance": 1.62,
+    "tags": [
+      "smart_degen",
+      "gmgn_go",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 328,
+    "address": "4YzpSZpxDdjNf3unjkCtdWEsz2FL5mok7e5XQaDNqry8",
+    "weight": 0.575,
+    "name": "xunle",
+    "twitter": "xunle111",
+    "winrate": 33.3,
+    "profit_7d": 0,
+    "txs_1d": 1,
+    "sol_balance": 14.22,
+    "tags": [
+      "gmgn",
+      "kol",
+      "app_smart_money"
+    ]
+  },
+  {
+    "rank": 329,
+    "address": "FCt3Gyuqcoc4vHrnAYdxVbqSg3m1AyDHtaVZMN8TctPv",
+    "weight": 0.574,
+    "name": "Rich The Dev",
+    "twitter": "Piana100x",
+    "winrate": 33.3,
+    "profit_7d": 47,
+    "txs_1d": 11,
+    "sol_balance": 8.8,
+    "tags": [
+      "kol",
+      "arbitrager",
+      "padre"
+    ]
+  },
+  {
+    "rank": 330,
+    "address": "6LChaYRYtEYjLEHhzo4HdEmgNwu2aia8CM8VhR9wn6n7",
+    "weight": 0.572,
+    "name": "Assasin",
+    "twitter": "assasin_eth",
+    "winrate": 50,
+    "profit_7d": 225,
+    "txs_1d": 0,
+    "sol_balance": 3.56,
+    "tags": [
+      "axiom",
+      "pepeboost",
+      "kol",
+      "photon",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 331,
+    "address": "As9AD6KbiqQeMRgYNVQiRwRnfBmjESPTsvh6gQRjoB8b",
+    "weight": 0.571,
+    "name": "",
+    "twitter": "",
+    "winrate": 23.7,
+    "profit_7d": 59,
+    "txs_1d": 72,
+    "sol_balance": 5,
+    "tags": [
+      "launchpad_smart",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 332,
+    "address": "53Rrz9HLiWnM1q3wNP2g86DHLP5HT8cLG3vjDEWPupVK",
+    "weight": 0.57,
+    "name": "ordinaryus",
+    "twitter": "ordinaryustrade",
+    "winrate": 50,
+    "profit_7d": 115,
+    "txs_1d": 0,
+    "sol_balance": 8.31,
+    "tags": [
+      "kol",
+      "gmgn_go",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 333,
+    "address": "7mZRNtmHAgXhvs5pntsU2eWiKTm748FLPBGpQEC2g2Yv",
+    "weight": 0.568,
+    "name": "\u20bfen Todar ( BNB guy )",
+    "twitter": "BenTodar",
+    "winrate": 40.9,
+    "profit_7d": -501,
+    "txs_1d": 0,
+    "sol_balance": 0.17,
+    "tags": [
+      "kol",
+      "gmgn_go",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 334,
+    "address": "2YJbcB9G8wePrpVBcT31o8JEed6L3abgyCjt5qkJMymV",
+    "weight": 0.567,
+    "name": "Al4n",
+    "twitter": "Al4neu",
+    "winrate": 9.2,
+    "profit_7d": 467,
+    "txs_1d": 178,
+    "sol_balance": 0,
+    "tags": [
+      "bullx",
+      "photon",
+      "kol",
+      "padre",
+      "axiom",
+      "top_followed",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 335,
+    "address": "4NtyFqqRzvHWsTmJZoT26H9xtL7asWGTxpcpCxiKax9a",
+    "weight": 0.566,
+    "name": "Inside Calls",
+    "twitter": "insidecalls",
+    "winrate": 11.2,
+    "profit_7d": -108,
+    "txs_1d": 4,
+    "sol_balance": 141.29,
+    "tags": [
+      "kol",
+      "app_smart_money",
+      "photon",
+      "gmgn",
+      "gmgn_go",
+      "padre",
+      "arbitrager",
+      "top_followed",
+      "axiom",
+      "top_renamed"
+    ]
+  },
+  {
+    "rank": 336,
+    "address": "GRUwKNjxRxth1NavaEa19mpPUnwkavnYJKj98jGUxkhh",
+    "weight": 0.565,
+    "name": "OVO \ud83d\udc02 (bio/acc)",
+    "twitter": "ovoimballin",
+    "winrate": 35.3,
+    "profit_7d": -209,
+    "txs_1d": 0,
+    "sol_balance": 0.3,
+    "tags": [
+      "gmgn",
+      "kol",
+      "arbitrager",
+      "trojan"
+    ]
+  },
+  {
+    "rank": 337,
+    "address": "BY2QUYQ5EATL75sG2ex5QGF6BC6jD3ZeEwDQ6SipwaFp",
+    "weight": 0.563,
+    "name": "nfy",
+    "twitter": "nafaydefi",
+    "winrate": 13.3,
+    "profit_7d": -233,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "padre",
+      "smart_degen",
+      "gmgn",
+      "arbitrager",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 338,
+    "address": "FQLcaXQL75mDz2RBTJtm1Tdb9DvUqKwy5WkgWjNfgH4M",
+    "weight": 0.562,
+    "name": "",
+    "twitter": "",
+    "winrate": 50,
+    "profit_7d": 144,
+    "txs_1d": 0,
+    "sol_balance": 0.02,
+    "tags": [
+      "axiom",
+      "smart_degen"
+    ]
+  },
+  {
+    "rank": 339,
+    "address": "9Vk7pkBZ9KFJmzaPzNYjGedyz8qoKMQtnYyYi2AehNMT",
+    "weight": 0.561,
+    "name": "Xelf",
+    "twitter": "ImmortalXelf",
+    "winrate": 4.9,
+    "profit_7d": -1928,
+    "txs_1d": 22,
+    "sol_balance": 11.76,
+    "tags": [
+      "bullx",
+      "kol",
+      "padre"
+    ]
+  },
+  {
+    "rank": 340,
+    "address": "Enjoy9BmQgAUD9AKC4HpUbHByVdzwp7jQppKukEvdyWm",
+    "weight": 0.559,
+    "name": "Enjooyer",
+    "twitter": "0xEnjooyer",
+    "winrate": 30.9,
+    "profit_7d": 8,
+    "txs_1d": 13,
+    "sol_balance": 0.03,
+    "tags": [
+      "kol",
+      "axiom",
+      "padre",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 341,
+    "address": "9D5HYDNfrG4F8HR8Xrnri2yo4JcYon4D78MQz2CD98i3",
+    "weight": 0.558,
+    "name": "\u8868\u5f1f\u60f3\u81ea\u7531\ud83d\udcb0",
+    "twitter": "Cady_btc",
+    "winrate": 50,
+    "profit_7d": 84,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "kol",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 342,
+    "address": "6Tu45xVJV2Qshm3ipNYygrtNGVw1eVbYSg42GRaUBH9i",
+    "weight": 0.557,
+    "name": "Altcoin Miyagi\ud83c\uddef\ud83c\uddf5",
+    "twitter": "AltcoinMiyagi",
+    "winrate": 11.1,
+    "profit_7d": 98,
+    "txs_1d": 23,
+    "sol_balance": 0.29,
+    "tags": [
+      "kol",
+      "fomo"
+    ]
+  },
+  {
+    "rank": 343,
+    "address": "BunY1tQd2UD6TzYUgK35LRVEfiNMZk5sq25ZVnSK7Li9",
+    "weight": 0.555,
+    "name": "",
+    "twitter": "",
+    "winrate": 40,
+    "profit_7d": 10,
+    "txs_1d": 4,
+    "sol_balance": 30.27,
+    "tags": [
+      "launchpad_smart",
+      "axiom",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 344,
+    "address": "EEzVPVJmt6u7qPpAN8LwaASpLxBujB3frFuUgRZS5TGm",
+    "weight": 0.554,
+    "name": "Qester",
+    "twitter": "SQester",
+    "winrate": 50,
+    "profit_7d": 0,
+    "txs_1d": 0,
+    "sol_balance": 0.03,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 345,
+    "address": "4UYoHdW3EEiQd13QJVV9f2bDVrZv2L2oW7trU5GGdcSv",
+    "weight": 0.553,
+    "name": "",
+    "twitter": "",
+    "winrate": 9.5,
+    "profit_7d": -55,
+    "txs_1d": 7,
+    "sol_balance": 6.04,
+    "tags": [
+      "snipe_bot",
+      "gmgn_go",
+      "gmgn",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 346,
+    "address": "4aTnAHQmQMaSjz3V88ZyUoS5ZnEB5pJsTXBviXZBJqfF",
+    "weight": 0.552,
+    "name": "\u6728\u6728",
+    "twitter": "0xmmu",
+    "winrate": 50,
+    "profit_7d": -167,
+    "txs_1d": 2,
+    "sol_balance": 17.55,
+    "tags": [
+      "axiom",
+      "kol",
+      "gmgn_go",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 347,
+    "address": "8osMtEvYjv5aEw9G243v93EutQSQhp5roxMPcmMETBzC",
+    "weight": 0.55,
+    "name": "0xArmagan",
+    "twitter": "Armagan0x",
+    "winrate": 40,
+    "profit_7d": -1,
+    "txs_1d": 0,
+    "sol_balance": 0.01,
+    "tags": [
+      "kol",
+      "gmgn_go",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 348,
+    "address": "2hKABpAfiKmNUHY23j6mCLuE1Ca7sERoFngTrpS1T5Bi",
+    "weight": 0.549,
+    "name": "Chad Bear \ud83d\udc3b",
+    "twitter": "BearDegen_eth",
+    "winrate": 50,
+    "profit_7d": 8,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "gmgn_go",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 349,
+    "address": "4ZcqoWgsPRPxqWLDN3qPRBoLFeFhzYC8LHkx8SnHiUHs",
+    "weight": 0.548,
+    "name": "Swanky",
+    "twitter": "swankyjohnx",
+    "winrate": 62.5,
+    "profit_7d": 0,
+    "txs_1d": 0,
+    "sol_balance": 0.09,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 350,
+    "address": "FAdwf6bnogQTnaVews1gYKQCXU66t28Sqo4a8UJYEmUn",
+    "weight": 0.546,
+    "name": "",
+    "twitter": "",
+    "winrate": 42.9,
+    "profit_7d": 9,
+    "txs_1d": 0,
+    "sol_balance": 0,
+    "tags": [
+      "smart_degen",
+      "arbitrager",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 351,
+    "address": "57UJFiG4iNQRF9zE6SVCLJieb3AvmWrDqChP4vjuafYh",
+    "weight": 0.545,
+    "name": "DEVOUR",
+    "twitter": "DEVOUR_",
+    "winrate": 50,
+    "profit_7d": 1,
+    "txs_1d": 2,
+    "sol_balance": 0.33,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 352,
+    "address": "2NpY9ZuJausmP5yX614Sjm1bDsEsZwVkikfqA2rLLnTG",
+    "weight": 0.544,
+    "name": "\u7687\u5f1f\u5f1f\u7231\u5730\u7403\ud83c\udf0f",
+    "twitter": "huangdidimeme",
+    "winrate": 33.3,
+    "profit_7d": -3,
+    "txs_1d": 3,
+    "sol_balance": 0.02,
+    "tags": [
+      "axiom",
+      "kol",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 353,
+    "address": "AmManpABYP2yxskBmt31VSrALjCnTyaEdK8qeSVWLmjs",
+    "weight": 0.542,
+    "name": "\u4e13\u4e1a\u6361\u5783\u573e",
+    "twitter": "cellmejiwa",
+    "winrate": 50,
+    "profit_7d": 1,
+    "txs_1d": 0,
+    "sol_balance": 0.01,
+    "tags": [
+      "kol",
+      "gmgn_go",
+      "arbitrager",
+      "gmgn"
+    ]
+  },
+  {
+    "rank": 354,
+    "address": "3T7zenxwTNSoAzSD9Wg8gkb5ecqpP3g8Lvg9LAU9MZGc",
+    "weight": 0.541,
+    "name": "Krypto Cove",
+    "twitter": "KryptoCove",
+    "winrate": 50,
+    "profit_7d": 0,
+    "txs_1d": 1,
+    "sol_balance": 0.13,
+    "tags": [
+      "kol"
+    ]
+  },
+  {
+    "rank": 355,
+    "address": "GgnCkAuFUGU2dEDcvEx8RCGw3a1XEi5SwL8L8M19BmVW",
+    "weight": 0.54,
+    "name": "Crypto Warehouse",
+    "twitter": "GibCryptoNews",
+    "winrate": 25,
+    "profit_7d": 13,
+    "txs_1d": 2,
+    "sol_balance": 0.4,
+    "tags": [
+      "kol",
+      "arbitrager"
+    ]
+  },
+  {
+    "rank": 356,
+    "address": "Q9j4YKVjRu5HhV5aEZuKeCmQFsytEhZgTsGAchQXSVM",
+    "weight": 0.538,
+    "name": "\u2b50\ufe0f",
+    "twitter": "solvenant",
+    "winrate": 0,
+    "profit_7d": 77,
+    "txs_1d": 6,
+    "sol_balance": 0,
+    "tags": [
+      "photon",
+      "kol",
+      "axiom"
+    ]
+  },
+  {
+    "rank": 357,
+    "address": "C5K9uXTb6aqnZyUQc39JRYBKMfTJ4BUHHrw33wYyu99",
+    "weight": 0.537,
+    "name": "Leonaldy Gunawan",
+    "twitter": "leothearch",
+    "winrate": 2.1,
+    "profit_7d": 87,
+    "txs_1d": 0,
+    "sol_balance": 0.04,
+    "tags": [
+      "gmgn",
+      "kol",
+      "arbitrager"
+    ]
+  }
+]

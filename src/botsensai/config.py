@@ -118,23 +118,23 @@ class RiskSettings(BaseModel):
     max_concurrent_positions: int = 8
     max_daily_loss_native: float = 1.0
     max_trades_per_hour: int = 20
-    min_liquidity_usd: float = 5_000.0
-    min_token_age_seconds: float = 120.0
+    min_liquidity_usd: float = 6_000.0
+    min_token_age_seconds: float = 90.0
     max_token_age_seconds: float = 60 * 60 * 6
-    max_slippage_bps: int = 800
-    stop_loss_pct: float = 0.45
-    take_profit_multiples: list[float] = Field(default_factory=lambda: [2.0, 4.0, 10.0])
-    take_profit_fractions: list[float] = Field(default_factory=lambda: [0.4, 0.3, 0.3])
-    trailing_stop_pct: float = 0.35
-    max_hold_seconds: float = 60 * 60 * 4
+    max_slippage_bps: int = 500
+    stop_loss_pct: float = 0.18
+    take_profit_multiples: list[float] = Field(default_factory=lambda: [1.40, 2.50, 6.00])
+    take_profit_fractions: list[float] = Field(default_factory=lambda: [0.70, 0.20, 0.10])
+    trailing_stop_pct: float = 0.20
+    max_hold_seconds: float = 60 * 60 * 2
     kill_switch: bool = False
     expectancy_floor: float = -0.05
-    momentum_stop_seconds: float = 90.0
-    momentum_min_gain_pct: float = 0.15
+    momentum_stop_seconds: float = 60.0
+    momentum_min_gain_pct: float = 0.08
     curve_auto_exit_pct: float = 0.98
     use_kelly_sizing: bool = True
     kelly_fraction: float = 0.25
-    min_curve_progress: float = 0.02
+    min_curve_progress: float = 0.03
     max_curve_progress: float = 0.85
     sniper_min_token_age_seconds: float = 0.0
 

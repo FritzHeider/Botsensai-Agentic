@@ -674,6 +674,48 @@ class Pipeline:
 
     def decide(self, launch: Launch, result: Score) -> str:
         """Route a score through risk and the broker. Returns what happened."""
+        # 1. Evaluate real-time smart money participation & multi-alpha consensus
+        trades = self.db.trades_as_of(launch.token.key, result.as_of)
+        buyer_wallets = [t.wallet for t in trades if t.wallet and getattr(t.side, "value", str(t.side)).lower() == "buy"]
+        if buyer_wallets:
+            try:
+                import json, os
+                if getattr(self, "wallet_weights", None) is None:
+                    self.wallet_weights = {}
+                    for path in ("data/wallet_weights.json", "data/top_500_wallets.json", "data/top_200_wallets.json"):
+                        if os.path.exists(path):
+                            with open(path, "r") as f:
+                                content = json.load(f)
+                            if isinstance(content, dict):
+                                self.wallet_weights.update(content)
+                            elif isinstance(content, list):
+                                for item in content:
+                                    if isinstance(item, dict) and "address" in item:
+                                        self.wallet_weights[item["address"]] = item.get("weight", 0.70)
+                                    elif isinstance(item, str):
+                                        self.wallet_weights[item] = 0.70
+                            break
+
+                matched = [w for w in buyer_wallets if w in self.wallet_weights]
+                if matched:
+                    weights = [self.wallet_weights[w] for w in matched]
+                    # Creative Multi-Alpha Consensus Trigger:
+                    if len(matched) >= 2:
+                        boost = 0.50 * max(weights)
+                    else:
+                        boost = 0.28 * weights[0]
+                    result.composite = min(1.0, result.composite + boost)
+
+                    # Consensus override: If 2+ top profitable traders enter, clear trivial vetoes
+                    if len(matched) >= 2 and result.composite >= 0.70:
+                        result.vetoes = [
+                            v for v in result.vetoes 
+                            if getattr(v, "value", str(v)) not in ("dev_already_sold", "liquidity_below_floor", "holders_too_low_for_age")
+                        ]
+            except Exception:
+                pass
+
+        # 2. Gate entry on the boosted conviction score
         ok, reason = self.scorer.should_enter(result)
         if not ok:
             return f"skip: {reason}"
@@ -690,36 +732,6 @@ class Pipeline:
         )
         if size <= 1e-6:
             return "skip: sizing produced zero"
-
-        # Check for real-time smart money participation boost
-        trades = self.db.trades_as_of(launch.token.key, result.as_of)
-        buyer_wallets = [t.wallet for t in trades if t.wallet and getattr(t.side, "value", str(t.side)).lower() == "buy"]
-        if buyer_wallets:
-            try:
-                from botsensai.smart_money import RealtimeSmartMoneyTrigger, discover_smart_money_wallets
-                import json, os
-                
-                if getattr(self, "smart_money_trigger", None) is None:
-                    trigger = RealtimeSmartMoneyTrigger()
-                    
-                    # Try to load top 200 wallets from external file
-                    wallets_path = "data/top_200_wallets.json"
-                    if os.path.exists(wallets_path):
-                        with open(wallets_path, "r") as f:
-                            external_wallets = json.load(f)
-                        trigger.alpha_wallets.update(external_wallets)
-                    else:
-                        profiles = discover_smart_money_wallets(self.db, min_trades=2)
-                        trigger.update_alpha_wallets(profiles)
-                        
-                    self.smart_money_trigger = trigger
-                
-                matched, boost, _ = self.smart_money_trigger.evaluate_early_buyers(buyer_wallets)
-                if matched:
-                    # Give a massive boost if a top 200 wallet buys
-                    result.composite = min(1.0, result.composite + 0.40)
-            except Exception:
-                pass
 
         dynamic_tip = self.settings.execution.jito_tip_lamports
         try:
