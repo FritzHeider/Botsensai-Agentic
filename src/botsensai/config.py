@@ -119,7 +119,7 @@ class RiskSettings(BaseModel):
     max_daily_loss_native: float = 1.0
     max_trades_per_hour: int = 20
     min_liquidity_usd: float = 5_000.0
-    min_token_age_seconds: float = 45.0
+    min_token_age_seconds: float = 120.0
     max_token_age_seconds: float = 60 * 60 * 6
     max_slippage_bps: int = 800
     stop_loss_pct: float = 0.45

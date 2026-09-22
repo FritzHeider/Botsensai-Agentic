@@ -696,8 +696,14 @@ class Pipeline:
         buyer_wallets = [t.wallet for t in trades if t.wallet and getattr(t.side, "value", str(t.side)).lower() == "buy"]
         if buyer_wallets:
             try:
-                from botsensai.smart_money import RealtimeSmartMoneyTrigger
-                matched, boost, _ = RealtimeSmartMoneyTrigger().evaluate_early_buyers(buyer_wallets)
+                from botsensai.smart_money import RealtimeSmartMoneyTrigger, discover_smart_money_wallets
+                if getattr(self, "smart_money_trigger", None) is None:
+                    trigger = RealtimeSmartMoneyTrigger()
+                    profiles = discover_smart_money_wallets(self.db, min_trades=2)
+                    trigger.update_alpha_wallets(profiles)
+                    self.smart_money_trigger = trigger
+                
+                matched, boost, _ = self.smart_money_trigger.evaluate_early_buyers(buyer_wallets)
                 if matched:
                     result.composite = min(1.0, result.composite + boost)
             except Exception:

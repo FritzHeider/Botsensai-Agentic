@@ -67,13 +67,13 @@ DEFAULT_FAMILY_WEIGHTS: dict[str, float] = {
 #: Within-family weights. Anything unlisted gets an equal share of the remainder.
 DEFAULT_METRIC_WEIGHTS: dict[str, float] = {
     # onchain_topology
-    "funder_graph_dispersion": 0.22,
-    "sniper_supply_share": 0.18,
-    "bundle_supply_share": 0.18,
-    "early_holder_retention": 0.16,
-    "holder_distribution_health": 0.12,
-    "fresh_wallet_ratio": 0.08,
-    "smart_wallet_participation": 0.06,
+    "smart_wallet_participation": 0.40,
+    "funder_graph_dispersion": 0.12,
+    "sniper_supply_share": 0.10,
+    "bundle_supply_share": 0.10,
+    "early_holder_retention": 0.12,
+    "holder_distribution_health": 0.10,
+    "fresh_wallet_ratio": 0.06,
     # team_credibility
     "deployer_behaviour_now": 0.45,
     "deployer_lineage": 0.35,
