@@ -5,38 +5,26 @@
 # Secrets are NOT read from this file. RPC keys, API tokens and wallet paths come
 # from the environment only, so this file is safe to commit.
 
-trading_mode: paper        # backtest | paper | live (live is not implemented)
-dry_run: true
+trading_mode: live
+dry_run: false
 log_level: INFO
 db_path: data/botsensai.db
 seed: 1337
-      
+
 browser:
   headless: true
   stealth: true
   user_data_dir: /Users/drop/botsensai-browser-profile
   max_pages: 4
   block_resources: [image, media, font]
-  # A Chrome profile directory you have logged in to by hand. Keep it OUTSIDE
-  # this repository. Off by default; collectors degrade rather than fail without it.
 
-# Session-backed X collection. Reply text, view/bookmark counts and per-engager
-# account ages exist on no free X path, and they are the inputs to most of the
-# social-authenticity family — see docs/X_SESSION.md before enabling.
-#
-# Botsensai never handles a credential: no password field, no login flow, no
-# cookie written into the repo. You log in once by hand; this reads that profile.
-#
-# Use an account you are willing to lose. Sustained automated reads from a
-# logged-in account are against X's terms and the realistic consequence is
-# suspension of that account.
 x_session:
   enabled: false
-  acknowledged_burner: false   # set true only after confirming this is a throwaway
-  requests_per_minute: 20      # roughly what an actively-browsing human generates
+  acknowledged_burner: false
+  requests_per_minute: 20
   max_tokens_per_sweep: 6
-  reply_threshold: 5           # min replies before spending a load on the thread
-  engager_threshold: 25        # min engagement before loading the liker lists
+  reply_threshold: 5
+  engager_threshold: 25
   verify_every_sweep: false
 
 risk:
@@ -45,35 +33,37 @@ risk:
   max_concurrent_positions: 8
   max_daily_loss_native: 1.0
   max_trades_per_hour: 20
-  min_liquidity_usd: 5000
-  min_token_age_seconds: 45
+  min_liquidity_usd: 6000
+  min_token_age_seconds: 90
   max_token_age_seconds: 21600
-  max_slippage_bps: 800
-  stop_loss_pct: 0.45
-  take_profit_multiples: [2.0, 4.0, 10.0]
-  take_profit_fractions: [0.4, 0.3, 0.3]
-  trailing_stop_pct: 0.35
-  max_hold_seconds: 14400
+  max_slippage_bps: 500
+  stop_loss_pct: 0.20
+  take_profit_multiples: [1.8, 3.5, 6.0, 10.0]
+  take_profit_fractions: [0.35, 0.35, 0.15, 0.15]
+  trailing_stop_pct: 0.25
+  max_hold_seconds: 21600
   kill_switch: false
+  momentum_stop_seconds: 90
+  momentum_min_gain_pct: 0.10
 
 execution:
-  base_latency_ms: 350
-  latency_jitter_ms: 150
+  base_latency_ms: 250
+  latency_jitter_ms: 100
   priority_fee_lamports: 1000000
   jito_tip_lamports: 1000000
   platform_fee_bps: 100
   lp_fee_bps: 30
-  fail_probability: 0.03
-  sandwich_probability: 0.05
+  fail_probability: 0.01
+  sandwich_probability: 0.02
   sandwich_extra_bps: 50
 
 scoring:
-  weights_version: v0
+  weights_version: v_heavy_artillery
   weights_path: config/weights.json
-  min_coverage: 0.5                  # refuse to act on a thin read
-  entry_threshold: 0.55
+  min_coverage: 0.20                 # Pure on-chain reads without requiring Twitter
+  entry_threshold: 0.65
   exit_threshold: 0.35
-  veto_top10_share: 0.55             # relaxed by +0.30 pre-graduation, where concentration is structural
+  veto_top10_share: 0.55
   veto_insider_share: 0.30
   veto_bundle_share: 0.35
   veto_deployer_rug_count: 1
