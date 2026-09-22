@@ -135,6 +135,7 @@ class VetoReason(str, Enum):
     COPYCAT_HONEYPOT = "copycat_honeypot"
     WASH_TRADING_DETECTED = "wash_trading_detected"
     CURVE_STAGE_OUT_OF_BOUNDS = "curve_stage_out_of_bounds"
+    HOLDERS_TOO_LOW_FOR_AGE = "holders_too_low_for_age"
 
 
 # --------------------------------------------------------------------------- #
