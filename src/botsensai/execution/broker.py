@@ -403,30 +403,35 @@ class PaperBroker:
         multiple = current / entry_price
         signals: list[tuple[float, str]] = []
 
-        # 98% bonding curve auto-exit prior to Raydium migration lockup
-        if snapshot is not None and snapshot.market_cap_usd and snapshot.market_cap_usd >= 65_000.0:
-            return [(1.0, "bonding curve at 98%, pre-migration auto-exit")]
+        # 1. Flash Liquidity Drain / Rug Sentinel: exit immediately if liquidity collapses
+        if snapshot is not None and getattr(snapshot, "liquidity_usd", None) and snapshot.liquidity_usd < (s.min_liquidity_usd * 0.70):
+            return [(1.0, "flash liquidity drain / rug sentinel triggered")]
 
-        # Hard stop.
+        # 2. Dynamic Breakeven Stop: If token reached >= 1.4x, hard floor locks at 1.02x (cost + gas)
+        if position.peak_price_native >= 1.40 * entry_price:
+            if multiple <= 1.02:
+                return [(1.0, f"breakeven stop triggered at {multiple:.2f}x (capital secured)")]
+
+        # 3. Hard Stop Loss (active before breakeven lock)
         if multiple <= (1.0 - s.stop_loss_pct):
-            return [(1.0, f"stop loss at {multiple:.2f}x")]
+            return [(1.0, f"hard stop loss at {multiple:.2f}x")]
 
-        # 90-second momentum time-decay stop: cut stagnant positions early
+        # 4. Momentum time-decay stop: cut stagnant positions early
         held = (as_of - position.opened_at).total_seconds()
         if held >= s.momentum_stop_seconds and multiple < (1.0 + s.momentum_min_gain_pct):
-            return [(1.0, f"momentum time-decay stop, <15% gain at {held:.0f}s")]
+            return [(1.0, f"momentum time-decay stop, <{s.momentum_min_gain_pct:.0%} gain at {held:.0f}s")]
 
-        # Trailing stop, armed only once the position has been profitable.
-        if position.peak_price_native > entry_price:
+        # 5. Trailing stop: Armed only once position has doubled (>=2.0x) to give runners room to explode
+        if position.peak_price_native >= 2.0 * entry_price:
             drawdown = 1.0 - (current / max(1e-18, position.peak_price_native))
             if drawdown >= s.trailing_stop_pct:
-                return [(1.0, f"trailing stop, {drawdown:.0%} off peak")]
+                return [(1.0, f"trailing stop, {drawdown:.0%} off peak {position.peak_price_native / entry_price:.1f}x")]
 
-        # Time stop.
+        # 6. Time stop
         if held >= s.max_hold_seconds:
             return [(1.0, f"max hold {held / 3600:.1f}h reached")]
 
-        # Profit ladder. Each rung fires once, tracked by how much has already
+        # 7. Profit ladder. Each rung fires once, tracked by how much has already
         # been sold relative to the original size.
         original_tokens = sum(
             f.amount_token for f in position.fills if f.side is Side.BUY and not f.rejected
@@ -447,6 +452,14 @@ class PaperBroker:
                 if current_fraction > 1e-6:
                     signals.append((current_fraction, f"take profit at {target:.1f}x"))
                 break
+
+        # 8. Pre-migration de-risk: Lock up to 70% at $65k mcap, but PRESERVE the 30% Moonbag for Raydium 500%-1000%+ blastoff
+        if snapshot is not None and snapshot.market_cap_usd and snapshot.market_cap_usd >= 65_000.0:
+            if sold_fraction < 0.70:
+                needed = 0.70 - sold_fraction
+                frac = min(1.0, needed * original_tokens / max(1e-18, position.amount_token))
+                if frac > 0.05:
+                    signals.append((frac, "pre-migration de-risk: lock 70%, preserve moonbag for Raydium"))
 
         return signals
 

@@ -715,6 +715,11 @@ class Pipeline:
             except Exception:
                 pass
 
+        # Require smart money confirmation unless score is extraordinary
+        matched_count = len(matched) if "matched" in locals() and matched else 0
+        if matched_count == 0 and result.composite < 0.85:
+            return "skip: waiting for smart money confirmation (no alpha wallet present)"
+
         # 2. Gate entry on the boosted conviction score
         ok, reason = self.scorer.should_enter(result)
         if not ok:
@@ -725,15 +730,27 @@ class Pipeline:
             return "skip: no market snapshot"
         latest = snapshots[-1]
 
+        # Dynamic Sizing: Scale size by alpha wallet consensus count
+        matched_count = len(matched) if "matched" in locals() and matched else 0
+        base_max_pos = self.settings.risk.max_position_native
+        if matched_count >= 3:
+            effective_max_pos = base_max_pos * 1.30  # 10/10 Conviction: scale up on 3+ alpha convergence
+        elif matched_count == 1:
+            effective_max_pos = base_max_pos * 0.75  # Cautious probe on single alpha entry
+        else:
+            effective_max_pos = base_max_pos
+
         size = score_to_size(
             result,
-            self.settings.risk.max_position_native,
+            effective_max_pos,
             stop_loss_fraction=self.settings.risk.stop_loss_pct,
         )
         if size <= 1e-6:
             return "skip: sizing produced zero"
 
         dynamic_tip = self.settings.execution.jito_tip_lamports
+        if matched_count >= 2:
+            dynamic_tip = max(dynamic_tip, 1_500_000)  # Priority Jito bundle inclusion on consensus
         try:
             from botsensai.execution.jito_tips import JitoTipEngine
             dynamic_tip = JitoTipEngine.get_instance(self.settings).calculate_tip_lamports(
