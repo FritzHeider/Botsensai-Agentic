@@ -179,8 +179,8 @@ class ExecutionSettings(BaseModel):
 class ScoringSettings(BaseModel):
     weights_version: str = "v0"
     weights_path: str | None = "config/weights.json"
-    min_coverage: float = 0.5
-    entry_threshold: float = 0.68
+    min_coverage: float = 0.20
+    entry_threshold: float = 0.65
     exit_threshold: float = 0.35
     regime_lookback_hours: float = 6.0
     # Graduation-rate thresholds separating hot / normal / dead markets.

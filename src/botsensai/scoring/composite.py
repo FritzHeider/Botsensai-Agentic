@@ -56,55 +56,48 @@ CONFIDENCE_WEIGHT: dict[Confidence, float] = {
 #: Family-level budget. Allocated at family level so that a family with eight
 #: correlated members cannot outvote a family with three uncorrelated ones.
 DEFAULT_FAMILY_WEIGHTS: dict[str, float] = {
-    "execution_quality": 0.35,     # Momentum: The explosion of volume
-    "social_authenticity": 0.25,   # Momentum: The velocity of hype
-    "onchain_topology": 0.20,      # Base: Wide holder distribution
-    "team_credibility": 0.10,
-    "community_production": 0.05,
-    "narrative": 0.05,
+    "onchain_topology": 0.45,      # GUN: Smart money consensus & true sybil-free distribution
+    "execution_quality": 0.45,     # GUN: Organic buy pressure & deep realizable liquidity
+    "team_credibility": 0.10,      # GUN: Dev dump immunity & insider supply overhang
+    "social_authenticity": 0.00,   # Discard noise: easily faked by bot farms
+    "community_production": 0.00,  # Discard noise: irrelevant in early blastoff windows
+    "narrative": 0.00,             # Discard noise: descriptions are ChatGPT fluff
 }
 
 #: Within-family weights. Anything unlisted gets an equal share of the remainder.
 DEFAULT_METRIC_WEIGHTS: dict[str, float] = {
-    # onchain_topology
-    "smart_wallet_participation": 0.40,
-    "funder_graph_dispersion": 0.12,
-    "sniper_supply_share": 0.10,
-    "bundle_supply_share": 0.10,
-    "early_holder_retention": 0.12,
-    "holder_distribution_health": 0.10,
-    "fresh_wallet_ratio": 0.06,
-    # team_credibility
-    "deployer_behaviour_now": 0.45,
-    "deployer_lineage": 0.35,
-    "insider_supply_overhang": 0.20,
-    # social_authenticity
-    "social_velocity_acceleration": 0.35,
-    "purchased_follower_signal": 0.15,
-    "reply_template_ratio": 0.15,
-    "engager_age_dispersion": 0.10,
-    "engagement_depth_ratio": 0.10,
-    "reply_rhythm_naturalness": 0.08,
-    "mention_author_diversity": 0.05,
-    "conviction_language_share": 0.02,
-    "follower_engagement_coherence": 0.0,
-    # execution_quality
-    "buy_pressure_quality": 0.45,
-    "price_stability_under_flow": 0.25,
-    "realizable_exit_depth": 0.20,
-    "entry_contention": 0.10,
-    # community_production
-    "organic_media_production_rate": 0.32,
-    "cross_platform_propagation_lag": 0.26,
-    "unpaid_promoter_share": 0.18,
-    "derivative_remix_depth": 0.14,
-    "community_content_originality": 0.10,
-    # narrative
-    "narrative_novelty": 0.34,
-    "meta_alignment": 0.26,
-    "launch_timing_quality": 0.20,
-    "ticker_contention": 0.12,
-    "description_substance": 0.08,
+    # onchain_topology (45% total weight)
+    "smart_wallet_participation": 0.50,    # Real alpha wallets with verified 60%+ win rates
+    "holder_distribution_health": 0.20,    # True organic holder breadth (no whale monopolization)
+    "funder_graph_dispersion": 0.15,       # Anti-sybil: verifying buyers aren't funded by 1 dev wallet
+    "bundle_supply_share": 0.15,          # Protection against Jito sniper cartels
+    # execution_quality (45% total weight)
+    "buy_pressure_quality": 0.50,          # Genuine multi-buyer organic volume dominance
+    "realizable_exit_depth": 0.30,         # Liquidity depth: ensuring 0% slippage on exit
+    "price_stability_under_flow": 0.20,    # Support floor integrity: holding higher lows
+    # team_credibility (10% total weight)
+    "deployer_behaviour_now": 0.50,        # Confirming dev is disarmed / CTO floor established
+    "insider_supply_overhang": 0.50,       # Zero hidden dev sybils holding supply bombs
+    # Legacy noisy metrics zeroed out
+    "social_velocity_acceleration": 0.00,
+    "purchased_follower_signal": 0.00,
+    "reply_template_ratio": 0.00,
+    "engager_age_dispersion": 0.00,
+    "engagement_depth_ratio": 0.00,
+    "reply_rhythm_naturalness": 0.00,
+    "mention_author_diversity": 0.00,
+    "conviction_language_share": 0.00,
+    "follower_engagement_coherence": 0.00,
+    "organic_media_production_rate": 0.00,
+    "cross_platform_propagation_lag": 0.00,
+    "unpaid_promoter_share": 0.00,
+    "derivative_remix_depth": 0.00,
+    "community_content_originality": 0.00,
+    "narrative_novelty": 0.00,
+    "meta_alignment": 0.00,
+    "launch_timing_quality": 0.00,
+    "ticker_contention": 0.00,
+    "description_substance": 0.00,
 }
 
 #: Regime multipliers applied to family budgets. In a hot market, narrative and
