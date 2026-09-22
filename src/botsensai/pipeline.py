@@ -697,15 +697,27 @@ class Pipeline:
         if buyer_wallets:
             try:
                 from botsensai.smart_money import RealtimeSmartMoneyTrigger, discover_smart_money_wallets
+                import json, os
+                
                 if getattr(self, "smart_money_trigger", None) is None:
                     trigger = RealtimeSmartMoneyTrigger()
-                    profiles = discover_smart_money_wallets(self.db, min_trades=2)
-                    trigger.update_alpha_wallets(profiles)
+                    
+                    # Try to load top 200 wallets from external file
+                    wallets_path = "data/top_200_wallets.json"
+                    if os.path.exists(wallets_path):
+                        with open(wallets_path, "r") as f:
+                            external_wallets = json.load(f)
+                        trigger.alpha_wallets.update(external_wallets)
+                    else:
+                        profiles = discover_smart_money_wallets(self.db, min_trades=2)
+                        trigger.update_alpha_wallets(profiles)
+                        
                     self.smart_money_trigger = trigger
                 
                 matched, boost, _ = self.smart_money_trigger.evaluate_early_buyers(buyer_wallets)
                 if matched:
-                    result.composite = min(1.0, result.composite + boost)
+                    # Give a massive boost if a top 200 wallet buys
+                    result.composite = min(1.0, result.composite + 0.40)
             except Exception:
                 pass
 

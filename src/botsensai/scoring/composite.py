@@ -56,12 +56,12 @@ CONFIDENCE_WEIGHT: dict[Confidence, float] = {
 #: Family-level budget. Allocated at family level so that a family with eight
 #: correlated members cannot outvote a family with three uncorrelated ones.
 DEFAULT_FAMILY_WEIGHTS: dict[str, float] = {
-    "onchain_topology": 0.28,
-    "team_credibility": 0.20,
-    "social_authenticity": 0.18,
-    "execution_quality": 0.15,
-    "community_production": 0.12,
-    "narrative": 0.07,
+    "execution_quality": 0.35,     # Momentum: The explosion of volume
+    "social_authenticity": 0.25,   # Momentum: The velocity of hype
+    "onchain_topology": 0.20,      # Base: Wide holder distribution
+    "team_credibility": 0.10,
+    "community_production": 0.05,
+    "narrative": 0.05,
 }
 
 #: Within-family weights. Anything unlisted gets an equal share of the remainder.
@@ -78,26 +78,21 @@ DEFAULT_METRIC_WEIGHTS: dict[str, float] = {
     "deployer_behaviour_now": 0.45,
     "deployer_lineage": 0.35,
     "insider_supply_overhang": 0.20,
-    # social_authenticity — note that `purchased_follower_signal` is weighted
-    # above the inferred proxies on purpose. It is X's own classification of the
-    # follower base rather than an inference from an engagement ratio, and direct
-    # evidence should outrank a behavioural side-effect of the same thing. It is
-    # also far more often absent, which the confidence machinery handles by
-    # renormalizing within the family.
-    "reply_template_ratio": 0.22,
-    "purchased_follower_signal": 0.18,
-    "engager_age_dispersion": 0.14,
-    "engagement_depth_ratio": 0.12,
-    "social_velocity_acceleration": 0.12,
-    "reply_rhythm_naturalness": 0.10,
-    "mention_author_diversity": 0.07,
-    "conviction_language_share": 0.03,
-    "follower_engagement_coherence": 0.02,
+    # social_authenticity
+    "social_velocity_acceleration": 0.35,
+    "purchased_follower_signal": 0.15,
+    "reply_template_ratio": 0.15,
+    "engager_age_dispersion": 0.10,
+    "engagement_depth_ratio": 0.10,
+    "reply_rhythm_naturalness": 0.08,
+    "mention_author_diversity": 0.05,
+    "conviction_language_share": 0.02,
+    "follower_engagement_coherence": 0.0,
     # execution_quality
-    "realizable_exit_depth": 0.40,
-    "buy_pressure_quality": 0.28,
-    "price_stability_under_flow": 0.20,
-    "entry_contention": 0.12,
+    "buy_pressure_quality": 0.45,
+    "price_stability_under_flow": 0.25,
+    "realizable_exit_depth": 0.20,
+    "entry_contention": 0.10,
     # community_production
     "organic_media_production_rate": 0.32,
     "cross_platform_propagation_lag": 0.26,
