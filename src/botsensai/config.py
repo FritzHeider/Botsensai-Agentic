@@ -122,15 +122,15 @@ class RiskSettings(BaseModel):
     min_token_age_seconds: float = 90.0
     max_token_age_seconds: float = 60 * 60 * 6
     max_slippage_bps: int = 500
-    stop_loss_pct: float = 0.18
-    take_profit_multiples: list[float] = Field(default_factory=lambda: [1.40, 2.50, 6.00])
-    take_profit_fractions: list[float] = Field(default_factory=lambda: [0.70, 0.20, 0.10])
-    trailing_stop_pct: float = 0.20
-    max_hold_seconds: float = 60 * 60 * 2
+    stop_loss_pct: float = 0.20
+    take_profit_multiples: list[float] = Field(default_factory=lambda: [1.80, 3.50, 6.00, 10.00])
+    take_profit_fractions: list[float] = Field(default_factory=lambda: [0.35, 0.35, 0.15, 0.15])
+    trailing_stop_pct: float = 0.25
+    max_hold_seconds: float = 60 * 60 * 6
     kill_switch: bool = False
     expectancy_floor: float = -0.05
-    momentum_stop_seconds: float = 60.0
-    momentum_min_gain_pct: float = 0.08
+    momentum_stop_seconds: float = 90.0
+    momentum_min_gain_pct: float = 0.10
     curve_auto_exit_pct: float = 0.98
     use_kelly_sizing: bool = True
     kelly_fraction: float = 0.25
