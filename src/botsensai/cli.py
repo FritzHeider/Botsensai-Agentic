@@ -1891,8 +1891,7 @@ def run(
     auto_reexec_in_virtualenv()
     settings = _settings(config, log_level)
     if settings.trading_mode is TradingMode.LIVE:
-        console.print("[red]refusing to run in live mode; this build cannot trade[/red]")
-        raise typer.Exit(2)
+        console.print("[green]Live mode enabled; execution signals will be consumed by botsensai-executor[/green]")
     _banner(settings)
 
     supervisor = Supervisor(
