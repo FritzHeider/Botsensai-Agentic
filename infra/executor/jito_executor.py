@@ -189,8 +189,8 @@ class JitoLiveExecutor:
                     return tx, pool_type
             except urllib.error.HTTPError as err:
                 err_body = err.read().decode("utf-8", errors="ignore")
-                if "pump-amm" in err_body and pool_type == "pump":
-                    continue  # Token migrated, try pump-amm
+                if pool_type == "pump":
+                    continue  # Fallback to pump-amm pool
                 return None, f"PumpPortal HTTP {err.code}: {err_body[:120]}"
             except Exception as e:
                 return None, f"Transaction generation error: {e}"
