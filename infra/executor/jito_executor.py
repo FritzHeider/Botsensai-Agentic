@@ -565,9 +565,9 @@ class JitoLiveExecutor:
                     if not row or row[1] != "OPEN":
                         sig_row = conn.execute(
                             "SELECT symbol, token_key, size_native, tx_hash FROM execution_signals "
-                            "WHERE mint = ? AND side = 'BUY' "
+                            "WHERE token_key LIKE ? AND side = 'BUY' "
                             "ORDER BY id DESC LIMIT 1",
-                            (mint,),
+                            (f"%{mint}%",),
                         ).fetchone()
                         if sig_row:
                             sym, tkey, sz_sol, tx_h = sig_row
