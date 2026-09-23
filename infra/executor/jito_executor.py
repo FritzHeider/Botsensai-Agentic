@@ -141,7 +141,12 @@ def main() -> None:
     parser.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="Path to botsensai.db")
     parser.add_argument("--keypair", type=Path, default=DEFAULT_KEYPAIR, help="Path to id.json")
+    parser.add_argument("--live", action="store_true", help="Enable live execution mode")
+    parser.add_argument("--max-size", type=float, default=0.25, help="Maximum position size in SOL")
     args = parser.parse_args()
+
+    if args.live:
+        os.environ["BOTSENSAI_TRADING_MODE"] = "LIVE"
 
     executor = JitoLiveExecutor(db_path=args.db, keypair_path=args.keypair)
 
