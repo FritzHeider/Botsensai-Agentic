@@ -926,8 +926,44 @@ class Pipeline:
             latest = snapshots[-1]
             position = self.broker.account.positions[key]
             self.broker.mark(position.token, latest.price_native or 0.0)
+            entry_price = (
+                position.cost_basis_native / max(1e-18, position.amount_token)
+                if position.amount_token > 0
+                else position.last_price_native
+            )
             fills = self.broker.apply_exits(position.token, latest, utcnow())
-            report.exited += sum(1 for f in fills if not f.rejected)
+            for fill in fills:
+                if fill.rejected:
+                    continue
+                report.exited += 1
+                try:
+                    self.db.record_signal(
+                        token_key=position.token.key,
+                        symbol=position.token.symbol,
+                        side="SELL",
+                        size_native=fill.amount_native,
+                        max_slippage_bps=self.settings.risk.max_slippage_bps,
+                        jito_tip_lamports=self.settings.execution.jito_tip_lamports,
+                        score=0.0,
+                        as_of=fill.as_of,
+                    )
+                    self.db.upsert_paper_position(
+                        token_key=position.token.key,
+                        symbol=position.token.symbol,
+                        mint=position.token.mint,
+                        amount_token=position.amount_token,
+                        cost_basis_native=position.cost_basis_native,
+                        entry_price_native=entry_price,
+                        peak_price_native=position.peak_price_native,
+                        last_price_native=position.last_price_native,
+                        opened_at=position.opened_at,
+                        status="CLOSED" if not position.is_open else "OPEN",
+                        realized_pnl_native=position.realized_pnl_native,
+                        closed_at=position.closed_at,
+                        exit_reason=position.exit_reason,
+                    )
+                except Exception as ex:
+                    log.warning("manage_positions.db_record_failed", error=str(ex), token=key)
 
     async def sweep(self, discover_limit: int = 60, max_candidates: int = 25) -> SweepReport:
         report = SweepReport(started_at=utcnow())

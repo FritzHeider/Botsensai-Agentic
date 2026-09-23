@@ -231,14 +231,7 @@ class VetoEngine:
             vetoes.extend(_contract_vetoes(sec))
             vetoes.extend(self._supply_vetoes(sec, ctx))
             if sec.dev_sold:
-                latest = ctx.latest_snapshot
-                is_cto_floor = (
-                    latest is not None
-                    and (latest.holder_count or 0) >= 100
-                    and (latest.liquidity_usd or 0.0) >= risk_min_liquidity
-                )
-                if not is_cto_floor:
-                    vetoes.append(VetoReason.DEV_ALREADY_SOLD)
+                vetoes.append(VetoReason.DEV_ALREADY_SOLD)
 
         # Deployer history, restricted to what was knowable at decision time.
         rug_count = int(ctx.deployer_history.get("rug_count", 0) or 0)
