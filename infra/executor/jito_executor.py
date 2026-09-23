@@ -38,7 +38,7 @@ PUMPPORTAL_URL = "https://pumpportal.fun/api/trade-local"
 MIN_WALLET_RESERVE_SOL = 0.10  # Hard floor: preserve SOL for rent & fees
 MAX_POSITION_SIZE_SOL = 0.025   # Hard cap on single entry
 DEFAULT_POSITION_SIZE_SOL = 0.015
-MAX_SLIPPAGE_BPS = 150         # 1.5% maximum slippage protection
+MAX_SLIPPAGE_BPS = 350         # 3.5% maximum slippage protection for fast meme runners
 
 
 class JitoLiveExecutor:

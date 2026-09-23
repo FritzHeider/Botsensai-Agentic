@@ -8,7 +8,7 @@
 ## 2. Hard Capital Preservation Rails
 * **Hot Wallet Reserve Floor**: Never allow the hot wallet balance to drop below `0.10 SOL`. If balance approaches the floor, halt new entries immediately while maintaining exit monitoring.
 * **Position Sizing Ceiling**: Hard cap single trade allocation at `0.025 SOL` max (default `0.010 - 0.017 SOL`).
-* **Slippage & Priority Protection**: Enforce a strict `1.5%` (150 bps) max slippage ceiling and capped Jito MEV tips (500k–800k lamports) to eliminate front-running and capital bleed.
+* **Slippage & Priority Protection**: Enforce a strict `3.5%` (350 bps) max slippage ceiling for fast meme runner entries and capped Jito MEV tips (500k–800k lamports) to guarantee transaction inclusion while eliminating front-running and capital bleed.
 
 ## 3. Dual-Pool Execution & Migration Fallback
 * **Pre/Post-Graduation Routing**: All swap transaction builders must handle both pre-migration Pump.fun bonding curves (`pool: "pump"`) and post-migration Raydium AMM pools (`pool: "pump-amm"`).
