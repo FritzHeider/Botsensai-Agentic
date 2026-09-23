@@ -25,8 +25,11 @@ import httpx
 from solders.keypair import Keypair
 from solders.transaction import VersionedTransaction
 
+from dotenv import load_dotenv
+
 # Default Paths & Endpoints
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(BASE_DIR / ".env")
 DEFAULT_DB = BASE_DIR / "data" / "botsensai.db"
 DEFAULT_KEYPAIR = Path.home() / ".config" / "solana" / "id.json"
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
@@ -393,8 +396,12 @@ class JitoLiveExecutor:
 
             # Record or update live on-chain positions
             if side == "BUY":
-                await asyncio.sleep(2.0)
-                token_bal = self.get_token_balance(mint)
+                token_bal = 0.0
+                for _ in range(5):
+                    await asyncio.sleep(2.0)
+                    token_bal = self.get_token_balance(mint)
+                    if token_bal > 0:
+                        break
                 if token_bal > 0:
                     entry_px = safe_size_sol / token_bal
                     self._record_live_buy(
@@ -502,6 +509,93 @@ class JitoLiveExecutor:
                 print(f"[EXECUTOR] 📝 Marked on-chain LIVE position CLOSED for {pos.get('symbol', mint)} (Exit: {exit_tx_hash[:10]}...)")
         except Exception as e:
             print(f"[EXECUTOR] Error recording live sell: {e}")
+
+    def get_all_token_balances(self) -> dict[str, float]:
+        """Returns {mint: total_ui_amount} for all on-chain token accounts owned by wallet."""
+        if not self.keypair:
+            return {}
+        balances: dict[str, float] = {}
+        for prog in [
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        ]:
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    str(self.keypair.pubkey()),
+                    {"programId": prog},
+                    {"encoding": "jsonParsed"},
+                ],
+            }
+            try:
+                req = urllib.request.Request(
+                    self.rpc_url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode())
+                    for acc in data.get("result", {}).get("value", []):
+                        info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
+                        m = info.get("mint")
+                        amt = info.get("tokenAmount", {}).get("uiAmount", 0.0)
+                        if m and amt and amt > 0:
+                            balances[m] = balances.get(m, 0.0) + float(amt)
+            except Exception as e:
+                print(f"[EXECUTOR] Error querying token accounts for {prog}: {e}")
+        return balances
+
+    async def reconcile_on_chain_holdings(self) -> None:
+        """Synchronizes on-chain token holdings directly into live_positions."""
+        if not self.keypair:
+            return
+        try:
+            balances = self.get_all_token_balances()
+            # 1. Ensure all positive on-chain holdings are tracked in live_positions
+            for mint, amount in balances.items():
+                if amount <= 0:
+                    continue
+                with sqlite3.connect(self.db_path) as conn:
+                    row = conn.execute(
+                        "SELECT mint, status, amount_token FROM live_positions WHERE mint = ?",
+                        (mint,),
+                    ).fetchone()
+                    if not row or row[1] != "OPEN":
+                        sig_row = conn.execute(
+                            "SELECT symbol, token_key, size_native, tx_hash FROM execution_signals "
+                            "WHERE mint = ? AND side = 'BUY' "
+                            "ORDER BY id DESC LIMIT 1",
+                            (mint,),
+                        ).fetchone()
+                        if sig_row:
+                            sym, tkey, sz_sol, tx_h = sig_row
+                            sz_sol = float(sz_sol or 0.015)
+                            entry_px = sz_sol / amount if amount > 0 else 0.0
+                            self._record_live_buy(
+                                mint=mint,
+                                symbol=sym or "UNKNOWN",
+                                token_key=tkey or f"solana:{mint}",
+                                entry_tx_hash=tx_h or "on_chain_sync",
+                                amount_token=amount,
+                                cost_sol=sz_sol,
+                                entry_price_sol=entry_px,
+                            )
+            # 2. Check if any OPEN position has been closed on-chain
+            with sqlite3.connect(self.db_path) as conn:
+                open_rows = conn.execute(
+                    "SELECT mint, symbol FROM live_positions WHERE status = 'OPEN'"
+                ).fetchall()
+                for (open_mint, open_sym) in open_rows:
+                    if open_mint not in balances or balances[open_mint] <= 0:
+                        self._record_live_sell(
+                            mint=open_mint,
+                            exit_tx_hash="on_chain_sync",
+                            exit_reason="balance_depleted",
+                        )
+        except Exception as e:
+            print(f"[EXECUTOR] Error during on-chain holdings reconciliation: {e}")
 
     def _get_open_live_positions(self) -> list[dict[str, Any]]:
         try:
@@ -617,17 +711,23 @@ class JitoLiveExecutor:
     async def run_loop(self, interval: float = 1.0) -> None:
         print(f"[EXECUTOR] Pure Live Mode: Monitoring {self.db_path} for signals & open on-chain positions...")
         last_exit_check = 0.0
+        last_sync_check = 0.0
         while self.running:
             # 1. Process pending execution signals
             signals = self.get_pending_signals()
             for sig in signals:
                 await self.execute_signal(sig)
 
-            # 2. Check open on-chain positions for exits every 3.0 seconds
             now = time.time()
+            # 2. Check open on-chain positions for exits every 3.0 seconds
             if now - last_exit_check >= 3.0:
                 await self.check_live_positions_exit()
                 last_exit_check = now
+
+            # 3. Synchronize on-chain token accounts every 10.0 seconds
+            if now - last_sync_check >= 10.0:
+                await self.reconcile_on_chain_holdings()
+                last_sync_check = now
 
             await asyncio.sleep(interval)
 
