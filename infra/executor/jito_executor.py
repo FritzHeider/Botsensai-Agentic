@@ -59,6 +59,7 @@ class JitoLiveExecutor:
         candidate_paths = [
             self.keypair_path,
             Path(os.getenv("SOLANA_KEYPAIR_PATH", "")),
+            Path("/home/ubuntu/.config/solana/id.json"),
             Path.home() / ".config" / "solana" / "id.json",
             BASE_DIR / "config" / "id.json",
         ]
