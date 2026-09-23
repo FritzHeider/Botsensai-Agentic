@@ -390,16 +390,245 @@ class JitoLiveExecutor:
         if success:
             print(f"[EXECUTOR] 🟢 BUNDLE CONFIRMED & LANDED ON-CHAIN: {tx_signature}")
             self.update_signal_status(sig_id, status="LANDED", tx_hash=tx_signature)
+
+            # Record or update live on-chain positions
+            if side == "BUY":
+                await asyncio.sleep(2.0)
+                token_bal = self.get_token_balance(mint)
+                if token_bal > 0:
+                    entry_px = safe_size_sol / token_bal
+                    self._record_live_buy(
+                        mint=mint,
+                        symbol=symbol,
+                        token_key=token_key or f"solana:{mint}",
+                        entry_tx_hash=tx_signature,
+                        amount_token=token_bal,
+                        cost_sol=safe_size_sol,
+                        entry_price_sol=entry_px,
+                    )
+            elif side == "SELL":
+                await asyncio.sleep(2.0)
+                token_bal = self.get_token_balance(mint)
+                if token_bal <= 0:
+                    self._record_live_sell(
+                        mint=mint,
+                        exit_tx_hash=tx_signature,
+                        exit_reason="signal_sell",
+                    )
         else:
             print(f"[EXECUTOR] ❌ Bundle dispatch failed: {tx_signature}")
             self.update_signal_status(sig_id, status="FAILED", error=tx_signature)
 
+    def _record_live_buy(
+        self,
+        mint: str,
+        symbol: str,
+        token_key: str,
+        entry_tx_hash: str,
+        amount_token: float,
+        cost_sol: float,
+        entry_price_sol: float,
+    ) -> None:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                now = time.time()
+                conn.execute(
+                    """
+                    INSERT INTO live_positions (
+                        mint, symbol, token_key, entry_tx_hash, exit_tx_hash,
+                        amount_token, cost_sol, entry_price_sol, peak_price_sol,
+                        last_price_sol, realized_pnl_sol, opened_at, closed_at,
+                        status, exit_reason, updated_at
+                    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 0.0, ?, NULL, 'OPEN', NULL, ?)
+                    ON CONFLICT(mint) DO UPDATE SET
+                        amount_token = excluded.amount_token,
+                        cost_sol = excluded.cost_sol,
+                        peak_price_sol = MAX(live_positions.peak_price_sol, excluded.peak_price_sol),
+                        last_price_sol = excluded.last_price_sol,
+                        status = 'OPEN',
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        mint,
+                        symbol,
+                        token_key,
+                        entry_tx_hash,
+                        amount_token,
+                        cost_sol,
+                        entry_price_sol,
+                        entry_price_sol,
+                        entry_price_sol,
+                        now,
+                        now,
+                    ),
+                )
+                conn.commit()
+                print(f"[EXECUTOR] 📝 Recorded on-chain LIVE position for ${symbol} ({amount_token:,.2f} tokens @ {entry_price_sol:.8f} SOL)")
+        except Exception as e:
+            print(f"[EXECUTOR] Error recording live buy: {e}")
+
+    def _record_live_sell(
+        self,
+        mint: str,
+        exit_tx_hash: str,
+        exit_reason: str,
+        exit_sol: float | None = None,
+    ) -> None:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                row = cur.execute("SELECT * FROM live_positions WHERE mint = ? AND status = 'OPEN'", (mint,)).fetchone()
+                if not row:
+                    return
+                pos = dict(row)
+                now = time.time()
+                cost = float(pos["cost_sol"])
+                realized_pnl = (exit_sol - cost) if exit_sol is not None else 0.0
+                conn.execute(
+                    """
+                    UPDATE live_positions
+                    SET status = 'CLOSED',
+                        exit_tx_hash = ?,
+                        realized_pnl_sol = ?,
+                        closed_at = ?,
+                        exit_reason = ?,
+                        updated_at = ?
+                    WHERE mint = ?
+                    """,
+                    (exit_tx_hash, realized_pnl, now, exit_reason, now, mint),
+                )
+                conn.commit()
+                print(f"[EXECUTOR] 📝 Marked on-chain LIVE position CLOSED for {pos.get('symbol', mint)} (Exit: {exit_tx_hash[:10]}...)")
+        except Exception as e:
+            print(f"[EXECUTOR] Error recording live sell: {e}")
+
+    def _get_open_live_positions(self) -> list[dict[str, Any]]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute("SELECT * FROM live_positions WHERE status = 'OPEN' AND amount_token > 0").fetchall()
+                return [dict(r) for r in rows]
+        except Exception:
+            return []
+
+    def _fetch_live_price(self, mint: str) -> float:
+        try:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Botsensai/2.0"})
+            with urllib.request.urlopen(req, timeout=2.0) as resp:
+                data = json.loads(resp.read().decode())
+                pairs = data.get("pairs") or []
+                if not pairs:
+                    return 0.0
+                best = max(pairs, key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0))
+                return float(best.get("priceNative") or 0.0)
+        except Exception:
+            return 0.0
+
+    def _update_live_price(self, mint: str, price_sol: float) -> None:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                now = time.time()
+                conn.execute(
+                    """
+                    UPDATE live_positions
+                    SET last_price_sol = ?,
+                        peak_price_sol = MAX(peak_price_sol, ?),
+                        updated_at = ?
+                    WHERE mint = ? AND status = 'OPEN'
+                    """,
+                    (price_sol, price_sol, now, mint),
+                )
+                conn.commit()
+        except Exception:
+            pass
+
+    async def check_live_positions_exit(self) -> None:
+        """Monitor open on-chain positions and execute staged take-profits or trailing stops."""
+        open_pos = self._get_open_live_positions()
+        if not open_pos:
+            return
+
+        for pos in open_pos:
+            mint = pos["mint"]
+            symbol = pos.get("symbol") or "TOKEN"
+            cost_sol = float(pos["cost_sol"])
+            entry_px = float(pos["entry_price_sol"])
+            amount_token = float(pos["amount_token"])
+            peak_px = float(pos.get("peak_price_sol") or entry_px)
+
+            # Check actual on-chain token balance
+            actual_token_bal = self.get_token_balance(mint)
+            if actual_token_bal <= 0.0:
+                self._record_live_sell(mint=mint, exit_tx_hash="onchain_zero", exit_reason="balance_zeroed")
+                continue
+
+            curr_px = self._fetch_live_price(mint)
+            if curr_px <= 0:
+                continue
+
+            self._update_live_price(mint, curr_px)
+            peak_px = max(peak_px, curr_px)
+
+            multiple = curr_px / entry_px if entry_px > 0 else 1.0
+            peak_multiple = peak_px / entry_px if entry_px > 0 else 1.0
+
+            should_exit = False
+            exit_reason = ""
+
+            # Staged Take Profit (2.5x / 5.0x / 10.0x)
+            if multiple >= 2.5 and "tp2.5" not in str(pos.get("exit_reason") or ""):
+                should_exit = True
+                exit_reason = f"take profit at 2.5x ({multiple:.1f}x)"
+            elif multiple >= 5.0 and "tp5.0" not in str(pos.get("exit_reason") or ""):
+                should_exit = True
+                exit_reason = f"take profit at 5.0x ({multiple:.1f}x)"
+            elif multiple >= 10.0:
+                should_exit = True
+                exit_reason = f"take profit at 10.0x ({multiple:.1f}x)"
+            # Dynamic Trailing Stop (25% off peak when peak was >= 1.3x)
+            elif peak_multiple >= 1.3 and (curr_px <= peak_px * 0.75):
+                should_exit = True
+                exit_reason = f"trailing stop, 25% off peak ({peak_multiple:.1f}x)"
+
+            if should_exit:
+                print(f"\n[EXECUTOR] 🎯 Live Exit Triggered for ${symbol}: {exit_reason}")
+                tx, pool_type = self.build_swap_transaction(
+                    side="SELL",
+                    mint=mint,
+                    size_sol=0.0,
+                    slippage_bps=350,
+                    priority_fee_sol=0.0005,
+                )
+                if tx:
+                    try:
+                        signed_tx = self.sign_transaction(tx)
+                        ok, sig = self.dispatch_jito_bundle(signed_tx)
+                        if ok:
+                            print(f"[EXECUTOR] 🟢 LIVE EXIT CONFIRMED ON-CHAIN: {sig}")
+                            await asyncio.sleep(2.0)
+                            token_bal = self.get_token_balance(mint)
+                            if token_bal <= 0:
+                                self._record_live_sell(mint=mint, exit_tx_hash=sig, exit_reason=exit_reason)
+                    except Exception as e:
+                        print(f"[EXECUTOR] Live exit execution failed: {e}")
+
     async def run_loop(self, interval: float = 1.0) -> None:
-        print(f"[EXECUTOR] Monitoring {self.db_path} for signals (poll interval: {interval}s)...")
+        print(f"[EXECUTOR] Pure Live Mode: Monitoring {self.db_path} for signals & open on-chain positions...")
+        last_exit_check = 0.0
         while self.running:
+            # 1. Process pending execution signals
             signals = self.get_pending_signals()
             for sig in signals:
                 await self.execute_signal(sig)
+
+            # 2. Check open on-chain positions for exits every 3.0 seconds
+            now = time.time()
+            if now - last_exit_check >= 3.0:
+                await self.check_live_positions_exit()
+                last_exit_check = now
+
             await asyncio.sleep(interval)
 
 

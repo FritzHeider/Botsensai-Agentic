@@ -761,6 +761,28 @@ class Pipeline:
             pass
 
         age = (result.as_of - launch.created_at).total_seconds()
+
+        # PURE LIVE TRADING PATH: Zero Paper Broker Simulation
+        if self.settings.trading_mode is TradingMode.LIVE or str(self.settings.trading_mode.value).lower() == "live":
+            open_live = self.db.open_live_positions()
+            if len(open_live) >= self.settings.risk.max_concurrent_positions:
+                return "skip: max concurrent live positions reached"
+            if any(p["mint"] == launch.token.mint for p in open_live):
+                return "skip: already holding token in live wallet"
+
+            # Directly record live BUY execution signal for the Jito executor
+            self.db.record_signal(
+                token_key=launch.token.key,
+                symbol=launch.token.symbol,
+                side="BUY",
+                size_native=size,
+                max_slippage_bps=self.settings.risk.max_slippage_bps,
+                jito_tip_lamports=dynamic_tip,
+                score=result.composite,
+                as_of=result.as_of,
+            )
+            return f"entered: live execution signal recorded (size {size:.4f} SOL, score {result.composite:.3f})"
+
         fill = self.broker.open_position(
             launch.token,
             size,
@@ -919,6 +941,9 @@ class Pipeline:
 
     def _manage_open_positions(self, report: SweepReport) -> None:
         """Mark and exit anything already open against the freshest snapshot."""
+        if self.settings.trading_mode is TradingMode.LIVE or str(self.settings.trading_mode.value).lower() == "live":
+            # In live mode, on-chain exits are monitored and executed atomically by the Jito live executor
+            return
         for key in list(self.broker.account.positions.keys()):
             snapshots = self.db.snapshots_as_of(key, utcnow())
             if not snapshots:
@@ -1041,6 +1066,10 @@ class Pipeline:
         return enrich_failed
 
     def _check_and_trip_kill_switch(self, report: SweepReport) -> None:
+        if self.settings.trading_mode is TradingMode.LIVE or str(self.settings.trading_mode.value).lower() == "live":
+            # In pure live mode, paper broker loss limits do not apply. Real wallet capital is strictly preserved by the Jito executor floor.
+            return
+
         if self.broker.account.daily_loss_native >= self.settings.risk.max_daily_loss_native:
             self._trip_kill_switch(
                 f"daily loss limit breached: {self.broker.account.daily_loss_native:.4f} >= {self.settings.risk.max_daily_loss_native:.4f} native"

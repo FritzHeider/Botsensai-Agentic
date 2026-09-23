@@ -390,6 +390,27 @@ CREATE TABLE IF NOT EXISTS paper_positions (
     updated_at         REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_paper_positions_status ON paper_positions(status, opened_at);
+
+-- Live on-chain positions tracked from confirmed atomic Jito bundle landings.
+CREATE TABLE IF NOT EXISTS live_positions (
+    mint               TEXT PRIMARY KEY,
+    symbol             TEXT,
+    token_key          TEXT NOT NULL,
+    entry_tx_hash      TEXT NOT NULL,
+    exit_tx_hash       TEXT,
+    amount_token       REAL NOT NULL,
+    cost_sol           REAL NOT NULL,
+    entry_price_sol    REAL NOT NULL,
+    peak_price_sol     REAL NOT NULL,
+    last_price_sol     REAL NOT NULL,
+    realized_pnl_sol   REAL NOT NULL DEFAULT 0.0,
+    opened_at          REAL NOT NULL,
+    closed_at          REAL,
+    status             TEXT NOT NULL DEFAULT 'OPEN',
+    exit_reason        TEXT,
+    updated_at         REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_live_positions_status ON live_positions(status, opened_at);
 """
 
 
@@ -1890,6 +1911,160 @@ class Database:
         pos["realized_pnl_native"] = realized_pnl
         pos["exit_reason"] = reason
         pos["status"] = "CLOSED"
+        return pos
+
+    def upsert_live_position(
+        self,
+        mint: str,
+        symbol: str | None,
+        token_key: str,
+        entry_tx_hash: str,
+        amount_token: float,
+        cost_sol: float,
+        entry_price_sol: float,
+        peak_price_sol: float | None = None,
+        last_price_sol: float | None = None,
+        opened_at: datetime | float | None = None,
+        status: str = "OPEN",
+        realized_pnl_sol: float = 0.0,
+        closed_at: datetime | float | None = None,
+        exit_tx_hash: str | None = None,
+        exit_reason: str | None = None,
+    ) -> None:
+        """Record or update a real on-chain position confirmed via Jito."""
+        now = utcnow().timestamp()
+        opened_ts = _ts(opened_at) or now
+        closed_ts = _ts(closed_at)
+        peak_px = peak_price_sol if peak_price_sol is not None else entry_price_sol
+        last_px = last_price_sol if last_price_sol is not None else entry_price_sol
+        with self.tx() as conn:
+            conn.execute(
+                """
+                INSERT INTO live_positions (
+                    mint, symbol, token_key, entry_tx_hash, exit_tx_hash,
+                    amount_token, cost_sol, entry_price_sol, peak_price_sol,
+                    last_price_sol, realized_pnl_sol, opened_at, closed_at,
+                    status, exit_reason, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mint) DO UPDATE SET
+                    amount_token = excluded.amount_token,
+                    cost_sol = excluded.cost_sol,
+                    peak_price_sol = MAX(live_positions.peak_price_sol, excluded.peak_price_sol),
+                    last_price_sol = excluded.last_price_sol,
+                    realized_pnl_sol = excluded.realized_pnl_sol,
+                    exit_tx_hash = COALESCE(excluded.exit_tx_hash, live_positions.exit_tx_hash),
+                    closed_at = excluded.closed_at,
+                    status = excluded.status,
+                    exit_reason = excluded.exit_reason,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    mint,
+                    symbol,
+                    token_key,
+                    entry_tx_hash,
+                    exit_tx_hash,
+                    amount_token,
+                    cost_sol,
+                    entry_price_sol,
+                    peak_px,
+                    last_px,
+                    realized_pnl_sol,
+                    opened_ts,
+                    closed_ts,
+                    status,
+                    exit_reason,
+                    now,
+                ),
+            )
+
+    def open_live_positions(self) -> list[dict[str, Any]]:
+        """Return all active on-chain positions currently held."""
+        rows = self.conn.execute(
+            """
+            SELECT mint, symbol, token_key, entry_tx_hash, amount_token,
+                   cost_sol, entry_price_sol, peak_price_sol, last_price_sol,
+                   realized_pnl_sol, opened_at, status, updated_at
+            FROM live_positions
+            WHERE status = 'OPEN' AND amount_token > 0
+            ORDER BY opened_at DESC
+            """
+        ).fetchall()
+        positions = []
+        now = utcnow().timestamp()
+        for r in rows:
+            pos = dict(r)
+            amount = pos["amount_token"]
+            last_px = pos["last_price_sol"]
+            cost = pos["cost_sol"]
+            curr_val = amount * last_px
+            unrealized = curr_val - cost
+            mult = (curr_val / cost) if cost > 0 else 1.0
+            peak_mult = (amount * pos["peak_price_sol"] / cost) if cost > 0 else 1.0
+            age_sec = max(0.0, now - pos["opened_at"])
+            pos.update(
+                {
+                    "current_value_sol": curr_val,
+                    "unrealized_pnl_sol": unrealized,
+                    "multiple": mult,
+                    "peak_multiple": peak_mult,
+                    "age_seconds": age_sec,
+                }
+            )
+            positions.append(pos)
+        return positions
+
+    def update_live_position_price(self, mint: str, current_price_sol: float) -> None:
+        """Update live marked price and peak high watermark for an open bag."""
+        now = utcnow().timestamp()
+        with self.tx() as conn:
+            conn.execute(
+                """
+                UPDATE live_positions
+                SET last_price_sol = ?,
+                    peak_price_sol = MAX(peak_price_sol, ?),
+                    updated_at = ?
+                WHERE mint = ? AND status = 'OPEN'
+                """,
+                (current_price_sol, current_price_sol, now, mint),
+            )
+
+    def close_live_position(
+        self, mint: str, exit_tx_hash: str, exit_sol: float, exit_reason: str = "exit"
+    ) -> dict[str, Any] | None:
+        """Mark a live position closed on-chain and record real PnL."""
+        row = self.conn.execute(
+            "SELECT * FROM live_positions WHERE mint = ? AND status = 'OPEN'",
+            (mint,),
+        ).fetchone()
+        if not row:
+            return None
+        pos = dict(row)
+        now = utcnow().timestamp()
+        realized_pnl = exit_sol - pos["cost_sol"]
+        with self.tx() as conn:
+            conn.execute(
+                """
+                UPDATE live_positions
+                SET status = 'CLOSED',
+                    exit_tx_hash = ?,
+                    realized_pnl_sol = ?,
+                    closed_at = ?,
+                    exit_reason = ?,
+                    updated_at = ?
+                WHERE mint = ?
+                """,
+                (exit_tx_hash, realized_pnl, now, exit_reason, now, mint),
+            )
+        pos.update(
+            {
+                "status": "CLOSED",
+                "exit_tx_hash": exit_tx_hash,
+                "realized_pnl_sol": realized_pnl,
+                "closed_at": now,
+                "exit_reason": exit_reason,
+            }
+        )
         return pos
 
     def reset_paper_positions(self) -> int:
