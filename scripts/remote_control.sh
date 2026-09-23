@@ -21,7 +21,12 @@ set -euo pipefail
 COMMAND="${1:-help}"
 shift || true
 
-INSTANCE_ID="${1:-${BOTSENSAI_INSTANCE_ID:-i-0bb5f0e7d264a2937}}"
+if [[ "${1:-}" =~ ^i-[0-9a-f]+$ ]]; then
+    INSTANCE_ID="$1"
+    shift || true
+else
+    INSTANCE_ID="${BOTSENSAI_INSTANCE_ID:-i-0bb5f0e7d264a2937}"
+fi
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 PROFILE="${AWS_PROFILE:-agent-profile}"
 
@@ -35,22 +40,22 @@ show_help() {
 Botsensai Remote Control (AWS SSM)
 
 Usage:
-  $0 <command> <INSTANCE_ID> [options]
+  $0 <command> [INSTANCE_ID] [options]
 
 Commands:
-  status   <ID>        Check systemctl status of botsensai
-  doctor   <ID>        Run surface diagnostics ('botsensai doctor')
-  logs     <ID> [N]    View last N lines of service logs (default: 50)
-  sweep    <ID>        Execute a single discovery & scoring sweep
-  db-stats <ID>        Print record counts in data/botsensai.db
-  restart  <ID>        Restart the botsensai background daemon
-  stop     <ID>        Pause/stop the background daemon
-  start    <ID>        Start the background daemon
-  update   <ID>        Git pull, install editable package, restart daemon
+  status   [ID]        Check live multi-service status & hot wallet
+  doctor   [ID]        Run surface diagnostics ('botsensai doctor')
+  logs     [ID] [N] [target] View logs (target: all|daemon|executor|serve|telemetry)
+  sweep    [ID]        Execute a single discovery & scoring sweep
+  db-stats [ID]        Print record counts in data/botsensai.db
+  restart  [ID]        Restart background services
+  stop     [ID]        Pause/stop services
+  start    [ID]        Start services
+  update   [ID]        Git pull, install editable package, restart services
 
 Environment Variables:
   BOTSENSAI_INSTANCE_ID  Default target EC2 Instance ID
-  AWS_REGION             AWS Region (default: us-west-2)
+  AWS_REGION             AWS Region (default: us-east-1)
   AWS_PROFILE            AWS CLI Profile (optional)
 EOF
 }
@@ -66,7 +71,6 @@ if [ -z "$INSTANCE_ID" ]; then
     show_help
     exit 1
 fi
-shift || true
 
 run_ssm() {
     local shell_cmd="$1"
@@ -151,6 +155,9 @@ case "$COMMAND" in
         ;;
     update)
         run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai && git pull origin main && .venv/bin/pip install -e . --no-deps 2>/dev/null || true'; sudo systemctl restart botsensai-daemon botsensai-executor && echo 'Updated and restarted live trading services.'"
+        ;;
+    cmd|exec)
+        run_ssm "$1"
         ;;
     *)
         echo "Unknown command: $COMMAND"

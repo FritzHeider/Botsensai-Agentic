@@ -8,7 +8,7 @@ import json
 import sqlite3
 import subprocess
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 
 HOT_WALLET = "ChgCuBWDvGFwnW77kU523JcFXc2CryX3J4rEWDzWmtsS"
 DB_PATH = "/home/ubuntu/Botsensai/data/botsensai.db"
@@ -105,7 +105,7 @@ def check_database():
             print(" " + "-" * 95)
             for s in signals:
                 sid, cat, side, sym, size, tip, st, tx = s
-                dt_str = datetime.utcfromtimestamp(cat).strftime("%H:%M:%S") if cat else "N/A"
+                dt_str = datetime.fromtimestamp(cat, timezone.utc).strftime("%H:%M:%S") if cat else "N/A"
                 sym_str = str(sym or "UNK")[:9]
                 size_str = f"{float(size or 0):.4f}"
                 tip_str = f"{int(tip or 0):,}"
@@ -169,7 +169,7 @@ def check_recent_logs():
 
 
 if __name__ == "__main__":
-    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     print(f"\n=================================================================")
     print(f"   BOTSENSAI 2.0 LIVE STATUS MONITOR | {now_str}")
     print(f"=================================================================")
