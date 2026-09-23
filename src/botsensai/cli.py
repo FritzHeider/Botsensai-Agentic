@@ -2314,6 +2314,20 @@ def backup(
         raise typer.Exit(1) from None
 
 
+@app.command()
+def copilot(
+    daemon: bool = typer.Option(False, "--daemon", "-d", help="Run in continuous autonomous audio alert monitor mode."),
+    db_path: str = typer.Option("data/botsensai.db", "--db", help="Path to SQLite database."),
+) -> None:
+    """Launch the Gemini Live API real-time voice and audio trading copilot."""
+    from botsensai.copilot.live_copilot import BotsensaiLiveCopilot
+    copilot_engine = BotsensaiLiveCopilot(db_path=db_path)
+    if daemon:
+        asyncio.run(copilot_engine.run_alert_daemon())
+    else:
+        asyncio.run(copilot_engine.start_voice_session())
+
+
 def main() -> None:
 
     app()
