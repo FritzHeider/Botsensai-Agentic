@@ -31,15 +31,15 @@ risk:
   max_position_native: 0.25          # SOL per position
   max_portfolio_exposure_native: 2.0
   max_concurrent_positions: 15
-  max_daily_loss_native: 1.0
+  max_daily_loss_native: 5.0
   max_trades_per_hour: 20
   min_liquidity_usd: 6000
   min_token_age_seconds: 90
   max_token_age_seconds: 21600
   max_slippage_bps: 500
   stop_loss_pct: 0.20
-  take_profit_multiples: [1.8, 3.5, 6.0, 10.0]
-  take_profit_fractions: [0.35, 0.35, 0.15, 0.15]
+  take_profit_multiples: [2.5, 5.0, 10.0]
+  take_profit_fractions: [0.50, 0.30, 0.20]
   trailing_stop_pct: 0.25
   max_hold_seconds: 21600
   kill_switch: false
