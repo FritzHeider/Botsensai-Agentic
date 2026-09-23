@@ -84,16 +84,25 @@ media:
 
 collectors:
   pumpfun:
-    timeout_seconds: 35.0
+    timeout_seconds: 15.0
+  dexscreener:
+    timeout_seconds: 10.0
+  geckoterminal:
+    timeout_seconds: 10.0
   x:
-    timeout_seconds: 35.0
-  instagram:
-    enabled: false   # disabled until authenticated session profile is mounted
+    enabled: false
+    timeout_seconds: 5.0
   reddit:
-    timeout_seconds: 35.0
+    enabled: false
+    timeout_seconds: 5.0
+  instagram:
+    enabled: false
+  tiktok:
+    enabled: false
+  fourchan:
+    enabled: false
   telegram:
-    extra:
-      call_channels: []
+    enabled: false
 
 backtest:
   train_days: 14
