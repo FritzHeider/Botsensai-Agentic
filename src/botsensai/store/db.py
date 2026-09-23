@@ -411,6 +411,24 @@ CREATE TABLE IF NOT EXISTS live_positions (
     updated_at         REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_live_positions_status ON live_positions(status, opened_at);
+
+-- Multi-wallet smart money confluence events for copy-trading & volume tracking
+CREATE TABLE IF NOT EXISTS copy_trade_events (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_key             TEXT NOT NULL,
+    symbol                TEXT,
+    mint                  TEXT NOT NULL,
+    trader_wallet         TEXT NOT NULL,
+    trader_skill          REAL NOT NULL DEFAULT 0.70,
+    trader_win_rate       REAL NOT NULL DEFAULT 0.75,
+    trader_buy_sol        REAL NOT NULL DEFAULT 0.015,
+    entry_delay_seconds   REAL NOT NULL DEFAULT 0.0,
+    conviction_boost      REAL NOT NULL DEFAULT 0.50,
+    recommended_size_sol  REAL NOT NULL DEFAULT 0.015,
+    signal_id             INTEGER,
+    created_at            REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_copy_trade_events_mint ON copy_trade_events(mint, created_at);
 """
 
 
@@ -1714,6 +1732,48 @@ class Database:
                     jito_tip_lamports,
                     score,
                     as_of_ts,
+                    now,
+                ),
+            )
+            return cursor.lastrowid or 0
+
+    def record_copy_trade_event(
+        self,
+        token_key: str,
+        symbol: str | None,
+        mint: str,
+        trader_wallet: str,
+        trader_skill: float = 0.70,
+        trader_win_rate: float = 0.75,
+        trader_buy_sol: float = 0.015,
+        entry_delay_seconds: float = 0.0,
+        conviction_boost: float = 0.50,
+        recommended_size_sol: float = 0.015,
+        signal_id: int | None = None,
+    ) -> int:
+        """Record smart trader confluence copy-trade event."""
+        now = utcnow().timestamp()
+        with self.tx() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO copy_trade_events (
+                    token_key, symbol, mint, trader_wallet, trader_skill,
+                    trader_win_rate, trader_buy_sol, entry_delay_seconds,
+                    conviction_boost, recommended_size_sol, signal_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    token_key,
+                    symbol,
+                    mint,
+                    trader_wallet,
+                    trader_skill,
+                    trader_win_rate,
+                    trader_buy_sol,
+                    entry_delay_seconds,
+                    conviction_boost,
+                    recommended_size_sol,
+                    signal_id,
                     now,
                 ),
             )

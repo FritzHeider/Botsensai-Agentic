@@ -39,7 +39,7 @@ risk:
   max_slippage_bps: 500
   stop_loss_pct: 0.20
   take_profit_multiples: [2.5, 5.0, 10.0]
-  take_profit_fractions: [0.50, 0.30, 0.20]
+  take_profit_fractions: [0.60, 0.25, 0.15]
   trailing_stop_pct: 0.25
   max_hold_seconds: 21600
   kill_switch: false
@@ -49,8 +49,8 @@ risk:
 execution:
   base_latency_ms: 250
   latency_jitter_ms: 100
-  priority_fee_lamports: 1000000
-  jito_tip_lamports: 1000000
+  priority_fee_lamports: 850000
+  jito_tip_lamports: 850000
   platform_fee_bps: 100
   lp_fee_bps: 30
   fail_probability: 0.01

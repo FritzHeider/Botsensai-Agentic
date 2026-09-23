@@ -39,8 +39,8 @@ PUMPPORTAL_URL = "https://pumpportal.fun/api/trade-local"
 
 # Safety Guardrails
 MIN_WALLET_RESERVE_SOL = 0.10  # Hard floor: preserve SOL for rent & fees
-MAX_POSITION_SIZE_SOL = 0.025   # Hard cap on single entry
-DEFAULT_POSITION_SIZE_SOL = 0.015
+MAX_POSITION_SIZE_SOL = 0.035   # Raised ceiling: allows dynamic compounding up to 0.035 SOL
+DEFAULT_POSITION_SIZE_SOL = 0.018
 MAX_SLIPPAGE_BPS = 350         # 3.5% maximum slippage protection for fast meme runners
 
 
@@ -150,6 +150,7 @@ class JitoLiveExecutor:
         size_sol: float,
         slippage_bps: int = 100,
         priority_fee_sol: float = 0.0005,
+        sell_amount: str = "100%",
     ) -> tuple[VersionedTransaction | None, str | None]:
         if not self.keypair:
             return None, "Keypair not loaded"
@@ -163,7 +164,7 @@ class JitoLiveExecutor:
             amount_val: Any = min(max(size_sol, 0.001), MAX_POSITION_SIZE_SOL)
             denominated_in_sol = "true"
         else:
-            amount_val = "100%"
+            amount_val = sell_amount
             denominated_in_sol = "false"
 
         payload = {
@@ -177,8 +178,9 @@ class JitoLiveExecutor:
             "pool": "pump",
         }
 
-        # Determine pool priority: if token is migrated or on Raydium/Pumpswap, prioritize pump-amm
-        pools_to_try = ["pump", "pump-amm"]
+        # Method 3: Multi-Pool Liquidity Routing & Auto Fallback
+        # Determine pool priority: if token is migrated or on Raydium/Pumpswap, prioritize AMM pools
+        pools_to_try = ["pump", "pump-amm", "raydium", "raydium-cpmm", "auto"]
         try:
             dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
             dex_req = urllib.request.Request(dex_url, headers={"User-Agent": "Botsensai/2.0"})
@@ -186,12 +188,13 @@ class JitoLiveExecutor:
                 data = json.loads(resp.read().decode())
                 pairs = data.get("pairs") or []
                 for p in pairs:
-                    if p.get("dexId") in ["pumpswap", "raydium", "meteora"] or (p.get("marketCap") or 0) >= 65_000:
-                        pools_to_try = ["pump-amm", "pump"]
+                    if p.get("dexId") in ["pumpswap", "raydium", "meteora", "orca"] or (p.get("marketCap") or 0) >= 65_000:
+                        pools_to_try = ["pump-amm", "raydium", "raydium-cpmm", "auto", "pump"]
                         break
         except Exception:
             pass
 
+        last_err = "No error"
         for pool_type in pools_to_try:
             payload["pool"] = pool_type
             try:
@@ -206,13 +209,13 @@ class JitoLiveExecutor:
                     return tx, pool_type
             except urllib.error.HTTPError as err:
                 err_body = err.read().decode("utf-8", errors="ignore")
-                if pool_type == pools_to_try[0]:
-                    continue  # Fallback to secondary pool
-                return None, f"PumpPortal HTTP {err.code}: {err_body[:120]}"
+                last_err = f"PumpPortal ({pool_type}) HTTP {err.code}: {err_body[:100]}"
+                continue  # Cascades to secondary and auto pools
             except Exception as e:
-                return None, f"Transaction generation error: {e}"
+                last_err = f"Transaction error ({pool_type}): {e}"
+                continue
 
-        return None, "Failed to generate transaction across both pump and pump-amm pools"
+        return None, f"Failed across all pools {pools_to_try}: {last_err}"
 
     def sign_transaction(self, tx: VersionedTransaction) -> VersionedTransaction:
         if not self.keypair:
@@ -352,8 +355,25 @@ class JitoLiveExecutor:
             self.update_signal_status(sig_id, status="BLOCKED", error=warn)
             return
 
-        # 2. Position Size & Slippage Clamping
-        safe_size_sol = min(max(size_sol, 0.001), MAX_POSITION_SIZE_SOL)
+        # Method 1: Dynamic Bankroll Scaling & Fractional Kelly (Compounding Engine)
+        if side == "BUY":
+            dynamic_bankroll_size = (wallet_balance - MIN_WALLET_RESERVE_SOL) * 0.05
+            scaled_size = max(size_sol, dynamic_bankroll_size, 0.012)
+            safe_size_sol = min(scaled_size, MAX_POSITION_SIZE_SOL)
+        else:
+            safe_size_sol = size_sol
+
+        # Method 4: Dynamic Jito Priority Bribes Based on Conviction Score
+        score = float(sig.get("score") or 0.85)
+        if score >= 0.95:
+            tiered_tip_lamports = 1_200_000
+        elif score >= 0.88:
+            tiered_tip_lamports = 850_000
+        else:
+            tiered_tip_lamports = 550_000
+        tip_lamports = max(int(sig.get("jito_tip_lamports") or 0), tiered_tip_lamports)
+        priority_fee_sol = max(tip_lamports / 1e9, 0.0005)
+
         safe_slippage_bps = min(max(slippage_bps, 50), MAX_SLIPPAGE_BPS)
 
         # 3. For SELL: Verify token balance
@@ -620,6 +640,21 @@ class JitoLiveExecutor:
         except Exception:
             return 0.0
 
+    def _fetch_live_5m_volume(self, mint: str) -> float:
+        """Fetches 5-minute USD trading volume from DexScreener to detect dead liquidity."""
+        try:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Botsensai/2.0"})
+            with urllib.request.urlopen(req, timeout=2.5) as resp:
+                data = json.loads(resp.read().decode())
+                pairs = data.get("pairs") or []
+                if not pairs:
+                    return 0.0
+                best = max(pairs, key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0))
+                return float(best.get("volume", {}).get("m5") or 0.0)
+        except Exception:
+            return 9999.0  # Defensive: On network error, do not falsely liquidate
+
     def _update_live_price(self, mint: str, price_sol: float) -> None:
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -639,11 +674,12 @@ class JitoLiveExecutor:
             pass
 
     async def check_live_positions_exit(self) -> None:
-        """Monitor open on-chain positions and execute staged take-profits or trailing stops."""
+        """Monitor open on-chain positions: staged take-profits, moonbags, trailing stops, & stagnation recycler."""
         open_pos = self._get_open_live_positions()
         if not open_pos:
             return
 
+        now = time.time()
         for pos in open_pos:
             mint = pos["mint"]
             symbol = pos.get("symbol") or "TOKEN"
@@ -651,6 +687,9 @@ class JitoLiveExecutor:
             entry_px = float(pos["entry_price_sol"])
             amount_token = float(pos["amount_token"])
             peak_px = float(pos.get("peak_price_sol") or entry_px)
+            opened_at = float(pos.get("opened_at") or now)
+            age_seconds = now - opened_at
+            prev_exit_reason = str(pos.get("exit_reason") or "")
 
             # Check actual on-chain token balance
             actual_token_bal = self.get_token_balance(mint)
@@ -668,32 +707,43 @@ class JitoLiveExecutor:
             multiple = curr_px / entry_px if entry_px > 0 else 1.0
             peak_multiple = peak_px / entry_px if entry_px > 0 else 1.0
 
-            should_exit = False
+            sell_amount = "100%"
+            is_partial = False
             exit_reason = ""
 
-            # Staged Take Profit (2.5x / 5.0x / 10.0x)
-            if multiple >= 2.5 and "tp2.5" not in str(pos.get("exit_reason") or ""):
-                should_exit = True
-                exit_reason = f"take profit at 2.5x ({multiple:.1f}x)"
-            elif multiple >= 5.0 and "tp5.0" not in str(pos.get("exit_reason") or ""):
-                should_exit = True
-                exit_reason = f"take profit at 5.0x ({multiple:.1f}x)"
-            elif multiple >= 10.0:
-                should_exit = True
-                exit_reason = f"take profit at 10.0x ({multiple:.1f}x)"
-            # Dynamic Trailing Stop (25% off peak when peak was >= 1.3x)
+            # Method 2: Partial Staged Profit Taking with Free-Roll Moonbag
+            # Stage 1 at 2.5x: Sell 60% of tokens (150% principal reclaimed, zero-risk moonbag formed)
+            if multiple >= 2.5 and "stage1" not in prev_exit_reason:
+                sell_amount = "60%"
+                is_partial = True
+                exit_reason = f"stage1_take_profit_{multiple:.2f}x"
+            # Stage 2 at 5.0x: Sell 62% of remaining tokens (25% of original, 15% Moonbag remains)
+            elif multiple >= 5.0 and "stage1" in prev_exit_reason and "stage2" not in prev_exit_reason:
+                sell_amount = "62%"
+                is_partial = True
+                exit_reason = f"stage2_take_profit_{multiple:.2f}x"
+            # Trailing Stop: 25% off peak when peak was >= 1.3x
             elif peak_multiple >= 1.3 and (curr_px <= peak_px * 0.75):
-                should_exit = True
-                exit_reason = f"trailing stop, 25% off peak ({peak_multiple:.1f}x)"
+                sell_amount = "100%"
+                is_partial = False
+                exit_reason = f"trailing_stop_25pct_off_peak_{peak_multiple:.2f}x"
+            # Method 5: 15-Minute Stagnation Bag Recycler (reclaim dead capital)
+            elif age_seconds >= 900 and multiple < 1.15:
+                vol_5m = self._fetch_live_5m_volume(mint)
+                if vol_5m < 500:
+                    sell_amount = "100%"
+                    is_partial = False
+                    exit_reason = f"15m_stagnation_recycler (age {age_seconds/60:.0f}m, vol ${vol_5m:.0f})"
 
-            if should_exit:
-                print(f"\n[EXECUTOR] 🎯 Live Exit Triggered for ${symbol}: {exit_reason}")
+            if exit_reason:
+                print(f"\n[EXECUTOR] 🎯 Live Exit Triggered for ${symbol}: {exit_reason} (Sell Amount: {sell_amount})")
                 tx, pool_type = self.build_swap_transaction(
                     side="SELL",
                     mint=mint,
                     size_sol=0.0,
                     slippage_bps=350,
                     priority_fee_sol=0.0005,
+                    sell_amount=sell_amount,
                 )
                 if tx:
                     try:
@@ -702,8 +752,25 @@ class JitoLiveExecutor:
                         if ok:
                             print(f"[EXECUTOR] 🟢 LIVE EXIT CONFIRMED ON-CHAIN: {sig}")
                             await asyncio.sleep(2.0)
-                            token_bal = self.get_token_balance(mint)
-                            if token_bal <= 0:
+                            rem_token_bal = self.get_token_balance(mint)
+                            if is_partial and rem_token_bal > 0:
+                                # Update position with remaining tokens and reduced cost basis
+                                new_cost = cost_sol * (0.40 if "stage1" in exit_reason else 0.0)
+                                with sqlite3.connect(self.db_path) as conn:
+                                    conn.execute(
+                                        """
+                                        UPDATE live_positions
+                                        SET amount_token = ?,
+                                            cost_sol = ?,
+                                            exit_reason = ?,
+                                            updated_at = ?
+                                        WHERE mint = ? AND status = 'OPEN'
+                                        """,
+                                        (rem_token_bal, new_cost, exit_reason, time.time(), mint),
+                                    )
+                                    conn.commit()
+                                print(f"[EXECUTOR] 🚀 Partial Exit Recorded for ${symbol}! Remaining Moonbag: {rem_token_bal:,.2f} tokens")
+                            else:
                                 self._record_live_sell(mint=mint, exit_tx_hash=sig, exit_reason=exit_reason)
                     except Exception as e:
                         print(f"[EXECUTOR] Live exit execution failed: {e}")

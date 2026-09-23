@@ -730,13 +730,32 @@ class Pipeline:
             return "skip: no market snapshot"
         latest = snapshots[-1]
 
-        # Dynamic Sizing: Scale size by alpha wallet consensus count
+        # Dynamic Sizing: Method 6 Multi-Wallet Smart Trader Confluence Multiplier
         matched_count = len(matched) if "matched" in locals() and matched else 0
         base_max_pos = self.settings.risk.max_position_native
-        if matched_count >= 3:
-            effective_max_pos = base_max_pos * 1.30  # 10/10 Conviction: scale up on 3+ alpha convergence
+        if matched_count >= 2:
+            # Alpha Confluence: Scale up sizing on smart money accumulation (capped at 0.035 SOL)
+            effective_max_pos = min(0.035, base_max_pos * 1.75)
+            result.composite = min(1.0, max(result.composite, 0.96))
+            # Record smart money confluence events for copy-trading tracking
+            try:
+                for w in matched:
+                    self.db.record_copy_trade_event(
+                        token_key=launch.token.key,
+                        symbol=launch.token.symbol,
+                        mint=launch.token.mint,
+                        trader_wallet=w,
+                        trader_skill=float(self.wallet_weights.get(w, 0.70)),
+                        trader_win_rate=0.80,
+                        trader_buy_sol=0.025,
+                        entry_delay_seconds=age if "age" in locals() else 0.0,
+                        conviction_boost=0.50,
+                        recommended_size_sol=effective_max_pos,
+                    )
+            except Exception:
+                pass
         elif matched_count == 1:
-            effective_max_pos = base_max_pos * 0.75  # Cautious probe on single alpha entry
+            effective_max_pos = base_max_pos * 0.85  # Cautious probe on single alpha entry
         else:
             effective_max_pos = base_max_pos
 
@@ -748,15 +767,21 @@ class Pipeline:
         if size <= 1e-6:
             return "skip: sizing produced zero"
 
-        dynamic_tip = self.settings.execution.jito_tip_lamports
-        if matched_count >= 2:
-            dynamic_tip = max(dynamic_tip, 1_500_000)  # Priority Jito bundle inclusion on consensus
+        # Method 4: Dynamic Jito Priority Tip Tiering Based on Conviction Score
+        if result.composite >= 0.95 or matched_count >= 2:
+            dynamic_tip = 1_200_000  # Slot 0 priority inclusion on high conviction
+        elif result.composite >= 0.88:
+            dynamic_tip = 850_000
+        else:
+            dynamic_tip = 550_000
+
         try:
             from botsensai.execution.jito_tips import JitoTipEngine
-            dynamic_tip = JitoTipEngine.get_instance(self.settings).calculate_tip_lamports(
+            engine_tip = JitoTipEngine.get_instance(self.settings).calculate_tip_lamports(
                 conviction_score=result.composite,
                 trade_size_sol=size,
             )
+            dynamic_tip = max(dynamic_tip, engine_tip)
         except Exception:
             pass
 
