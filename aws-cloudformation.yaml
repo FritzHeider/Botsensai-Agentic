@@ -1,42 +1,81 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Botsensai EC2 Deployment Template. Provisions a t3.medium instance with Ubuntu 24.04, installs all dependencies, and sets up the daily cron jobs.'
+Description: 'Botsensai EC2 Deployment Template. Provisions an Ubuntu 24.04 instance with AWS Systems Manager (SSM) zero-SSH management, automated S3 database backups, and cron maintenance.'
 
 Parameters:
   KeyName:
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
-    Type: AWS::EC2::KeyPair::KeyName
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: Name of an existing EC2 KeyPair to enable SSH access (optional, leave empty if using SSM Session Manager)
+    Type: String
+    Default: ''
   InstanceType:
-    Description: WebServer EC2 instance type
+    Description: EC2 instance type
     Type: String
     Default: t3.medium
     AllowedValues: [t3.small, t3.medium, t3.large, t3.xlarge]
     ConstraintDescription: must be a valid EC2 instance type.
   RepositoryUrl:
-    Description: The Git URL of your Botsensai repository (e.g., https://github.com/yourusername/Botsensai.git)
+    Description: The Git URL of your Botsensai repository
     Type: String
+    Default: 'https://github.com/FritzHeider/Botsensai-Agentic.git'
+  BackupBucketName:
+    Description: S3 bucket name for automated SQLite database snapshots
+    Type: String
+    Default: 'botsensai-backups-538471157365'
+  LatestUbuntuAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id'
+    Description: Dynamic SSM parameter path to the latest Ubuntu 24.04 LTS AMI.
 
-Mappings:
-  RegionMap:
-    # Ubuntu 24.04 LTS AMIs (x86_64) - Note: You may need to update these AMI IDs to the latest for your specific region
-    us-east-1:
-      AMI: ami-04b70fa74e45c3917 
-    us-east-2:
-      AMI: ami-0cb91c7de36eed2cb
-    us-west-1:
-      AMI: ami-025442cebb7bf5b50
-    us-west-2:
-      AMI: ami-00c257e12d6828491
-    eu-west-1:
-      AMI: ami-00385a401487aefa4
-    eu-central-1:
-      AMI: ami-0a628e1e89aaedf80
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, '']]
+  HasBackupBucket: !Not [!Equals [!Ref BackupBucketName, '']]
 
 Resources:
+  BotsensaiInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: IAM role for Botsensai EC2 instance enabling SSM access, CloudWatch telemetry, and S3 database backups
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ssm.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: BotsensaiS3BackupPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${BackupBucketName}/backups/*'
+                  - 'arn:aws:s3:::my-botsensai-backups-bucket/backups/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${BackupBucketName}'
+                  - 'arn:aws:s3:::my-botsensai-backups-bucket'
+
+  BotsensaiInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref BotsensaiInstanceRole
+
   BotsensaiSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow SSH access
+      GroupDescription: Security group for Botsensai server (SSM handles shell access; port 22 optional)
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -47,8 +86,9 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyName
-      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+      ImageId: !Ref LatestUbuntuAmiId
+      IamInstanceProfile: !Ref BotsensaiInstanceProfile
       SecurityGroupIds:
         - !Ref BotsensaiSecurityGroup
       BlockDeviceMappings:
@@ -64,16 +104,14 @@ Resources:
           
           echo "Starting Botsensai setup..."
           
-          # Update and install dependencies
+          # Update and install system dependencies
           apt-get update -y
-          apt-get install -y python3-pip python3-venv git tmux jq curl
+          apt-get install -y python3-pip python3-venv git tmux jq curl sqlite3 awscli
           
           # Switch to ubuntu user to clone and install
           su - ubuntu -c '
           cd /home/ubuntu
           
-          # NOTE: If your repo is private, you will need to replace this with a git clone
-          # using an access token or SSH key, OR copy the files over manually.
           git clone ${RepositoryUrl} Botsensai
           cd Botsensai
           
@@ -95,13 +133,31 @@ Resources:
           (crontab -l 2>/dev/null; echo "0 3 * * * cd /home/ubuntu/Botsensai && /home/ubuntu/Botsensai/.venv/bin/botsensai fit --min-samples 200 >> data/cron.log 2>&1") | crontab -
           (crontab -l 2>/dev/null; echo "0 4 * * * cd /home/ubuntu/Botsensai && /home/ubuntu/Botsensai/.venv/bin/botsensai track-record --out docs/TRACK_RECORD.md >> data/cron.log 2>&1") | crontab -
           
+          # Install automated S3 backup cron job if bucket is configured
+          if [ -n "${BackupBucketName}" ] && [ -f "scripts/backup_db_to_s3.sh" ]; then
+            chmod +x scripts/backup_db_to_s3.sh
+            ./scripts/backup_db_to_s3.sh --install-cron "${BackupBucketName}" || true
+          fi
+          
           echo "Botsensai setup complete!"
           '
-          
+
 Outputs:
+  InstanceId:
+    Description: The EC2 Instance ID of the Botsensai server
+    Value: !Ref BotsensaiInstance
   InstanceIPAddress:
     Description: The public IP address of the Botsensai server
     Value: !GetAtt BotsensaiInstance.PublicIp
+  SSMConnectCommand:
+    Description: Command to connect to the instance via AWS SSM Session Manager (Zero-SSH)
+    Value: !Sub 'aws ssm start-session --target ${BotsensaiInstance}'
   SSHCommand:
-    Description: Command to SSH into the instance
+    Description: Command to SSH into the instance (if EC2 KeyPair was provided)
     Value: !Sub 'ssh -i <path-to-your-key.pem> ubuntu@${BotsensaiInstance.PublicIp}'
+  InstanceRoleArn:
+    Description: IAM Role ARN attached to the instance
+    Value: !GetAtt BotsensaiInstanceRole.Arn
+  InstanceProfileArn:
+    Description: IAM Instance Profile ARN
+    Value: !GetAtt BotsensaiInstanceProfile.Arn
