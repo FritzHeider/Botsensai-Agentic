@@ -575,17 +575,18 @@ class JitoLiveExecutor:
             balances = self.get_all_token_balances()
             # 1. Ensure all positive on-chain holdings are tracked in live_positions
             for mint, amount in balances.items():
-                if amount <= 0:
+                if amount <= 1.0:  # Ignore sub-unit dust
                     continue
                 with sqlite3.connect(self.db_path) as conn:
                     row = conn.execute(
                         "SELECT mint, status, amount_token FROM live_positions WHERE mint = ?",
                         (mint,),
                     ).fetchone()
-                    if not row or row[1] != "OPEN":
+                    if not row:
+                        # New token discovered in hot wallet
                         sig_row = conn.execute(
                             "SELECT symbol, token_key, size_native, tx_hash FROM execution_signals "
-                            "WHERE token_key LIKE ? AND side = 'BUY' "
+                            "WHERE token_key LIKE ? AND side = 'BUY' AND status = 'LANDED' "
                             "ORDER BY id DESC LIMIT 1",
                             (f"%{mint}%",),
                         ).fetchone()
@@ -602,13 +603,21 @@ class JitoLiveExecutor:
                                 cost_sol=sz_sol,
                                 entry_price_sol=entry_px,
                             )
+                    elif row[1] == "OPEN":
+                        # Synchronize current balance if it changed (e.g. after partial exit)
+                        if abs(float(row[2]) - amount) > 1e-4:
+                            conn.execute(
+                                "UPDATE live_positions SET amount_token = ?, updated_at = ? WHERE mint = ?",
+                                (amount, time.time(), mint),
+                            )
+                            conn.commit()
             # 2. Check if any OPEN position has been closed on-chain
             with sqlite3.connect(self.db_path) as conn:
                 open_rows = conn.execute(
                     "SELECT mint, symbol FROM live_positions WHERE status = 'OPEN'"
                 ).fetchall()
                 for (open_mint, open_sym) in open_rows:
-                    if open_mint not in balances or balances[open_mint] <= 0:
+                    if open_mint not in balances or balances[open_mint] <= 1.0:
                         self._record_live_sell(
                             mint=open_mint,
                             exit_tx_hash="on_chain_sync",
