@@ -116,27 +116,35 @@ def check_database():
         else:
             print("  (No execution signals recorded yet)")
 
-        # Open Positions
+        # Live On-Chain Positions (Only trades executed after live trading activation: opened_at >= 1790165760)
+        LIVE_START_TS = 1790165760.0  # Activation timestamp of real on-chain swap builder
         cursor.execute(
             "SELECT symbol, mint, entry_price_native, peak_price_native, last_price_native, cost_basis_native, realized_pnl_native, status "
-            "FROM paper_positions ORDER BY opened_at DESC LIMIT 6;"
+            "FROM paper_positions WHERE opened_at >= ? ORDER BY opened_at DESC LIMIT 8;",
+            (LIVE_START_TS,)
         )
         positions = cursor.fetchall()
-        print(f"\n [Recent Active & Closed Positions]:")
+        print(f"\n [Live On-Chain Positions (Real Mainnet Swaps Only)]:")
         if positions:
             print(f" {'Symbol':<10} {'Status':<8} {'Entry':<12} {'Peak':<12} {'Current':<12} {'Realized PnL':<14} {'Mint'}")
             print(" " + "-" * 95)
+            total_real_pnl = 0.0
             for p in positions:
                 sym, mint, ep, pp, lp, cb, rpnl, st = p
                 sym_str = str(sym or "UNK")[:9]
                 ep_str = f"{float(ep or 0):.6e}"
                 pp_str = f"{float(pp or 0):.6e}"
                 lp_str = f"{float(lp or 0):.6e}"
-                pnl_str = f"{float(rpnl or 0):+.4f} SOL"
+                rpnl_val = float(rpnl or 0)
+                if st == "CLOSED":
+                    total_real_pnl += rpnl_val
+                pnl_str = f"{rpnl_val:+.4f} SOL"
                 mint_short = f"{mint[:6]}...{mint[-6:]}" if mint and len(mint) > 12 else str(mint)
                 print(f" {sym_str:<10} {st:<8} {ep_str:<12} {pp_str:<12} {lp_str:<12} {pnl_str:<14} {mint_short}")
+            print(" " + "-" * 95)
+            print(f" Real On-Chain Closed PnL: {total_real_pnl:+.4f} SOL (Simulation trades strictly excluded)")
         else:
-            print("  (No positions recorded)")
+            print("  (No live on-chain positions recorded yet)")
 
         conn.close()
     except Exception as e:
