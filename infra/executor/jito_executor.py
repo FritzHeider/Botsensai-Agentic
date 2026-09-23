@@ -174,8 +174,22 @@ class JitoLiveExecutor:
             "pool": "pump",
         }
 
-        # Attempt pump bonding curve first, fallback to pump-amm if migrated
-        for pool_type in ["pump", "pump-amm"]:
+        # Determine pool priority: if token is migrated or on Raydium/Pumpswap, prioritize pump-amm
+        pools_to_try = ["pump", "pump-amm"]
+        try:
+            dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+            dex_req = urllib.request.Request(dex_url, headers={"User-Agent": "Botsensai/2.0"})
+            with urllib.request.urlopen(dex_req, timeout=1.5) as resp:
+                data = json.loads(resp.read().decode())
+                pairs = data.get("pairs") or []
+                for p in pairs:
+                    if p.get("dexId") in ["pumpswap", "raydium", "meteora"] or (p.get("marketCap") or 0) >= 65_000:
+                        pools_to_try = ["pump-amm", "pump"]
+                        break
+        except Exception:
+            pass
+
+        for pool_type in pools_to_try:
             payload["pool"] = pool_type
             try:
                 req = urllib.request.Request(
@@ -189,8 +203,8 @@ class JitoLiveExecutor:
                     return tx, pool_type
             except urllib.error.HTTPError as err:
                 err_body = err.read().decode("utf-8", errors="ignore")
-                if pool_type == "pump":
-                    continue  # Fallback to pump-amm pool
+                if pool_type == pools_to_try[0]:
+                    continue  # Fallback to secondary pool
                 return None, f"PumpPortal HTTP {err.code}: {err_body[:120]}"
             except Exception as e:
                 return None, f"Transaction generation error: {e}"
