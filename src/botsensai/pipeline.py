@@ -923,7 +923,10 @@ class Pipeline:
             snapshots = self.db.snapshots_as_of(key, utcnow())
             if not snapshots:
                 continue
-            latest = snapshots[-1]
+            priced = [s for s in snapshots if s.price_native is not None and s.price_native > 0]
+            if not priced:
+                continue
+            latest = priced[-1]
             position = self.broker.account.positions[key]
             self.broker.mark(position.token, latest.price_native or 0.0)
             entry_price = (
@@ -931,6 +934,24 @@ class Pipeline:
                 if position.amount_token > 0
                 else position.last_price_native
             )
+            try:
+                self.db.upsert_paper_position(
+                    token_key=position.token.key,
+                    symbol=position.token.symbol,
+                    mint=position.token.mint,
+                    amount_token=position.amount_token,
+                    cost_basis_native=position.cost_basis_native,
+                    entry_price_native=entry_price,
+                    peak_price_native=position.peak_price_native,
+                    last_price_native=position.last_price_native,
+                    opened_at=position.opened_at,
+                    status="CLOSED" if not position.is_open else "OPEN",
+                    realized_pnl_native=position.realized_pnl_native,
+                    closed_at=position.closed_at,
+                    exit_reason=position.exit_reason,
+                )
+            except Exception:
+                pass
             fills = self.broker.apply_exits(position.token, latest, utcnow())
             for fill in fills:
                 if fill.rejected:

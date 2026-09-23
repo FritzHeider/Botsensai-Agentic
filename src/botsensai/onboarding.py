@@ -50,7 +50,7 @@ seed: 1337
 risk:
   max_position_native: 0.25
   max_portfolio_exposure_native: 2.0
-  max_concurrent_positions: 8
+  max_concurrent_positions: 15
   max_daily_loss_native: 1.0
   max_trades_per_hour: 20
   min_liquidity_usd: 5000

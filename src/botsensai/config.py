@@ -115,7 +115,7 @@ class RiskSettings(BaseModel):
 
     max_position_native: float = 0.25
     max_portfolio_exposure_native: float = 2.0
-    max_concurrent_positions: int = 8
+    max_concurrent_positions: int = 15
     max_daily_loss_native: float = 1.0
     max_trades_per_hour: int = 20
     min_liquidity_usd: float = 6_000.0
