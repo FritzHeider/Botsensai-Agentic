@@ -118,32 +118,39 @@ if stderr:
 
 case "$COMMAND" in
     status)
-        run_ssm "SVC=\$(systemctl is-active botsensai-serve.service >/dev/null 2>&1 && echo 'botsensai-serve.service' || echo 'botsensai.service'); sudo systemctl status \$SVC --no-pager"
+        run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai && .venv/bin/python3 scripts/live_status.py'"
         ;;
     doctor)
-        run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai 2>/dev/null || cd /home/ubuntu/botsensai; source .venv/bin/activate 2>/dev/null || true; python3 -m botsensai.cli doctor --config config/botsensai.yaml'"
+        run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai && .venv/bin/python3 -m botsensai.cli doctor --config config/botsensai.yaml'"
         ;;
     logs)
-        LINES="${1:-50}"
-        run_ssm "SVC=\$(systemctl is-active botsensai-serve.service >/dev/null 2>&1 && echo 'botsensai-serve.service' || echo 'botsensai.service'); sudo journalctl -u \$SVC -n $LINES --no-pager"
+        LINES="${1:-30}"
+        TARGET="${2:-all}"
+        if [ "$TARGET" = "daemon" ]; then
+            run_ssm "tail -n $LINES /home/ubuntu/Botsensai/data/daemon.log"
+        elif [ "$TARGET" = "executor" ]; then
+            run_ssm "tail -n $LINES /home/ubuntu/Botsensai/data/executor.log"
+        else
+            run_ssm "echo '=== DAEMON LOGS ===' && tail -n $LINES /home/ubuntu/Botsensai/data/daemon.log && echo '' && echo '=== EXECUTOR LOGS ===' && tail -n $LINES /home/ubuntu/Botsensai/data/executor.log"
+        fi
         ;;
     sweep)
-        run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai 2>/dev/null || cd /home/ubuntu/botsensai; source .venv/bin/activate; python3 -m botsensai.cli sweep --limit 40 --candidates 10'"
+        run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai && .venv/bin/python3 -m botsensai.cli sweep --limit 40 --candidates 10'"
         ;;
     db-stats)
         run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai && .venv/bin/python3 -c \"from botsensai.store.db import Database; from botsensai.config import get_settings; print(Database(get_settings().path(get_settings().db_path)).counts())\"'"
         ;;
     restart)
-        run_ssm "SVC=\$(systemctl is-active botsensai-serve.service >/dev/null 2>&1 && echo 'botsensai-serve.service' || echo 'botsensai.service'); sudo systemctl restart \$SVC && sudo systemctl status \$SVC --no-pager"
+        run_ssm "sudo systemctl restart botsensai-daemon botsensai-executor botsensai-serve && echo 'Services restarted successfully.' && sudo systemctl is-active botsensai-daemon botsensai-executor botsensai-serve"
         ;;
     stop)
-        run_ssm "SVC=\$(systemctl is-active botsensai-serve.service >/dev/null 2>&1 && echo 'botsensai-serve.service' || echo 'botsensai.service'); sudo systemctl stop \$SVC && echo \"Service \$SVC stopped.\""
+        run_ssm "sudo systemctl stop botsensai-daemon botsensai-executor && echo 'Trading daemons stopped.'"
         ;;
     start)
-        run_ssm "SVC=\$(systemctl is-enabled botsensai-serve.service >/dev/null 2>&1 && echo 'botsensai-serve.service' || echo 'botsensai.service'); sudo systemctl start \$SVC && sudo systemctl status \$SVC --no-pager"
+        run_ssm "sudo systemctl start botsensai-daemon botsensai-executor && echo 'Trading daemons started.' && sudo systemctl is-active botsensai-daemon botsensai-executor"
         ;;
     update)
-        run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai 2>/dev/null || cd /home/ubuntu/botsensai; git pull origin main; source .venv/bin/activate; pip install -e .'; SVC=\$(systemctl is-active botsensai-serve.service >/dev/null 2>&1 && echo 'botsensai-serve.service' || echo 'botsensai.service'); sudo systemctl restart \$SVC && sudo systemctl status \$SVC --no-pager"
+        run_ssm "su - ubuntu -c 'cd /home/ubuntu/Botsensai && git pull origin main && .venv/bin/pip install -e . --no-deps 2>/dev/null || true'; sudo systemctl restart botsensai-daemon botsensai-executor && echo 'Updated and restarted live trading services.'"
         ;;
     *)
         echo "Unknown command: $COMMAND"

@@ -10,6 +10,8 @@ sys_path = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "dashboa
 import sys
 sys.path.insert(0, str(sys_path))
 
+pytest.importorskip("playwright")
+
 from run_qa import run_qa
 from test_api_stream import test_in_process_api
 
