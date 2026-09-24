@@ -54,9 +54,51 @@ class JitoLiveExecutor:
         self.db_path = db_path
         self.keypair_path = keypair_path
         self.rpc_url = rpc_url
+        self.rpc_urls: list[str] = []
+        for cand in [
+            rpc_url,
+            os.getenv("SOLANA_RPC_URL"),
+            os.getenv("BOTSENSAI_SOLANA_RPC_URL"),
+            os.getenv("HELIUS_RPC_URL"),
+            os.getenv("BOTSENSAI_HELIUS_FALLBACK_RPC_URL"),
+            "https://api.mainnet-beta.solana.com",
+        ]:
+            if cand and cand not in self.rpc_urls:
+                self.rpc_urls.append(cand)
         self.running = True
         self.keypair: Keypair | None = None
         self._load_keypair()
+
+    def _call_rpc(self, payload: dict[str, Any], timeout: float = 8.0) -> dict[str, Any] | None:
+        data_bytes = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json", "User-Agent": "Botsensai-Executor/2.0"}
+        for url in self.rpc_urls:
+            try:
+                req = urllib.request.Request(url, data=data_bytes, headers=headers)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as he:
+                if he.code == 429:
+                    continue
+                continue
+            except Exception:
+                continue
+        return None
+
+    def _check_tx_error(self, tx_sig: str) -> str | None:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTransaction",
+            "params": [tx_sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
+        }
+        res = self._call_rpc(payload, timeout=10.0)
+        if res and "result" in res and res["result"]:
+            meta = res["result"].get("meta") or {}
+            err = meta.get("err")
+            if err:
+                return str(err)
+        return None
 
     def _load_keypair(self) -> None:
         candidate_paths = [
@@ -90,58 +132,42 @@ class JitoLiveExecutor:
     def get_wallet_balance_sol(self) -> float:
         if not self.keypair:
             return 0.0
-        try:
-            payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getBalance",
-                "params": [str(self.keypair.pubkey())],
-            }
-            req = urllib.request.Request(
-                self.rpc_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode())
-                lamports = data.get("result", {}).get("value", 0)
-                return lamports / 1e9
-        except Exception as e:
-            print(f"[EXECUTOR] Warning: Error checking balance: {e}")
-            return 0.0
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBalance",
+            "params": [str(self.keypair.pubkey())],
+        }
+        res = self._call_rpc(payload, timeout=6.0)
+        if res and "result" in res:
+            lamports = res["result"].get("value", 0)
+            return lamports / 1e9
+        return 0.0
 
     def get_token_balance(self, mint: str) -> float:
         if not self.keypair:
             return 0.0
-        try:
-            payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTokenAccountsByOwner",
-                "params": [
-                    str(self.keypair.pubkey()),
-                    {"mint": mint},
-                    {"encoding": "jsonParsed"},
-                ],
-            }
-            req = urllib.request.Request(
-                self.rpc_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode())
-                accounts = data.get("result", {}).get("value", [])
-                total_amount = 0.0
-                for acc in accounts:
-                    info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
-                    token_amount = info.get("tokenAmount", {}).get("uiAmount", 0.0)
-                    if token_amount:
-                        total_amount += float(token_amount)
-                return total_amount
-        except Exception as e:
-            print(f"[EXECUTOR] Warning: Error checking token balance for {mint}: {e}")
-            return 0.0
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTokenAccountsByOwner",
+            "params": [
+                str(self.keypair.pubkey()),
+                {"mint": mint},
+                {"encoding": "jsonParsed"},
+            ],
+        }
+        res = self._call_rpc(payload, timeout=8.0)
+        if res and "result" in res:
+            accounts = res["result"].get("value", [])
+            total_amount = 0.0
+            for acc in accounts:
+                info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
+                token_amount = info.get("tokenAmount", {}).get("uiAmount", 0.0)
+                if token_amount:
+                    total_amount += float(token_amount)
+            return total_amount
+        return 0.0
 
     def build_swap_transaction(
         self,
@@ -411,19 +437,20 @@ class JitoLiveExecutor:
         success, tx_signature = self.dispatch_jito_bundle(signed_tx)
 
         if success:
-            print(f"[EXECUTOR] 🟢 BUNDLE CONFIRMED & LANDED ON-CHAIN: {tx_signature}")
-            self.update_signal_status(sig_id, status="LANDED", tx_hash=tx_signature)
+            print(f"[EXECUTOR] 🟢 Bundle submitted to Jito Block Engine: {tx_signature}")
 
             # Record or update live on-chain positions
             if side == "BUY":
                 token_bal = 0.0
-                for _ in range(5):
+                for _ in range(6):
                     await asyncio.sleep(2.0)
                     token_bal = self.get_token_balance(mint)
                     if token_bal > 0:
                         break
                 if token_bal > 0:
+                    self.update_signal_status(sig_id, status="LANDED", tx_hash=tx_signature)
                     entry_px = safe_size_sol / token_bal
+                    print(f"[EXECUTOR] 🟢 CONFIRMED ON-CHAIN BUY: {token_bal:,.2f} ${symbol} landed in hot wallet ({tx_signature})")
                     self._record_live_buy(
                         mint=mint,
                         symbol=symbol,
@@ -433,15 +460,26 @@ class JitoLiveExecutor:
                         cost_sol=safe_size_sol,
                         entry_price_sol=entry_px,
                     )
+                else:
+                    tx_err = self._check_tx_error(tx_signature)
+                    if tx_err:
+                        print(f"[EXECUTOR] ⚠️ Swap reverted on-chain ({tx_err}). No tokens received.")
+                        self.update_signal_status(sig_id, status="REVERTED", tx_hash=tx_signature, error=f"Reverted: {tx_err}")
+                    else:
+                        print(f"[EXECUTOR] ⚠️ Bundle signature {tx_signature} not confirmed with positive balance.")
+                        self.update_signal_status(sig_id, status="UNCONFIRMED", tx_hash=tx_signature, error="Zero token balance after bundle landing")
             elif side == "SELL":
                 await asyncio.sleep(2.0)
                 token_bal = self.get_token_balance(mint)
                 if token_bal <= 0:
+                    self.update_signal_status(sig_id, status="LANDED", tx_hash=tx_signature)
                     self._record_live_sell(
                         mint=mint,
                         exit_tx_hash=tx_signature,
                         exit_reason="signal_sell",
                     )
+                else:
+                    self.update_signal_status(sig_id, status="PARTIAL_EXIT", tx_hash=tx_signature)
         else:
             print(f"[EXECUTOR] ❌ Bundle dispatch failed: {tx_signature}")
             self.update_signal_status(sig_id, status="FAILED", error=tx_signature)
@@ -530,10 +568,11 @@ class JitoLiveExecutor:
         except Exception as e:
             print(f"[EXECUTOR] Error recording live sell: {e}")
 
-    def get_all_token_balances(self) -> dict[str, float]:
-        """Returns {mint: total_ui_amount} for all on-chain token accounts owned by wallet."""
+    def get_all_token_balances(self) -> dict[str, float] | None:
+        """Returns {mint: total_ui_amount} for all on-chain token accounts owned by wallet.
+        Returns None if query failed due to RPC errors, preventing false reconciliation."""
         if not self.keypair:
-            return {}
+            return None
         balances: dict[str, float] = {}
         for prog in [
             "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -549,22 +588,16 @@ class JitoLiveExecutor:
                     {"encoding": "jsonParsed"},
                 ],
             }
-            try:
-                req = urllib.request.Request(
-                    self.rpc_url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                )
-                with urllib.request.urlopen(req, timeout=8) as resp:
-                    data = json.loads(resp.read().decode())
-                    for acc in data.get("result", {}).get("value", []):
-                        info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
-                        m = info.get("mint")
-                        amt = info.get("tokenAmount", {}).get("uiAmount", 0.0)
-                        if m and amt and amt > 0:
-                            balances[m] = balances.get(m, 0.0) + float(amt)
-            except Exception as e:
-                print(f"[EXECUTOR] Error querying token accounts for {prog}: {e}")
+            res = self._call_rpc(payload, timeout=8.0)
+            if res is None or "result" not in res:
+                print(f"[EXECUTOR] Warning: Could not fetch token accounts for {prog[:10]}... across RPCs")
+                return None
+            for acc in res.get("result", {}).get("value", []):
+                info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
+                m = info.get("mint")
+                amt = info.get("tokenAmount", {}).get("uiAmount", 0.0)
+                if m and amt and amt > 0:
+                    balances[m] = balances.get(m, 0.0) + float(amt)
         return balances
 
     async def reconcile_on_chain_holdings(self) -> None:
@@ -573,6 +606,10 @@ class JitoLiveExecutor:
             return
         try:
             balances = self.get_all_token_balances()
+            if balances is None:
+                # RPC issue: abort immediately without modifying any positions
+                return
+
             # 1. Ensure all positive on-chain holdings are tracked in live_positions
             for mint, amount in balances.items():
                 if amount <= 1.0:  # Ignore sub-unit dust
@@ -611,18 +648,29 @@ class JitoLiveExecutor:
                                 (amount, time.time(), mint),
                             )
                             conn.commit()
-            # 2. Check if any OPEN position has been closed on-chain
+
+            # 2. Check if any OPEN position has actually been closed on-chain
             with sqlite3.connect(self.db_path) as conn:
                 open_rows = conn.execute(
-                    "SELECT mint, symbol FROM live_positions WHERE status = 'OPEN'"
+                    "SELECT mint, symbol, amount_token FROM live_positions WHERE status = 'OPEN'"
                 ).fetchall()
-                for (open_mint, open_sym) in open_rows:
-                    if open_mint not in balances or balances[open_mint] <= 1.0:
-                        self._record_live_sell(
-                            mint=open_mint,
-                            exit_tx_hash="on_chain_sync",
-                            exit_reason="balance_depleted",
-                        )
+                for (open_mint, open_sym, open_amt) in open_rows:
+                    cur_bal = balances.get(open_mint)
+                    if cur_bal is None or cur_bal <= 1.0:
+                        # Dedicated verification before closing to prevent false closures
+                        direct_bal = self.get_token_balance(open_mint)
+                        if direct_bal <= 1.0:
+                            self._record_live_sell(
+                                mint=open_mint,
+                                exit_tx_hash="on_chain_sync",
+                                exit_reason="balance_depleted",
+                            )
+                        else:
+                            conn.execute(
+                                "UPDATE live_positions SET amount_token = ?, updated_at = ? WHERE mint = ?",
+                                (direct_bal, time.time(), open_mint),
+                            )
+                            conn.commit()
         except Exception as e:
             print(f"[EXECUTOR] Error during on-chain holdings reconciliation: {e}")
 
@@ -816,8 +864,8 @@ class JitoLiveExecutor:
                 await self.check_live_positions_exit()
                 last_exit_check = now
 
-            # 3. Synchronize on-chain token accounts every 10.0 seconds
-            if now - last_sync_check >= 10.0:
+            # 3. Synchronize on-chain token accounts every 30.0 seconds
+            if now - last_sync_check >= 30.0:
                 await self.reconcile_on_chain_holdings()
                 last_sync_check = now
 

@@ -5,14 +5,20 @@ Queries systemd services, hot wallet balance, database metrics, and latest trade
 """
 
 import json
+import os
 import sqlite3
 import subprocess
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 HOT_WALLET = "ChgCuBWDvGFwnW77kU523JcFXc2CryX3J4rEWDzWmtsS"
 DB_PATH = "/home/ubuntu/Botsensai/data/botsensai.db"
-RPC_URL = "https://api.mainnet-beta.solana.com"
+RPC_URL = os.getenv("SOLANA_RPC_URL") or os.getenv("BOTSENSAI_SOLANA_RPC_URL") or "https://api.mainnet-beta.solana.com"
 
 SERVICES = [
     "botsensai-daemon",
