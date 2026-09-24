@@ -22,7 +22,11 @@ from typing import Any
 
 import base58
 import httpx
+from solders.hash import Hash
+from solders.instruction import AccountMeta, Instruction
 from solders.keypair import Keypair
+from solders.message import MessageV0
+from solders.pubkey import Pubkey
 from solders.transaction import VersionedTransaction
 
 from dotenv import load_dotenv
@@ -36,6 +40,9 @@ SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.co
 JITO_MAINNET_URL = "https://mainnet.block-engine.jito.wtf/api/v1/bundles"
 JITO_NY_URL = "https://ny.mainnet.block-engine.jito.wtf/api/v1/bundles"
 PUMPPORTAL_URL = "https://pumpportal.fun/api/trade-local"
+
+SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
 
 # Safety Guardrails
 MIN_WALLET_RESERVE_SOL = 0.10  # Hard floor: preserve SOL for rent & fees
@@ -347,7 +354,7 @@ class JitoLiveExecutor:
         token_key = str(sig.get("token_key") or "")
         mint = token_key.replace("solana:", "")
         size_sol = float(sig.get("size_native") or DEFAULT_POSITION_SIZE_SOL)
-        slippage_bps = int(sig.get("max_slippage_bps") or 100)
+        slippage_bps = int(sig.get("max_slippage_bps") or 250)
         tip_lamports = int(sig.get("jito_tip_lamports") or 500_000)
         priority_fee_sol = max(tip_lamports / 1e9, 0.0005)
 
@@ -381,11 +388,23 @@ class JitoLiveExecutor:
             self.update_signal_status(sig_id, status="BLOCKED", error=warn)
             return
 
-        # Method 1: Dynamic Bankroll Scaling & Fractional Kelly (Compounding Engine)
+        # Method 1: Dynamic Bankroll Scaling & Buffer Floor Protection
         if side == "BUY":
-            dynamic_bankroll_size = (wallet_balance - MIN_WALLET_RESERVE_SOL) * 0.05
+            available_buffer = wallet_balance - MIN_WALLET_RESERVE_SOL
+            if available_buffer < 0.008:
+                warn = (
+                    f"Capital Guard: Available buffer ({available_buffer:.4f} SOL) above reserve floor "
+                    f"is insufficient for safe entry (minimum 0.008 SOL required). Holding dry powder."
+                )
+                print(f"[EXECUTOR] 🛑 {warn}")
+                self.update_signal_status(sig_id, status="BLOCKED", error=warn)
+                return
+
+            dynamic_bankroll_size = available_buffer * 0.05
             scaled_size = max(size_sol, dynamic_bankroll_size, 0.012)
-            safe_size_sol = min(scaled_size, MAX_POSITION_SIZE_SOL)
+            # Ensure trade size + ATA rent/gas margin (0.003 SOL) never drops balance below the reserve floor
+            max_safe_entry = max(0.008, available_buffer - 0.003)
+            safe_size_sol = min(scaled_size, max_safe_entry, MAX_POSITION_SIZE_SOL)
         else:
             safe_size_sol = size_sol
 
@@ -400,7 +419,7 @@ class JitoLiveExecutor:
         tip_lamports = max(int(sig.get("jito_tip_lamports") or 0), tiered_tip_lamports)
         priority_fee_sol = max(tip_lamports / 1e9, 0.0005)
 
-        safe_slippage_bps = min(max(slippage_bps, 50), MAX_SLIPPAGE_BPS)
+        safe_slippage_bps = min(max(slippage_bps, 200), MAX_SLIPPAGE_BPS)
 
         # 3. For SELL: Verify token balance
         if side == "SELL":
@@ -532,6 +551,90 @@ class JitoLiveExecutor:
         except Exception as e:
             print(f"[EXECUTOR] Error recording live buy: {e}")
 
+    def _fetch_token_symbol(self, mint: str) -> str:
+        """Fetches the token symbol from DexScreener if not present in execution signals."""
+        try:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Botsensai/2.0"})
+            with urllib.request.urlopen(req, timeout=2.5) as resp:
+                data = json.loads(resp.read().decode())
+                pairs = data.get("pairs") or []
+                if pairs:
+                    best = max(pairs, key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0))
+                    return str(best.get("baseToken", {}).get("symbol") or "TOKEN")
+        except Exception:
+            pass
+        return "TOKEN"
+
+    def close_token_account_on_chain(self, mint: str) -> bool:
+        """Closes zero-balance token accounts on-chain to reclaim ~0.00204 SOL rent per account."""
+        if not self.keypair:
+            return False
+        try:
+            wallet_pub = str(self.keypair.pubkey())
+            for prog_str in [SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]:
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTokenAccountsByOwner",
+                    "params": [
+                        wallet_pub,
+                        {"mint": mint, "programId": prog_str},
+                        {"encoding": "jsonParsed"},
+                    ],
+                }
+                res = self._call_rpc(payload, timeout=5.0)
+                if not res or "result" not in res:
+                    continue
+                accounts = res["result"].get("value", [])
+                for acc in accounts:
+                    acc_pub = acc.get("pubkey")
+                    info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
+                    token_amt = float(info.get("tokenAmount", {}).get("uiAmount", 0.0) or 0.0)
+                    if token_amt <= 0.0 and acc_pub:
+                        bh_res = self._call_rpc({"jsonrpc": "2.0", "id": 1, "method": "getLatestBlockhash"}, timeout=5.0)
+                        if not bh_res or "result" not in bh_res:
+                            continue
+                        bh_str = bh_res["result"]["value"]["blockhash"]
+                        recent_bh = Hash.from_string(bh_str)
+
+                        prog_id = Pubkey.from_string(prog_str)
+                        acc_to_close = Pubkey.from_string(acc_pub)
+                        dest = self.keypair.pubkey()
+
+                        ix = Instruction(
+                            program_id=prog_id,
+                            data=bytes([9]),  # CloseAccount opcode
+                            accounts=[
+                                AccountMeta(pubkey=acc_to_close, is_signer=False, is_writable=True),
+                                AccountMeta(pubkey=dest, is_signer=False, is_writable=True),
+                                AccountMeta(pubkey=dest, is_signer=True, is_writable=False),
+                            ],
+                        )
+                        msg = MessageV0.try_compile(
+                            payer=dest,
+                            instructions=[ix],
+                            address_lookup_table_accounts=[],
+                            recent_blockhash=recent_bh,
+                        )
+                        signed_tx = VersionedTransaction(msg, [self.keypair])
+                        tx_b64 = base64.b64encode(bytes(signed_tx)).decode("ascii")
+                        send_res = self._call_rpc(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "sendTransaction",
+                                "params": [tx_b64, {"encoding": "base64", "skipPreflight": True}],
+                            },
+                            timeout=6.0,
+                        )
+                        if send_res and "result" in send_res:
+                            print(f"[EXECUTOR] 🧹 Automated Rent Swept! Closed {acc_pub[:8]}... (Tx: {send_res['result'][:16]}...)")
+                            return True
+        except Exception as e:
+            print(f"[EXECUTOR] Rent reclamation error for {mint[:8]}...: {e}")
+        return False
+
     def _record_live_sell(
         self,
         mint: str,
@@ -565,6 +668,12 @@ class JitoLiveExecutor:
                 )
                 conn.commit()
                 print(f"[EXECUTOR] 📝 Marked on-chain LIVE position CLOSED for {pos.get('symbol', mint)} (Exit: {exit_tx_hash[:10]}...)")
+            
+            # Non-blocking automatic rent sweeping
+            try:
+                self.close_token_account_on_chain(mint)
+            except Exception:
+                pass
         except Exception as e:
             print(f"[EXECUTOR] Error recording live sell: {e}")
 
@@ -575,8 +684,8 @@ class JitoLiveExecutor:
             return None
         balances: dict[str, float] = {}
         for prog in [
-            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+            SPL_TOKEN_PROGRAM_ID,
+            TOKEN_2022_PROGRAM_ID,
         ]:
             payload = {
                 "jsonrpc": "2.0",
@@ -619,27 +728,39 @@ class JitoLiveExecutor:
                         "SELECT mint, status, amount_token FROM live_positions WHERE mint = ?",
                         (mint,),
                     ).fetchone()
-                    if not row:
-                        # New token discovered in hot wallet
+                    if not row or row[1] == "CLOSED":
+                        # Check execution signals with inclusive status
                         sig_row = conn.execute(
                             "SELECT symbol, token_key, size_native, tx_hash FROM execution_signals "
-                            "WHERE token_key LIKE ? AND side = 'BUY' AND status = 'LANDED' "
+                            "WHERE token_key LIKE ? AND side = 'BUY' "
                             "ORDER BY id DESC LIMIT 1",
                             (f"%{mint}%",),
                         ).fetchone()
                         if sig_row:
                             sym, tkey, sz_sol, tx_h = sig_row
                             sz_sol = float(sz_sol or 0.015)
-                            entry_px = sz_sol / amount if amount > 0 else 0.0
-                            self._record_live_buy(
-                                mint=mint,
-                                symbol=sym or "UNKNOWN",
-                                token_key=tkey or f"solana:{mint}",
-                                entry_tx_hash=tx_h or "on_chain_sync",
-                                amount_token=amount,
-                                cost_sol=sz_sol,
-                                entry_price_sol=entry_px,
-                            )
+                        else:
+                            sym = self._fetch_token_symbol(mint) or "TOKEN"
+                            tkey = f"solana:{mint}"
+                            sz_sol = 0.015
+                            tx_h = "on_chain_sync"
+
+                        entry_px = sz_sol / amount if amount > 0 else 0.0
+                        self._record_live_buy(
+                            mint=mint,
+                            symbol=sym or "UNKNOWN",
+                            token_key=tkey or f"solana:{mint}",
+                            entry_tx_hash=tx_h or "on_chain_sync",
+                            amount_token=amount,
+                            cost_sol=sz_sol,
+                            entry_price_sol=entry_px,
+                        )
+                        # Mark associated signal as LANDED
+                        conn.execute(
+                            "UPDATE execution_signals SET status = 'LANDED' WHERE token_key LIKE ? AND side = 'BUY' AND status IN ('UNCONFIRMED', 'SUBMITTED')",
+                            (f"%{mint}%",),
+                        )
+                        conn.commit()
                     elif row[1] == "OPEN":
                         # Synchronize current balance if it changed (e.g. after partial exit)
                         if abs(float(row[2]) - amount) > 1e-4:
@@ -769,8 +890,9 @@ class JitoLiveExecutor:
             exit_reason = ""
 
             # Method 2 Upgraded: The +500% to +5000% Multi-Stage Mega-Runner Engine
-            # Stage 1 at 2.50x (+150% gain): Sell 50% of tokens (Reclaims 125% of principal in pure SOL cash. Remaining 50% is a 100% risk-free Immortal Moonbag!)
-            if multiple >= 2.5 and "stage1" not in prev_exit_reason:
+            # Stage 1 at 2.00x (+100% gain Milestone): Sell 50% of tokens
+            # (Reclaims exactly 100% of initial SOL capital into pure liquid cash. Remaining 50% is a 100% risk-free Immortal Moonbag!)
+            if multiple >= 2.00 and "stage1" not in prev_exit_reason:
                 sell_amount = "50%"
                 is_partial = True
                 exit_reason = f"stage1_take_profit_{multiple:.2f}x"
@@ -789,23 +911,33 @@ class JitoLiveExecutor:
                 sell_amount = "50%"
                 is_partial = True
                 exit_reason = f"stage4_take_profit_{multiple:.2f}x"
-            # Moonbag Wide Volatility Shield (after Stage 1): 50% trailing stop off peak to absorb 30-40% meme consolidations on path to 50x
-            elif "stage1" in prev_exit_reason and peak_multiple >= 3.0 and (curr_px <= peak_px * 0.50):
+            # Moonbag Trailing Volatility Shield (after Stage 1): 40% buffer off peak once peak >= 2.50x
+            elif "stage1" in prev_exit_reason and peak_multiple >= 2.50 and (curr_px <= peak_px * 0.60):
                 sell_amount = "100%"
                 is_partial = False
-                exit_reason = f"moonbag_trailing_stop_50pct_off_peak_{peak_multiple:.2f}x"
-            # Pre-Stage 1 Anti-Shakeout Trailing Stop: 35% buffer off peak (only active after reaching >= 1.40x)
-            elif "stage1" not in prev_exit_reason and peak_multiple >= 1.40 and (curr_px <= peak_px * 0.65):
+                exit_reason = f"moonbag_trailing_stop_40pct_off_peak_{peak_multiple:.2f}x"
+            # Breakeven Protection: If coin rallied >= 1.45x and retraces to <= 1.05x, lock in breakeven before decaying
+            elif "stage1" not in prev_exit_reason and peak_multiple >= 1.45 and multiple <= 1.05:
+                sell_amount = "100%"
+                is_partial = False
+                exit_reason = f"breakeven_protection_{peak_multiple:.2f}x_peak_retrace_{multiple:.2f}x"
+            # Pre-Stage 1 Anti-Shakeout Trailing Stop: 35% buffer off peak (only active after reaching >= 1.50x)
+            elif "stage1" not in prev_exit_reason and peak_multiple >= 1.50 and (curr_px <= peak_px * 0.65):
                 sell_amount = "100%"
                 is_partial = False
                 exit_reason = f"trailing_stop_35pct_off_peak_{peak_multiple:.2f}x"
-            # Method 5: 15-Minute Stagnation Bag Recycler (reclaim dead capital from non-movers)
-            elif age_seconds >= 900 and multiple < 1.15 and "stage1" not in prev_exit_reason:
+            # Method 5: Fast Stagnation Recycler (reclaim dead capital from non-movers)
+            elif (
+                "stage1" not in prev_exit_reason
+                and (
+                    (age_seconds >= 330 and multiple < 1.05 and self._fetch_live_5m_volume(mint) < 300)
+                    or (age_seconds >= 720 and multiple < 0.90)
+                )
+            ):
                 vol_5m = self._fetch_live_5m_volume(mint)
-                if vol_5m < 500:
-                    sell_amount = "100%"
-                    is_partial = False
-                    exit_reason = f"15m_stagnation_recycler (age {age_seconds/60:.0f}m, vol ${vol_5m:.0f})"
+                sell_amount = "100%"
+                is_partial = False
+                exit_reason = f"5m_stagnation_recycler (age {age_seconds/60:.1f}m, vol ${vol_5m:.0f})"
 
             if exit_reason:
                 print(f"\n[EXECUTOR] 🎯 Live Exit Triggered for ${symbol}: {exit_reason} (Sell Amount: {sell_amount})")
