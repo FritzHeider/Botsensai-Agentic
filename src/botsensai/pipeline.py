@@ -379,7 +379,17 @@ class Pipeline:
             scored.append((rank, launch))
 
         scored.sort(key=lambda pair: pair[0], reverse=True)
-        return [launch for _, launch in scored[:max_candidates]]
+        seen_mints: set[str] = set()
+        unique_candidates: list[Launch] = []
+        for _, launch in scored:
+            mint = launch.token.mint
+            if mint in seen_mints:
+                continue
+            seen_mints.add(mint)
+            unique_candidates.append(launch)
+            if len(unique_candidates) >= max_candidates:
+                break
+        return unique_candidates
 
     # -- step 3: enrich ----------------------------------------------------- #
 
