@@ -799,6 +799,8 @@ class Pipeline:
                 return "skip: max concurrent live positions reached"
             if any(p["mint"] == launch.token.mint for p in open_live):
                 return "skip: already holding token in live wallet"
+            if self.db.recent_reverts_count(launch.token.mint, window_seconds=600.0) >= 2:
+                return "skip: token cooling down after multiple on-chain slippage reverts"
 
             # Directly record live BUY execution signal for the Jito executor
             self.db.record_signal(

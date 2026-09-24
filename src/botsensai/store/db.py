@@ -2074,6 +2074,15 @@ class Database:
             positions.append(pos)
         return positions
 
+    def recent_reverts_count(self, mint: str, window_seconds: float = 600.0) -> int:
+        """Count how many times this token reverted on-chain in the recent time window."""
+        cutoff = utcnow().timestamp() - window_seconds
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM execution_signals WHERE token_key LIKE ? AND status = 'REVERTED' AND created_at >= ?",
+            (f"%{mint}%", cutoff),
+        ).fetchone()
+        return row[0] if row else 0
+
     def update_live_position_price(self, mint: str, current_price_sol: float) -> None:
         """Update live marked price and peak high watermark for an open bag."""
         now = utcnow().timestamp()
