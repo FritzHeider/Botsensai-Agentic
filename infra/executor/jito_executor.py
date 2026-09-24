@@ -390,20 +390,21 @@ class JitoLiveExecutor:
 
         # Method 1: Dynamic Bankroll Scaling & Buffer Floor Protection
         if side == "BUY":
+            # Require at least 0.012 SOL buffer above floor to safely absorb trade + ATA rent (~0.00204 SOL) + fees (~0.0008 SOL)
             available_buffer = wallet_balance - MIN_WALLET_RESERVE_SOL
-            if available_buffer < 0.008:
+            if available_buffer < 0.012:
                 warn = (
                     f"Capital Guard: Available buffer ({available_buffer:.4f} SOL) above reserve floor "
-                    f"is insufficient for safe entry (minimum 0.008 SOL required). Holding dry powder."
+                    f"is insufficient for safe entry (minimum 0.012 SOL required to protect 0.10 SOL floor after rent & fees). Holding dry powder."
                 )
                 print(f"[EXECUTOR] 🛑 {warn}")
                 self.update_signal_status(sig_id, status="BLOCKED", error=warn)
                 return
 
             dynamic_bankroll_size = available_buffer * 0.05
-            scaled_size = max(size_sol, dynamic_bankroll_size, 0.012)
-            # Ensure trade size + ATA rent/gas margin (0.003 SOL) never drops balance below the reserve floor
-            max_safe_entry = max(0.008, available_buffer - 0.003)
+            scaled_size = max(size_sol, dynamic_bankroll_size, 0.008)
+            # Ensure trade size + ATA rent/gas margin (0.0035 SOL) never drops balance below the reserve floor
+            max_safe_entry = max(0.005, available_buffer - 0.0035)
             safe_size_sol = min(scaled_size, max_safe_entry, MAX_POSITION_SIZE_SOL)
         else:
             safe_size_sol = size_sol
@@ -572,33 +573,40 @@ class JitoLiveExecutor:
             return False
         try:
             wallet_pub = str(self.keypair.pubkey())
-            for prog_str in [SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]:
-                payload = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "getTokenAccountsByOwner",
-                    "params": [
-                        wallet_pub,
-                        {"mint": mint, "programId": prog_str},
-                        {"encoding": "jsonParsed"},
-                    ],
-                }
-                res = self._call_rpc(payload, timeout=5.0)
-                if not res or "result" not in res:
-                    continue
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    wallet_pub,
+                    {"mint": mint},
+                    {"encoding": "jsonParsed"},
+                ],
+            }
+            res = self._call_rpc(payload, timeout=5.0)
+            if res and "result" in res:
                 accounts = res["result"].get("value", [])
                 for acc in accounts:
                     acc_pub = acc.get("pubkey")
+                    owner_prog = acc.get("account", {}).get("owner") or SPL_TOKEN_PROGRAM_ID
                     info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
                     token_amt = float(info.get("tokenAmount", {}).get("uiAmount", 0.0) or 0.0)
                     if token_amt <= 0.0 and acc_pub:
-                        bh_res = self._call_rpc({"jsonrpc": "2.0", "id": 1, "method": "getLatestBlockhash"}, timeout=5.0)
+                        bh_res = self._call_rpc(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "getLatestBlockhash",
+                                "params": [{"commitment": "finalized"}],
+                            },
+                            timeout=5.0,
+                        )
                         if not bh_res or "result" not in bh_res:
                             continue
                         bh_str = bh_res["result"]["value"]["blockhash"]
                         recent_bh = Hash.from_string(bh_str)
 
-                        prog_id = Pubkey.from_string(prog_str)
+                        prog_id = Pubkey.from_string(owner_prog)
                         acc_to_close = Pubkey.from_string(acc_pub)
                         dest = self.keypair.pubkey()
 
@@ -624,7 +632,14 @@ class JitoLiveExecutor:
                                 "jsonrpc": "2.0",
                                 "id": 1,
                                 "method": "sendTransaction",
-                                "params": [tx_b64, {"encoding": "base64", "skipPreflight": True}],
+                                "params": [
+                                    tx_b64,
+                                    {
+                                        "encoding": "base64",
+                                        "skipPreflight": True,
+                                        "preflightCommitment": "processed",
+                                    },
+                                ],
                             },
                             timeout=6.0,
                         )
@@ -634,6 +649,36 @@ class JitoLiveExecutor:
         except Exception as e:
             print(f"[EXECUTOR] Rent reclamation error for {mint[:8]}...: {e}")
         return False
+
+    def sweep_all_empty_token_accounts(self) -> int:
+        """Scans all wallet token accounts across SPL Token & Token-2022 and closes any with zero balance to reclaim rent."""
+        if not self.keypair:
+            return 0
+        swept = 0
+        try:
+            for prog in [SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]:
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTokenAccountsByOwner",
+                    "params": [
+                        str(self.keypair.pubkey()),
+                        {"programId": prog},
+                        {"encoding": "jsonParsed"},
+                    ],
+                }
+                res = self._call_rpc(payload, timeout=5.0)
+                if res and "result" in res:
+                    for acc in res["result"].get("value", []):
+                        info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
+                        amt = float(info.get("tokenAmount", {}).get("uiAmount", 0.0) or 0.0)
+                        mint = info.get("mint")
+                        if amt <= 0.0 and mint:
+                            if self.close_token_account_on_chain(mint):
+                                swept += 1
+        except Exception as e:
+            print(f"[EXECUTOR] Error sweeping empty token accounts: {e}")
+        return swept
 
     def _record_live_sell(
         self,
@@ -704,9 +749,15 @@ class JitoLiveExecutor:
             for acc in res.get("result", {}).get("value", []):
                 info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
                 m = info.get("mint")
-                amt = info.get("tokenAmount", {}).get("uiAmount", 0.0)
-                if m and amt and amt > 0:
-                    balances[m] = balances.get(m, 0.0) + float(amt)
+                amt = float(info.get("tokenAmount", {}).get("uiAmount", 0.0) or 0.0)
+                if m and amt > 0:
+                    balances[m] = balances.get(m, 0.0) + amt
+                elif m and amt <= 0:
+                    # Clean up empty account to reclaim SOL rent
+                    try:
+                        self.close_token_account_on_chain(m)
+                    except Exception:
+                        pass
         return balances
 
     async def reconcile_on_chain_holdings(self) -> None:
@@ -742,7 +793,7 @@ class JitoLiveExecutor:
                         else:
                             sym = self._fetch_token_symbol(mint) or "TOKEN"
                             tkey = f"solana:{mint}"
-                            sz_sol = 0.015
+                            sz_sol = 0.0
                             tx_h = "on_chain_sync"
 
                         entry_px = sz_sol / amount if amount > 0 else 0.0
