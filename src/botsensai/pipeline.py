@@ -682,31 +682,36 @@ class Pipeline:
                 import json, os
                 if getattr(self, "wallet_weights", None) is None:
                     self.wallet_weights = {}
-                    for path in ("data/wallet_weights.json", "data/top_500_wallets.json", "data/top_200_wallets.json"):
+                    for path in ("data/top_500_wallets.json", "data/wallet_weights.json", "data/top_200_wallets.json"):
                         if os.path.exists(path):
                             with open(path, "r") as f:
                                 content = json.load(f)
-                            if isinstance(content, dict):
-                                self.wallet_weights.update(content)
-                            elif isinstance(content, list):
+                            if isinstance(content, list):
                                 for item in content:
                                     if isinstance(item, dict) and "address" in item:
-                                        self.wallet_weights[item["address"]] = item.get("weight", 0.70)
+                                        wr = float(item.get("winrate", 50.0)) / 100.0
+                                        p7d = float(item.get("profit_7d", 0.0))
+                                        p_mult = min(max(p7d / 40000.0, 0.6), 1.6) if p7d > 0 else 0.5
+                                        dynamic_weight = min(1.5, max(0.6, wr * p_mult * 1.5))
+                                        self.wallet_weights[item["address"]] = dynamic_weight
                                     elif isinstance(item, str):
-                                        self.wallet_weights[item] = 0.70
+                                        self.wallet_weights[item] = 0.75
+                            elif isinstance(content, dict):
+                                self.wallet_weights.update(content)
                             break
 
                 matched = [w for w in buyer_wallets if w in self.wallet_weights]
                 if matched:
                     weights = [self.wallet_weights[w] for w in matched]
-                    # Creative Multi-Alpha Consensus Trigger:
+                    # Hyper-Confluence Trigger: Multiple Elite Alpha Whales
                     if len(matched) >= 2:
-                        boost = 0.50 * max(weights)
+                        boost = 0.55 * max(weights)
+                        result.composite = min(1.0, max(result.composite + boost, 0.985))
                     else:
-                        boost = 0.28 * weights[0]
-                    result.composite = min(1.0, result.composite + boost)
+                        boost = 0.40 * weights[0]
+                        result.composite = min(1.0, result.composite + boost)
 
-                    # Consensus override: If 2+ top profitable traders enter, clear trivial vetoes
+                    # Consensus override: If top profitable traders enter, clear trivial vetoes
                     if len(matched) >= 2 and result.composite >= 0.70:
                         result.vetoes = [
                             v for v in result.vetoes 
@@ -715,10 +720,10 @@ class Pipeline:
             except Exception:
                 pass
 
-        # Require smart money confirmation unless score is extraordinary
+        # Zero-Latency Alpha Sieve: Require smart money confirmation unless score is extraordinary
         matched_count = len(matched) if "matched" in locals() and matched else 0
-        if matched_count == 0 and result.composite < 0.85:
-            return "skip: waiting for smart money confirmation (no alpha wallet present)"
+        if matched_count == 0 and result.composite < 0.94:
+            return "skip: waiting for high-value smart money alpha confirmation"
 
         # 2. Gate entry on the boosted conviction score
         ok, reason = self.scorer.should_enter(result)
@@ -734,9 +739,9 @@ class Pipeline:
         matched_count = len(matched) if "matched" in locals() and matched else 0
         base_max_pos = self.settings.risk.max_position_native
         if matched_count >= 2:
-            # Alpha Confluence: Scale up sizing on smart money accumulation (capped at 0.035 SOL)
-            effective_max_pos = min(0.035, base_max_pos * 1.75)
-            result.composite = min(1.0, max(result.composite, 0.96))
+            # Alpha Confluence: Scale up sizing to max ceiling (0.035 SOL) on smart money accumulation
+            effective_max_pos = min(0.035, base_max_pos * 1.95)
+            result.composite = min(1.0, max(result.composite, 0.985))
             # Record smart money confluence events for copy-trading tracking
             try:
                 for w in matched:
@@ -745,17 +750,17 @@ class Pipeline:
                         symbol=launch.token.symbol,
                         mint=launch.token.mint,
                         trader_wallet=w,
-                        trader_skill=float(self.wallet_weights.get(w, 0.70)),
-                        trader_win_rate=0.80,
-                        trader_buy_sol=0.025,
+                        trader_skill=float(self.wallet_weights.get(w, 0.85)),
+                        trader_win_rate=0.85,
+                        trader_buy_sol=0.035,
                         entry_delay_seconds=age if "age" in locals() else 0.0,
-                        conviction_boost=0.50,
+                        conviction_boost=0.55,
                         recommended_size_sol=effective_max_pos,
                     )
             except Exception:
                 pass
         elif matched_count == 1:
-            effective_max_pos = base_max_pos * 0.85  # Cautious probe on single alpha entry
+            effective_max_pos = min(0.025, base_max_pos * 1.25)  # Confident entry on elite whale
         else:
             effective_max_pos = base_max_pos
 
