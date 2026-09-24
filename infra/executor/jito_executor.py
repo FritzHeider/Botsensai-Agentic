@@ -967,6 +967,15 @@ class JitoLiveExecutor:
                 sell_amount = "100%"
                 is_partial = False
                 exit_reason = f"moonbag_trailing_stop_40pct_off_peak_{peak_multiple:.2f}x"
+            # Moonbag Dead-Curve Stagnation Recycler (after Stage 1):
+            # If a post-stage1 moonbag has been flat/dormant for > 45 minutes with dead volume (< $100 5m vol),
+            # harvest remaining moonbag equity and close ATA to sweep rent back into liquid cash for fresh entries.
+            elif "stage1" in prev_exit_reason and age_seconds >= 2700:
+                vol_5m = self._fetch_live_5m_volume(mint)
+                if vol_5m < 100:
+                    sell_amount = "100%"
+                    is_partial = False
+                    exit_reason = f"moonbag_dead_curve_recycler_{int(age_seconds/60)}m_vol_${int(vol_5m)}"
             # Breakeven Protection: If coin rallied >= 1.45x and retraces to <= 1.05x, lock in breakeven before decaying
             elif "stage1" not in prev_exit_reason and peak_multiple >= 1.45 and multiple <= 1.05:
                 sell_amount = "100%"
