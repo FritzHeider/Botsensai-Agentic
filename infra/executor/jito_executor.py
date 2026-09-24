@@ -390,12 +390,12 @@ class JitoLiveExecutor:
 
         # Method 1: Dynamic Bankroll Scaling & Buffer Floor Protection
         if side == "BUY":
-            # Require at least 0.012 SOL buffer above floor to safely absorb trade + ATA rent (~0.00204 SOL) + fees (~0.0008 SOL)
+            # Require at least 0.010 SOL buffer above floor to safely absorb trade + ATA rent (~0.00204 SOL) + fees (~0.0008 SOL)
             available_buffer = wallet_balance - MIN_WALLET_RESERVE_SOL
-            if available_buffer < 0.012:
+            if available_buffer < 0.010:
                 warn = (
                     f"Capital Guard: Available buffer ({available_buffer:.4f} SOL) above reserve floor "
-                    f"is insufficient for safe entry (minimum 0.012 SOL required to protect 0.10 SOL floor after rent & fees). Holding dry powder."
+                    f"is insufficient for safe entry (minimum 0.010 SOL required to protect 0.10 SOL floor after rent & fees). Holding dry powder."
                 )
                 print(f"[EXECUTOR] 🛑 {warn}")
                 self.update_signal_status(sig_id, status="BLOCKED", error=warn)
