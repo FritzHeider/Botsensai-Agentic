@@ -373,6 +373,7 @@ class JitoLiveExecutor:
         slippage_bps = int(sig.get("max_slippage_bps") or 250)
         tip_lamports = int(sig.get("jito_tip_lamports") or 500_000)
         priority_fee_sol = max(tip_lamports / 1e9, 0.0005)
+        score = float(sig.get("score") or 0.85)
 
         print(f"\n[EXECUTOR] ⚡ Triggering signal #{sig_id}: {side} ${symbol} ({size_sol:.4f} SOL)")
 
@@ -431,7 +432,6 @@ class JitoLiveExecutor:
             safe_size_sol = size_sol
 
         # Method 4: Dynamic Jito Priority Bribes Based on Conviction Score
-        score = float(sig.get("score") or 0.85)
         if score >= 0.95:
             tiered_tip_lamports = 1_200_000
         elif score >= 0.88:
