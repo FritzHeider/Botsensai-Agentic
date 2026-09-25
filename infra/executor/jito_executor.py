@@ -549,8 +549,13 @@ class JitoLiveExecutor:
                     ON CONFLICT(mint) DO UPDATE SET
                         amount_token = excluded.amount_token,
                         cost_sol = excluded.cost_sol,
+                        entry_price_sol = excluded.entry_price_sol,
                         peak_price_sol = MAX(live_positions.peak_price_sol, excluded.peak_price_sol),
                         last_price_sol = excluded.last_price_sol,
+                        entry_tx_hash = excluded.entry_tx_hash,
+                        opened_at = excluded.opened_at,
+                        closed_at = NULL,
+                        exit_reason = NULL,
                         status = 'OPEN',
                         updated_at = excluded.updated_at
                     """,

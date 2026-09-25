@@ -137,7 +137,7 @@ def check_database():
         )
         cursor.execute(
             "SELECT symbol, mint, entry_price_sol, peak_price_sol, last_price_sol, cost_sol, realized_pnl_sol, status, amount_token "
-            "FROM live_positions ORDER BY opened_at DESC LIMIT 8;"
+            "FROM live_positions ORDER BY CASE WHEN status = 'OPEN' THEN 0 ELSE 1 END, updated_at DESC LIMIT 15;"
         )
         positions = cursor.fetchall()
         print(f"\n [Live On-Chain Positions (Real Mainnet Swaps Only)]:")
