@@ -24,7 +24,6 @@ SERVICES = [
     "botsensai-daemon",
     "botsensai-executor",
     "botsensai-serve",
-    "botsensai-telemetry-publisher",
 ]
 
 
