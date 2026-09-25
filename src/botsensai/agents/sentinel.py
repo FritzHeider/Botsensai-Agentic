@@ -7,10 +7,18 @@ enforces GEMINI.md capital rails, and produces structured risk/conviction report
 
 import asyncio
 from typing import Optional
-from google.antigravity import Agent, LocalAgentConfig
-from google.antigravity.hooks import policy
 
-from botsensai.agents.schemas import TokenRiskReport
+try:
+    from google.antigravity import Agent, LocalAgentConfig
+    from google.antigravity.hooks import policy
+    HAS_AGY_SDK = True
+except ImportError:
+    Agent = None
+    LocalAgentConfig = None
+    policy = None
+    HAS_AGY_SDK = False
+
+from botsensai.agents.schemas import LiquidityMetrics, TokenAuthorities, TokenRiskReport
 from botsensai.agents.tools import (
     check_wallet_reserve_floor,
     dexscreener_get_pairs,
