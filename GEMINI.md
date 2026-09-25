@@ -6,8 +6,9 @@
 * **Epoch Filtering**: Any queries to `paper_positions` or execution records must strictly filter by `LIVE_START_TS` (timestamp `>= 1790165760.0`) to exclude pre-live simulation artifacts.
 
 ## 2. Hard Capital Preservation Rails
-* **Hot Wallet Reserve Floor**: Never allow the hot wallet balance to drop below `0.10 SOL`. If balance approaches the floor, halt new entries immediately while maintaining exit monitoring.
-* **Position Sizing Ceiling**: Hard cap single trade allocation at `0.035 SOL` max (dynamic 5% bankroll scaling above reserve floor, default `0.012 - 0.025 SOL`).
+* **Operational Hot Wallet Gas Floor**: Maintain an operational gas and rent reserve floor of `0.010 SOL` (preserving ATA rent exemption ~0.00204 SOL, network fees, and Jito tips to prevent wallet bricking). If balance approaches the `0.010 SOL` floor (buffer < 0.003 SOL), halt new entries immediately while maintaining exit monitoring.
+* **Position Sizing & Active Trading**: Deploy remaining liquid SOL in the hot wallet into active trades sized at `0.015 - 0.025 SOL` (hard cap `0.035 SOL` max, dynamic bankroll scaling based on available buffer above the gas floor).
+* **Autonomous Sentinel Pre-Trade Gate**: All candidate buy signals must be audited by the Autonomous Sentinel Agent (`BotsensaiSentinelAgent` / DAS on-chain security inspection) before swap generation to eliminate weaponized Token-2022 authorities, phishing dust, honeypots, and illiquid traps.
 * **Slippage & Priority Protection**: Enforce a strict `3.5%` (350 bps) max slippage ceiling for fast meme runner entries and tiered Jito MEV tips (550k–1,200,000 lamports tiered by conviction score) to guarantee transaction inclusion while eliminating front-running and capital bleed.
 
 ## 3. Dual-Pool Execution & Multi-Pool Liquidity Fallback

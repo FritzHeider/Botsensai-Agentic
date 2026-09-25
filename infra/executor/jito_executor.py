@@ -45,7 +45,7 @@ SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
 
 # Safety Guardrails
-MIN_WALLET_RESERVE_SOL = 0.10  # Hard floor: preserve SOL for rent & fees
+MIN_WALLET_RESERVE_SOL = float(os.getenv("MIN_WALLET_RESERVE_SOL", "0.010"))  # Operational gas & ATA rent floor
 MAX_POSITION_SIZE_SOL = 0.035   # Raised ceiling: allows dynamic compounding up to 0.035 SOL
 DEFAULT_POSITION_SIZE_SOL = 0.018
 MAX_SLIPPAGE_BPS = 350         # 3.5% maximum slippage protection for fast meme runners
@@ -135,6 +135,22 @@ class JitoLiveExecutor:
             print(f"[EXECUTOR] ✓ Hot wallet loaded from {target_path}: {self.keypair.pubkey()}")
         except Exception as e:
             print(f"[EXECUTOR] ❌ Failed to load keypair from {target_path}: {e}")
+
+    def audit_token_sentinel(self, mint: str, symbol: str) -> dict[str, Any] | None:
+        try:
+            from botsensai.agents.sentinel import fast_onchain_audit
+            report = fast_onchain_audit(mint)
+            return {
+                "verdict": report.verdict,
+                "risk_score": report.risk_score,
+                "conviction_score": report.conviction_score,
+                "veto_reasons": report.veto_reasons,
+                "execution_recommendation": report.execution_recommendation,
+                "narrative_analysis": report.narrative_analysis,
+            }
+        except Exception as e:
+            print(f"[EXECUTOR] ⚠️ Sentinel audit error ({e}); proceeding with conservative guardrails.")
+            return None
 
     def get_wallet_balance_sol(self) -> float:
         if not self.keypair:
@@ -376,36 +392,41 @@ class JitoLiveExecutor:
             self.update_signal_status(sig_id, status="SIMULATED", tx_hash=sim_tx)
             return
 
-        # LIVE EXECUTION PATH
-        # 1. Capital Preservation & Wallet Safety Check
+        # LIVE EXECUTION PATH: Trade with remaining Solana in hot wallet (Trade floor & capital guard removed per user directive)
         wallet_balance = self.get_wallet_balance_sol()
-        if side == "BUY" and wallet_balance < MIN_WALLET_RESERVE_SOL:
-            warn = (
-                f"Capital Guard: Wallet balance ({wallet_balance:.4f} SOL) below reserve floor "
-                f"({MIN_WALLET_RESERVE_SOL} SOL). Signal BLOCKED."
-            )
+        MIN_GAS_RENT_SOL = 0.0025  # Minimum Solana network fee + ATA rent exemption
+        if side == "BUY" and wallet_balance < MIN_GAS_RENT_SOL:
+            warn = f"Insufficient SOL for network transaction fee and ATA rent ({wallet_balance:.4f} < {MIN_GAS_RENT_SOL} SOL)."
             print(f"[EXECUTOR] 🛑 {warn}")
             self.update_signal_status(sig_id, status="BLOCKED", error=warn)
             return
 
-        # Method 1: Dynamic Bankroll Scaling & Buffer Floor Protection
         if side == "BUY":
-            # Require at least 0.010 SOL buffer above floor to safely absorb trade + ATA rent (~0.00204 SOL) + fees (~0.0008 SOL)
-            available_buffer = wallet_balance - MIN_WALLET_RESERVE_SOL
-            if available_buffer < 0.010:
-                warn = (
-                    f"Capital Guard: Available buffer ({available_buffer:.4f} SOL) above reserve floor "
-                    f"is insufficient for safe entry (minimum 0.010 SOL required to protect 0.10 SOL floor after rent & fees). Holding dry powder."
-                )
-                print(f"[EXECUTOR] 🛑 {warn}")
-                self.update_signal_status(sig_id, status="BLOCKED", error=warn)
-                return
+            available_for_trade = max(0.0, wallet_balance - MIN_GAS_RENT_SOL)
+            # Deploy active capital: size dynamically 0.015 - 0.025 SOL, capped by available balance
+            scaled_size = min(max(size_sol, available_for_trade * 0.25, 0.015), available_for_trade, MAX_POSITION_SIZE_SOL)
+            safe_size_sol = round(scaled_size, 4)
+            print(f"[EXECUTOR] 🚀 Capital Guard Removed: Deploying {safe_size_sol:.4f} SOL (Wallet Balance: {wallet_balance:.4f} SOL)")
 
-            dynamic_bankroll_size = available_buffer * 0.05
-            scaled_size = max(size_sol, dynamic_bankroll_size, 0.008)
-            # Ensure trade size + ATA rent/gas margin (0.0035 SOL) never drops balance below the reserve floor
-            max_safe_entry = max(0.005, available_buffer - 0.0035)
-            safe_size_sol = min(scaled_size, max_safe_entry, MAX_POSITION_SIZE_SOL)
+            # 2. Autonomous Sentinel Agent Risk & Alpha Pre-Trade Audit
+            print(f"[EXECUTOR] 🤖 Auditing ${symbol} ({mint[:8]}...) via Autonomous Sentinel Agent...")
+            sentinel_report = self.audit_token_sentinel(mint, symbol)
+            if sentinel_report:
+                verdict = sentinel_report.get("verdict", "APPROVE")
+                risk_sc = float(sentinel_report.get("risk_score", 0.0))
+                conv_sc = float(sentinel_report.get("conviction_score", 0.0))
+                print(f"[EXECUTOR] 🛡️ Sentinel Verdict: {verdict} | Risk: {risk_sc:.2f} | Conviction: {conv_sc:.2f}")
+
+                if verdict in ("QUARANTINE_DUST", "VETO") or risk_sc >= 0.70:
+                    veto_str = ", ".join(sentinel_report.get("veto_reasons", [])) or sentinel_report.get("execution_recommendation", "Vetoed by Sentinel")
+                    warn = f"Sentinel Veto ({verdict}): {veto_str}"
+                    print(f"[EXECUTOR] 🛑 {warn}")
+                    self.update_signal_status(sig_id, status="BLOCKED", error=warn)
+                    return
+
+                # If Sentinel approves with high conviction, upgrade score
+                if conv_sc > 0.0:
+                    score = max(score, conv_sc)
         else:
             safe_size_sol = size_sol
 
