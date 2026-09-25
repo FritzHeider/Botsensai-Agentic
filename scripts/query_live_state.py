@@ -44,3 +44,10 @@ for r in rows:
 
 print(f"TOTAL TOKEN EQUITY: {total_token_val_sol:.6f} SOL")
 print(f"TOTAL NET WORTH: {bal + total_token_val_sol:.6f} SOL (${(bal + total_token_val_sol)*113.3:.2f} USD @ $113.3/SOL)")
+
+print("\n--- RECENT EXECUTION SIGNALS ---")
+sigs = conn.execute("SELECT id, strftime('%H:%M:%S', created_at, 'unixepoch') as ts, side, symbol, size_native, status, error, tx_hash FROM execution_signals ORDER BY id DESC LIMIT 6").fetchall()
+for s in sigs:
+    err = f" | {s['error'][:40]}" if s['error'] else ""
+    tx = f" | {s['tx_hash'][:16]}..." if s['tx_hash'] else ""
+    print(f"  #{s['id']} [{s['ts']}] {s['side']} ${s['symbol']} ({s['size_native']:.4f} SOL) -> {s['status']}{err}{tx}")
