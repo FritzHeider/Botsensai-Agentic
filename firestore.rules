@@ -1,0 +1,157 @@
+rules_version = '2';
+
+// ===============================================================
+// Botsensai Firestore Security Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId} (matches Firebase Auth UID)
+// Fields:
+//   - uid: string (required, immutable) - Auth UID
+//   - tier: string (required, enum: ['free', 'pro', 'vip']) - Subscription tier
+//   - telegramChatId: string (optional, max 64 chars) - Telegram linking
+//   - apiKey: string (optional, max 128 chars, server-provisioned) - B2B access key
+//   - createdAt: timestamp (required, immutable) - Account creation
+//   - updatedAt: timestamp (required) - Last update
+//
+// Collection: signals
+// Document ID: {signalId} (Solana mint address)
+// Fields:
+//   - mint: string (required, 32-44 chars base58) - Solana token mint
+//   - symbol: string (required, max 20 chars) - Ticker symbol
+//   - score: number (required, 0.0 - 1.0) - Composite conviction score
+//   - regime: string (required, enum: ['hot', 'normal', 'dead']) - Market regime
+//   - vetoes: list (required, max 10 items) - Veto reasons list
+//   - createdAt: timestamp (required, immutable) - Detection time
+//
+// Collection: runners
+// Document ID: {runnerId}
+// Fields:
+//   - symbol: string (required) - Token symbol
+//   - mint: string (required) - Token mint
+//   - peakMultiple: number (required, >= 1.0) - Max multiple touched
+//   - entryCostSol: number (required, >= 0.0) - Trade size in SOL
+//   - exitReason: string (required) - Staged or stop reason
+//   - openedAt: timestamp (required) - Trade timestamp
+//
+// Collection: rent_claims
+// Document ID: {claimId}
+// Fields:
+//   - wallet: string (required, 32-44 chars) - User's Solana wallet
+//   - userId: string (optional, max 128 chars) - Associated Firebase UID
+//   - accountsClosed: number (required, positive integer) - Count of ATAs closed
+//   - reclaimedSol: number (required, positive) - Total SOL refunded
+//   - feeSol: number (required, positive) - 10% protocol fee
+//   - txHash: string (required, 64-88 chars) - On-chain signature
+//   - createdAt: timestamp (required, immutable) - Claim time
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidTier(tier) {
+      return tier in ['free', 'pro', 'vip'];
+    }
+
+    function isValidStringLength(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isPositiveNumber(val) {
+      return val is number && val >= 0;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'tier', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['uid', 'tier', 'telegramChatId', 'apiKey', 'createdAt', 'updatedAt']) &&
+             data.uid == request.auth.uid &&
+             isValidTier(data.tier) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp &&
+             (!( 'telegramChatId' in data ) || isValidStringLength(data.telegramChatId, 1, 64)) &&
+             (!( 'apiKey' in data ) || isValidStringLength(data.apiKey, 16, 128));
+    }
+
+    function isValidRentClaim(data) {
+      return data.keys().hasAll(['wallet', 'accountsClosed', 'reclaimedSol', 'feeSol', 'txHash', 'createdAt']) &&
+             data.keys().hasOnly(['wallet', 'userId', 'accountsClosed', 'reclaimedSol', 'feeSol', 'txHash', 'createdAt']) &&
+             isValidStringLength(data.wallet, 32, 44) &&
+             isValidStringLength(data.txHash, 64, 88) &&
+             data.accountsClosed is int && data.accountsClosed > 0 &&
+             isPositiveNumber(data.reclaimedSol) &&
+             isPositiveNumber(data.feeSol) &&
+             data.createdAt is timestamp &&
+             (!( 'userId' in data ) || data.userId == request.auth.uid);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Users: Private to owner, self-escalation prevented, API keys server-managed
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      // New users can only create with tier 'free' and cannot provision their own apiKey
+      allow create: if isOwner(userId) &&
+                      isValidUser(request.resource.data) &&
+                      request.resource.data.tier == 'free' &&
+                      !( 'apiKey' in request.resource.data );
+      // Updates cannot modify uid or createdAt, cannot self-escalate tier, and cannot mutate apiKey
+      allow update: if isOwner(userId) &&
+                      isValidUser(request.resource.data) &&
+                      request.resource.data.uid == resource.data.uid &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      request.resource.data.tier == resource.data.tier &&
+                      (
+                        ( !( 'apiKey' in resource.data ) && !( 'apiKey' in request.resource.data ) ) ||
+                        ( 'apiKey' in resource.data && 'apiKey' in request.resource.data && request.resource.data.apiKey == resource.data.apiKey )
+                      );
+      allow delete: if false; // Deletion handled via account closure pipeline
+    }
+
+    // Signals: Real-time intelligence readable by authenticated subscribers, written by backend
+    match /signals/{signalId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only written by backend server via Admin SDK
+    }
+
+    // Runners: Historical 48-hour live performance data (Publicly readable)
+    match /runners/{runnerId} {
+      allow read: if true;
+      allow write: if false; // Only written by backend execution daemon
+    }
+
+    // Rent Claims: 1-Click rent recovery transactions (strictly scoped to owner / wallet)
+    match /rent_claims/{claimId} {
+      allow read: if isAuthenticated() && (
+        ( 'userId' in resource.data && resource.data.userId == request.auth.uid ) ||
+        ( 'wallet' in request.auth.token && resource.data.wallet == request.auth.token.wallet )
+      );
+      allow create: if isAuthenticated() &&
+                    isValidRentClaim(request.resource.data) &&
+                    (
+                      ( 'userId' in request.resource.data && request.resource.data.userId == request.auth.uid ) ||
+                      ( 'wallet' in request.auth.token && request.resource.data.wallet == request.auth.token.wallet )
+                    );
+      allow update, delete: if false; // Immutable audit log
+    }
+
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

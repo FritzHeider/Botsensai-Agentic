@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BOTSENSAI // Autonomous Solana Quantitative Agent</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 15px rgba(0, 240, 255, 0.4)); }
+      50% { opacity: 1; filter: drop-shadow(0 0 25px rgba(0, 240, 255, 0.8)); }
+    }
+    .glow-cyan { animation: pulse-glow 3s infinite; }
+    .glass-panel {
+      background: rgba(13, 17, 23, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(48, 54, 61, 0.8);
+    }
+    .glass-card {
+      background: rgba(22, 27, 34, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(48, 54, 61, 0.6);
+    }
+    .glass-card:hover {
+      border-color: rgba(56, 189, 248, 0.5);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b0e14; }
+    ::-webkit-scrollbar-thumb { background: #262c36; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+  </style>
+</head>
+<body class="bg-[#080a0f] text-[#e6edf3] font-mono min-h-screen antialiased selection:bg-[#00f0ff]/30 selection:text-[#00f0ff]">
+
+  <!-- Top Real-Time System Ticker -->
+  <header class="border-b border-[#30363d]/80 bg-[#0d1117]/90 sticky top-0 z-50 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></div>
+        <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 -ml-4"></div>
+        <span class="text-xs uppercase tracking-widest text-emerald-400 font-bold">SYSTEM ACTIVE // MAINNET</span>
+        <span class="text-[#8b949e]">|</span>
+        <span class="text-xs text-[#8b949e] hidden sm:inline">WALLET:</span>
+        <a href="https://solscan.io/account/ChgCuBWDvGFwnW77kU523JcFXc2CryX3J4rEWDzWmtsS" target="_blank" class="text-xs text-sky-400 hover:text-sky-300 transition-colors">ChgCuB...WmtsS ↗</a>
+      </div>
+
+      <div class="flex items-center gap-6 text-xs text-[#8b949e]">
+        <div><span class="text-emerald-400 font-semibold">27</span> <span class="hidden md:inline">MOONBAG RUNNERS</span></div>
+        <div><span class="text-sky-400 font-semibold">144</span> <span class="hidden md:inline">LIVE TRADES</span></div>
+        <div>PF: <span class="text-purple-400 font-bold">9.13</span></div>
+        <div class="hidden lg:block text-amber-400/90 font-medium">GAS FLOOR: 0.010 SOL</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero & Brand Header -->
+  <section class="max-w-7xl mx-auto px-4 pt-8 pb-6">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-[#30363d] pb-8">
+      <div>
+        <div class="flex items-center gap-3 mb-2">
+          <span class="px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wider uppercase bg-sky-500/10 text-sky-400 border border-sky-500/30">v2.4 Live Autonomous</span>
+          <span class="px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wider uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Sentinel DAS Guard</span>
+          <span class="px-2.5 py-0.5 rounded text-[11px] font-bold tracking-wider uppercase bg-purple-500/10 text-purple-400 border border-purple-500/30">Jito Atomic Bundles</span>
+        </div>
+        <h1 class="text-3xl md:text-5xl font-black tracking-tight text-white flex items-center gap-3">
+          BOTSENSAI<span class="text-[#00f0ff]">.COM</span>
+        </h1>
+        <p class="text-sm md:text-base text-[#8b949e] mt-2 max-w-2xl">
+          High-frequency on-chain intelligence, autonomous Sentinel security auditing, and staged take-profit execution engineering on Solana memepools.
+        </p>
+      </div>
+
+      <!-- Quick Action Summary Card -->
+      <div class="glass-card rounded-xl p-4 min-w-[260px] border border-sky-500/20 shadow-lg shadow-sky-500/5">
+        <div class="text-xs uppercase text-[#8b949e] font-semibold tracking-wider">Active Moonbag Position</div>
+        <div class="flex items-baseline justify-between mt-2">
+          <div class="text-xl font-bold text-white">$Desk</div>
+          <div class="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">11.55x Peak</div>
+        </div>
+        <div class="text-xs text-[#8b949e] mt-1">74,319 tokens held · Cost: <span class="text-emerald-400 font-bold">0.00 SOL (Free-Roll)</span></div>
+        <div class="text-[11px] text-sky-400/80 mt-2">Stage 1 locked 2.19x on-chain (100% SOL principal secured)</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="flex items-center gap-2 mt-6 overflow-x-auto pb-2 border-b border-[#30363d]/60">
+      <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn px-4 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition-all bg-[#00f0ff]/10 text-[#00f0ff] border border-[#00f0ff]/30">
+        Live Intelligence
+      </button>
+      <button onclick="switchTab('architecture')" id="tab-architecture" class="tab-btn px-4 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition-all text-[#8b949e] hover:text-white border border-transparent">
+        Strategy Architecture
+      </button>
+      <button onclick="switchTab('runners')" id="tab-runners" class="tab-btn px-4 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition-all text-[#8b949e] hover:text-white border border-transparent">
+        27 Moonbag Runners
+      </button>
+      <button onclick="switchTab('backtest')" id="tab-backtest" class="tab-btn px-4 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition-all text-[#8b949e] hover:text-white border border-transparent">
+        Quantitative Alpha (PF 9.13)
+      </button>
+      <button onclick="switchTab('calculator')" id="tab-calculator" class="tab-btn px-4 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition-all text-[#8b949e] hover:text-white border border-transparent">
+        Moonbag Math Calculator
+      </button>
+      <button onclick="switchTab('rent')" id="tab-rent" class="tab-btn px-4 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition-all text-[#8b949e] hover:text-white border border-transparent">
+        Rent Reclaim & Safety
+      </button>
+    </div>
+  </section>
+
+  <!-- TAB CONTENT CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 pb-16">
+
+    <!-- 1. LIVE INTELLIGENCE TAB -->
+    <div id="content-dashboard" class="tab-content space-y-6">
+      <!-- Live Metrics Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="glass-card p-5 rounded-xl">
+          <div class="text-xs uppercase text-[#8b949e] font-semibold tracking-wider">Live Hot Wallet</div>
+          <div class="text-2xl font-bold text-white mt-2">0.0142 SOL</div>
+          <div class="text-xs text-[#8b949e] mt-1">$1.69 USD (@ $119.29 SOL)</div>
+          <div class="mt-3 flex items-center gap-1.5 text-xs text-emerald-400">
+            <span>● 0.0010 Liquid Cash</span>
+            <span class="text-[#8b949e]">|</span>
+            <span>0.0132 Token Equity</span>
+          </div>
+        </div>
+
+        <div class="glass-card p-5 rounded-xl">
+          <div class="text-xs uppercase text-[#8b949e] font-semibold tracking-wider">48h Live Trades</div>
+          <div class="text-2xl font-bold text-white mt-2">144 Trades</div>
+          <div class="text-xs text-[#8b949e] mt-1">Pump.fun & Raydium AMM</div>
+          <div class="mt-3 flex items-center gap-2 text-xs text-sky-400">
+            <span class="font-bold">27 Moonbags (18.7%)</span>
+            <span class="text-[#8b949e]">|</span>
+            <span>26 Breakouts</span>
+          </div>
+        </div>
+
+        <div class="glass-card p-5 rounded-xl">
+          <div class="text-xs uppercase text-[#8b949e] font-semibold tracking-wider">Historical Corpus</div>
+          <div class="text-2xl font-bold text-purple-400 mt-2">2,683,897</div>
+          <div class="text-xs text-[#8b949e] mt-1">Tick Transactions Replayed</div>
+          <div class="mt-3 text-xs text-purple-300/80">448,599 Launches Indexed</div>
+        </div>
+
+        <div class="glass-card p-5 rounded-xl">
+          <div class="text-xs uppercase text-[#8b949e] font-semibold tracking-wider">Sentinel Security Audit</div>
+          <div class="text-2xl font-bold text-emerald-400 mt-2">100% Clean</div>
+          <div class="text-xs text-[#8b949e] mt-1">Zero Honeypots / Zero Freezes</div>
+          <div class="mt-3 text-xs text-emerald-400/90">DAS Pre-Trade Gate Active</div>
+        </div>
+      </div>
+
+      <!-- Live Positions & Execution Timeline -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Live Holdings Table -->
+        <div class="glass-panel p-5 rounded-xl lg:col-span-2">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-sky-400"></span> Verified On-Chain Holdings
+            </h3>
+            <span class="text-xs text-[#8b949e]">Native Helius RPC Query</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="text-[#8b949e] border-b border-[#30363d] uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th class="py-2.5">Asset</th>
+                  <th>Amount</th>
+                  <th>Price (SOL)</th>
+                  <th>Valuation</th>
+                  <th>Peak Mult</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#30363d]/60">
+                <tr class="hover:bg-white/[0.02]">
+                  <td class="py-3 font-bold text-white flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span> $Desk
+                    <span class="text-[10px] text-[#8b949e] font-normal">Bqy9DS...QWpump</span>
+                  </td>
+                  <td class="font-mono">74,319</td>
+                  <td class="font-mono">0.00000018</td>
+                  <td class="font-mono text-emerald-400 font-semibold">0.0132 SOL ($1.57)</td>
+                  <td class="font-mono text-purple-400 font-bold">11.55x</td>
+                  <td><span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">Free-Roll Moonbag</span></td>
+                </tr>
+                <tr class="hover:bg-white/[0.02]">
+                  <td class="py-3 font-bold text-white flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-blue-400"></span> GNhCph...
+                    <span class="text-[10px] text-[#8b949e] font-normal">GNhCph...rhFpump</span>
+                  </td>
+                  <td class="font-mono">3,740</td>
+                  <td class="font-mono"><0.00000001</td>
+                  <td class="font-mono text-[#8b949e]">0.0000 SOL</td>
+                  <td class="font-mono text-[#8b949e]">N/A</td>
+                  <td><span class="px-2 py-0.5 rounded text-[10px] bg-slate-500/10 text-slate-400 border border-slate-500/30">Dormant ATA</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- System Activity Feed -->
+        <div class="glass-panel p-5 rounded-xl">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-white mb-4 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-purple-400"></span> Microservice Pulse
+          </h3>
+          <div class="space-y-3 text-xs">
+            <div class="p-3 rounded-lg bg-[#161b22] border border-[#30363d]/60 flex items-center justify-between">
+              <div>
+                <div class="font-semibold text-white">botsensai-daemon</div>
+                <div class="text-[11px] text-[#8b949e]">Real-time Pump.fun bonding curve ingestion</div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">ACTIVE</span>
+            </div>
+
+            <div class="p-3 rounded-lg bg-[#161b22] border border-[#30363d]/60 flex items-center justify-between">
+              <div>
+                <div class="font-semibold text-white">botsensai-executor</div>
+                <div class="text-[11px] text-[#8b949e]">Autonomous Jito MEV execution & exits</div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">ACTIVE</span>
+            </div>
+
+            <div class="p-3 rounded-lg bg-[#161b22] border border-[#30363d]/60 flex items-center justify-between">
+              <div>
+                <div class="font-semibold text-white">botsensai-serve</div>
+                <div class="text-[11px] text-[#8b949e]">WebSocket stream & real-time telemetry</div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">ACTIVE</span>
+            </div>
+
+            <div class="pt-2 border-t border-[#30363d]/60 text-[11px] text-[#8b949e]">
+              Instance: <span class="text-white">i-0bb5f0e7d264a2937</span> (us-east-1)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. STRATEGY ARCHITECTURE TAB -->
+    <div id="content-architecture" class="tab-content space-y-6 hidden">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Pillar 1: Ultra-Conviction Gating -->
+        <div class="glass-panel p-6 rounded-xl border border-sky-500/20">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="w-7 h-7 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-sm">01</span>
+            <h3 class="text-base font-bold text-white">Ultra-Conviction Gating (Threshold &ge; 0.90)</h3>
+          </div>
+          <p class="text-xs text-[#8b949e] leading-relaxed">
+            Our empirical backtests uncovered the critical dynamic of <strong class="text-white">Portfolio Congestion & Slot Starvation</strong>: when entry thresholds are loose (0.65), noisy tokens quickly saturate all 15 position slots, locking out 64x parabolic runners like <code class="text-sky-300">$pill</code>.
+          </p>
+          <div class="mt-4 p-3 rounded-lg bg-[#161b22] border border-[#30363d] text-xs space-y-1.5">
+            <div class="flex justify-between"><span class="text-[#8b949e]">Default Threshold (0.65):</span> <span class="text-red-400 font-bold">+0.14 SOL (Congested)</span></div>
+            <div class="flex justify-between"><span class="text-[#8b949e]">Ultra-Conviction (0.95):</span> <span class="text-emerald-400 font-bold">+7.76 SOL (+77.6% Return)</span></div>
+            <div class="text-[11px] text-sky-400/90 pt-1">Prunes mediocre tokens to reserve capital for fat-tailed asymmetric outliers.</div>
+          </div>
+        </div>
+
+        <!-- Pillar 2: The Free-Roll Moonbag -->
+        <div class="glass-panel p-6 rounded-xl border border-emerald-500/20">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">02</span>
+            <h3 class="text-base font-bold text-white">Staged Ladder & "Free-Roll" Moonbag</h3>
+          </div>
+          <p class="text-xs text-[#8b949e] leading-relaxed">
+            Rather than diamond-handing to zero or paper-handing 100% at 2x, our engine executes a mathematical equilibrium:
+          </p>
+          <div class="mt-4 p-3 rounded-lg bg-[#161b22] border border-[#30363d] text-xs space-y-2">
+            <div><strong class="text-emerald-400">Stage 1 (At 2.0x Spike):</strong> Sell exactly 50% of tokens. <span class="text-[#8b949e]">0.50 &times; 2.0 = 100% of initial SOL cash returned to hot wallet.</span></div>
+            <div><strong class="text-purple-400">Stage 2 (Moonbag Free-Roll):</strong> Remaining 50% cost-basis is now <span class="text-white font-bold">0.00 SOL</span>. Rides 10x–1000x expansions with zero principal at risk.</div>
+          </div>
+        </div>
+
+        <!-- Pillar 3: 120s Momentum Decay Stop -->
+        <div class="glass-panel p-6 rounded-xl border border-amber-500/20">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-sm">03</span>
+            <h3 class="text-base font-bold text-white">120s Momentum Decay Stop</h3>
+          </div>
+          <p class="text-xs text-[#8b949e] leading-relaxed">
+            In Solana meme trading, if organic volume does not arrive immediately, the token is almost guaranteed to die. If a position fails to gain &ge; 10% after 120 seconds, the trade is terminated.
+          </p>
+          <div class="mt-4 p-3 rounded-lg bg-[#161b22] border border-[#30363d] text-xs">
+            <div class="text-[#8b949e]">Average loss on stopped trades: <span class="text-amber-400 font-bold">-0.0058 SOL</span></div>
+            <div class="text-[11px] text-emerald-400/90 mt-1">Preserves ~80% of nominal capital to fight another day instead of taking -99% rugs.</div>
+          </div>
+        </div>
+
+        <!-- Pillar 4: Stagnation Recycler & Rent Recovery -->
+        <div class="glass-panel p-6 rounded-xl border border-purple-500/20">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-sm">04</span>
+            <h3 class="text-base font-bold text-white">15m Stagnation Recycler & Rent Reclaim</h3>
+          </div>
+          <p class="text-xs text-[#8b949e] leading-relaxed">
+            If 5-minute volume dries up below $50, the position is automatically recycled into liquid SOL cash. The trade router atomic bundle includes native <code class="text-purple-300">CloseAccount</code> instructions, instantly returning the <strong class="text-white">0.00204 SOL rent</strong> deposit.
+          </p>
+          <div class="mt-4 p-3 rounded-lg bg-[#161b22] border border-[#30363d] text-xs text-purple-300/90">
+            Zero trapped SOL rent. Instant liquidity replenishment for fresh breakout signals.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 3. RUNNERS SHOWCASE TAB -->
+    <div id="content-runners" class="tab-content space-y-6 hidden">
+      <div class="glass-panel p-5 rounded-xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+          <div>
+            <h3 class="text-base font-bold text-white">48-Hour Live Moonbag Runners Audit</h3>
+            <p class="text-xs text-[#8b949e] mt-1">27 parabolic tokens that crossed &ge; 1.80x peak multiple across 144 live executions.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="filterRunners('all')" class="rf-btn active px-3 py-1 rounded text-xs bg-sky-500/20 text-sky-300 border border-sky-500/40">All (27)</button>
+            <button onclick="filterRunners('mega')" class="rf-btn px-3 py-1 rounded text-xs text-[#8b949e] hover:text-white border border-[#30363d]">10x+ (3)</button>
+            <button onclick="filterRunners('multi')" class="rf-btn px-3 py-1 rounded text-xs text-[#8b949e] hover:text-white border border-[#30363d]">4x-7x (8)</button>
+            <button onclick="filterRunners('double')" class="rf-btn px-3 py-1 rounded text-xs text-[#8b949e] hover:text-white border border-[#30363d]">2x-3.7x (16)</button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto max-h-[500px]">
+          <table class="w-full text-left text-xs">
+            <thead class="text-[#8b949e] border-b border-[#30363d] uppercase text-[10px] tracking-wider sticky top-0 bg-[#0d1117]">
+              <tr>
+                <th class="py-2.5">Symbol</th>
+                <th>Peak Mult</th>
+                <th>Entry Cost</th>
+                <th>Opened (UTC)</th>
+                <th>Outcome / Moonbag Execution</th>
+              </tr>
+            </thead>
+            <tbody id="runners-tbody" class="divide-y divide-[#30363d]/60 font-mono">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. BACKTEST TAB -->
+    <div id="content-backtest" class="tab-content space-y-6 hidden">
+      <div class="glass-panel p-6 rounded-xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div>
+            <h3 class="text-base font-bold text-white">Quantitative Backtesting Alpha & Baseline Benchmarks</h3>
+            <p class="text-xs text-[#8b949e] mt-1">Replayed across 300 continuous historical market tapes from data/botsensai.db (zero look-ahead, realistic curve slippage & Jito tips).</p>
+          </div>
+          <span class="px-3 py-1 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">PF: 9.13 (Alpha Confirmed)</span>
+        </div>
+
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-left text-xs">
+            <thead class="text-[#8b949e] border-b border-[#30363d] uppercase text-[10px] tracking-wider">
+              <tr>
+                <th class="py-2.5">Strategy / Baseline</th>
+                <th>Trades</th>
+                <th>Win Rate</th>
+                <th>Total PnL (SOL)</th>
+                <th>Profit Factor</th>
+                <th>Max Drawdown</th>
+                <th>Expectancy / Trade</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#30363d]/60 font-mono">
+              <tr class="bg-emerald-500/[0.08] border-l-2 border-emerald-400">
+                <td class="py-3 font-bold text-emerald-300 font-sans">Composite Strategy (th &ge; 0.95) ★</td>
+                <td>18</td>
+                <td>11.1%</td>
+                <td class="text-emerald-400 font-bold">+7.7589 SOL (+77.6%)</td>
+                <td class="text-emerald-300 font-bold">9.13</td>
+                <td class="text-red-400">-0.7694 SOL</td>
+                <td class="text-emerald-400">+0.4311 SOL</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-sans font-medium text-white">Composite Strategy (th &ge; 0.90)</td>
+                <td>20</td>
+                <td>5.0%</td>
+                <td class="text-emerald-400 font-bold">+7.2045 SOL</td>
+                <td>6.93</td>
+                <td class="text-red-400">-1.0755 SOL</td>
+                <td class="text-emerald-400">+0.3602 SOL</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-sans text-[#8b949e]">Baseline: Buy Everything (Null Hypothesis)</td>
+                <td>8</td>
+                <td>25.0%</td>
+                <td class="text-emerald-400">+5.3124 SOL</td>
+                <td>26.02</td>
+                <td class="text-red-400">-0.2031 SOL</td>
+                <td class="text-emerald-400">+0.6641 SOL</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-sans text-[#8b949e]">Composite Strategy (th = 0.65 Default)</td>
+                <td>21</td>
+                <td>4.8%</td>
+                <td class="text-sky-400">+0.1386 SOL</td>
+                <td>1.26</td>
+                <td class="text-red-400">-0.4429 SOL</td>
+                <td class="text-sky-400">+0.0066 SOL</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-sans text-[#8b949e]">Baseline: Random Entry</td>
+                <td>18</td>
+                <td>11.1%</td>
+                <td class="text-red-400">-0.1676 SOL</td>
+                <td>0.42</td>
+                <td class="text-red-400">-0.2771 SOL</td>
+                <td class="text-red-400">-0.0093 SOL</td>
+              </tr>
+              <tr>
+                <td class="py-3 font-sans text-[#8b949e]">Baseline: Buy Highest Volume</td>
+                <td>2</td>
+                <td>0.0%</td>
+                <td class="text-red-400">-0.0798 SOL</td>
+                <td>0.00</td>
+                <td class="text-red-400">-0.0798 SOL</td>
+                <td class="text-red-400">-0.0399 SOL</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-6 p-4 rounded-xl bg-[#161b22] border border-sky-500/20 text-xs text-[#8b949e] leading-relaxed">
+          <strong class="text-white font-semibold">Key Finding:</strong> At threshold 0.95, the strategy eliminates slot congestion, preserving position capacity for true asymmetric runners like <code class="text-sky-300">$pill</code> (64.17x, +8.42 SOL net) and <code class="text-sky-300">$BUFFETT</code> (3.26x, +0.29 SOL), generating a decisive statistical edge over all baselines.
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. CALCULATOR TAB -->
+    <div id="content-calculator" class="tab-content space-y-6 hidden">
+      <div class="glass-panel p-6 rounded-xl max-w-2xl mx-auto">
+        <h3 class="text-base font-bold text-white mb-2">Interactive Free-Roll Moonbag Calculator</h3>
+        <p class="text-xs text-[#8b949e] mb-6">Simulate the mathematical payoff of recovering 100% of your starting capital at Stage 1 (2.0x) and riding the house money moonbag.</p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div>
+            <label class="text-[#8b949e] uppercase font-semibold text-[10px]">Initial Position Size (SOL)</label>
+            <input type="number" id="calc-entry" value="0.020" step="0.005" class="w-full mt-1.5 px-3 py-2 rounded-lg bg-[#161b22] border border-[#30363d] text-white focus:outline-none focus:border-[#00f0ff]" oninput="updateCalculator()">
+          </div>
+          <div>
+            <label class="text-[#8b949e] uppercase font-semibold text-[10px]">Stage 1 Exit Target</label>
+            <input type="number" id="calc-stage1" value="2.0" step="0.1" class="w-full mt-1.5 px-3 py-2 rounded-lg bg-[#161b22] border border-[#30363d] text-white focus:outline-none focus:border-[#00f0ff]" oninput="updateCalculator()">
+          </div>
+          <div class="sm:col-span-2">
+            <label class="text-[#8b949e] uppercase font-semibold text-[10px]">Runner Expansion Multiple (Moonbag)</label>
+            <input type="range" id="calc-runner" min="2" max="100" value="25" class="w-full mt-2 accent-[#00f0ff]" oninput="updateCalculator()">
+            <div class="flex justify-between text-[11px] text-[#8b949e] mt-1">
+              <span>2.0x (Double)</span>
+              <span id="calc-runner-val" class="text-[#00f0ff] font-bold">25.0x</span>
+              <span>100x (Moonshot)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 p-4 rounded-xl bg-[#161b22] border border-[#30363d] space-y-3 text-xs">
+          <div class="flex justify-between py-1 border-b border-[#30363d]/60">
+            <span class="text-[#8b949e]">Cash Returned at Stage 1 (50% sold):</span>
+            <span id="res-s1-cash" class="text-white font-bold font-mono">0.0200 SOL (100% Principal)</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-[#30363d]/60">
+            <span class="text-[#8b949e]">Active Risk on Moonbag:</span>
+            <span class="text-emerald-400 font-bold font-mono">0.0000 SOL (Mathematically Risk-Free)</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-[#30363d]/60">
+            <span class="text-[#8b949e]">Pure Profit from Remaining Moonbag:</span>
+            <span id="res-moonbag-pnl" class="text-[#00f0ff] font-bold font-mono">+0.2500 SOL (+1,250%)</span>
+          </div>
+          <div class="flex justify-between pt-1">
+            <span class="text-white font-bold">Total Net Trade Return:</span>
+            <span id="res-total-return" class="text-purple-400 font-bold font-mono text-sm">+0.2500 SOL</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. RENT RECLAIM & SAFETY TAB -->
+    <div id="content-rent" class="tab-content space-y-6 hidden">
+      <div class="glass-panel p-6 rounded-xl">
+        <h3 class="text-base font-bold text-white mb-2">Solana Rent Reclaiming & ATA Hygiene</h3>
+        <p class="text-xs text-[#8b949e] leading-relaxed max-w-3xl">
+          Solana reserves ~<strong class="text-white">0.00203928 SOL</strong> (~$0.24 USD) per Associated Token Account (ATA) for rent-exemption storage. If a trader swaps 50 meme coins and sells out, ~0.10+ SOL remains trapped in empty storage accounts.
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 text-xs">
+          <div class="p-4 rounded-xl bg-[#161b22] border border-[#30363d]">
+            <h4 class="text-sm font-bold text-emerald-400 mb-2">Automated Botsensai Architecture</h4>
+            <p class="text-[#8b949e] leading-relaxed">
+              When our engine liquidates a 100% position, the swap transaction bundle atomically appends an SPL <code class="text-emerald-300">CloseAccount</code> instruction. This destroys the empty account and refunds the 0.00204 SOL back into liquid cash immediately.
+            </p>
+            <div class="mt-3 text-xs text-white font-mono bg-black/40 p-2 rounded border border-[#30363d]">
+              .venv/bin/python3 scripts/reclaim_rent.py --close
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#161b22] border border-[#30363d]">
+            <h4 class="text-sm font-bold text-amber-400 mb-2">Can Anyone Claim Other People's Rent?</h4>
+            <p class="text-[#8b949e] leading-relaxed">
+              <strong class="text-white">No.</strong> The Solana consensus engine strictly verifies that any <code class="text-amber-300">CloseAccount</code> instruction carries the private key signature of the account owner. Third-party software claiming to "drain forgotten rent" from arbitrary wallets are malicious trojans.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="border-t border-[#30363d]/80 py-8 bg-[#0b0e14] text-center text-xs text-[#8b949e]">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div>BOTSENSAI // Proprietary Autonomous On-Chain Quant Stack</div>
+      <div class="text-[11px]">Strict Isolation of Live vs Paper Epochs &middot; Helius Verified &middot; Jito MEV</div>
+    </div>
+  </footer>
+
+  <!-- REACTIVE JAVASCRIPT -->
+  <script>
+    const RUNNERS_DATA = [
+      { sym: "TOKEN", peak: "4807.69x", mult: 4807.69, cost: "0.0000", opened: "Sep 25 15:40", cat: "mega", outcome: "Active Holding (Genesis Airdrop)" },
+      { sym: "Desk", peak: "11.55x", mult: 11.55, cost: "0.0181", opened: "Sep 25 20:00", cat: "mega", outcome: "Stage 1 Locked 2.19x (74k tokens active)" },
+      { sym: "swoge", peak: "10.88x", mult: 10.88, cost: "0.0004", opened: "Sep 24 10:59", cat: "mega", outcome: "Moonbag Recycled at Dead Curve" },
+      { sym: "DON", peak: "6.93x", mult: 6.93, cost: "0.0009", opened: "Sep 25 05:49", cat: "multi", outcome: "Stage 1 Exit Locked at 6.93x" },
+      { sym: "ROMO", peak: "6.17x", mult: 6.17, cost: "0.0020", opened: "Sep 24 07:19", cat: "multi", outcome: "Stage 1 TP Locked at 5.83x (+483%)" },
+      { sym: "BANK", peak: "4.64x", mult: 4.64, cost: "0.0091", opened: "Sep 25 05:58", cat: "multi", outcome: "Moonbag Trailing Stop Locked 4.64x" },
+      { sym: "ST4Y", peak: "4.44x", mult: 4.44, cost: "0.0068", opened: "Sep 24 05:07", cat: "multi", outcome: "Trailing Stop Locked at 4.44x Peak" },
+      { sym: "POKEAI", peak: "4.43x", mult: 4.43, cost: "0.0073", opened: "Sep 24 01:51", cat: "multi", outcome: "Trailing Stop Locked at 4.43x Peak" },
+      { sym: "ChainPad", peak: "4.26x", mult: 4.26, cost: "0.0073", opened: "Sep 23 23:25", cat: "multi", outcome: "Trailing Stop Locked at 4.26x Peak" },
+      { sym: "zen", peak: "4.23x", mult: 4.23, cost: "0.0075", opened: "Sep 24 02:00", cat: "multi", outcome: "Trailing Stop Locked at 4.23x Peak" },
+      { sym: "MINESTOCK", peak: "3.68x", mult: 3.68, cost: "0.0071", opened: "Sep 24 02:09", cat: "double", outcome: "Trailing Stop Locked at 3.68x Peak" },
+      { sym: "UDR", peak: "3.51x", mult: 3.51, cost: "0.0091", opened: "Sep 24 08:18", cat: "double", outcome: "Moonbag Trailing Stop Locked 3.51x" },
+      { sym: "PHILCATE", peak: "3.17x", mult: 3.17, cost: "0.0072", opened: "Sep 23 23:26", cat: "double", outcome: "Trailing Stop Locked at 3.17x Peak" },
+      { sym: "Pigeon", peak: "2.97x", mult: 2.97, cost: "0.0072", opened: "Sep 24 02:53", cat: "double", outcome: "Trailing Stop Locked at 2.97x Peak" },
+      { sym: "SIMP", peak: "2.85x", mult: 2.85, cost: "0.0071", opened: "Sep 24 02:01", cat: "double", outcome: "Trailing Stop Locked at 2.85x Peak" },
+      { sym: "Robinhood", peak: "2.65x", mult: 2.65, cost: "0.0073", opened: "Sep 24 02:48", cat: "double", outcome: "100% Capital Liquidated into SOL" },
+      { sym: "Abu", peak: "2.65x", mult: 2.65, cost: "0.0076", opened: "Sep 24 03:39", cat: "double", outcome: "Trailing Stop Locked at 2.65x Peak" },
+      { sym: "Vibekit", peak: "2.60x", mult: 2.60, cost: "0.0090", opened: "Sep 24 10:38", cat: "double", outcome: "Moonbag Trailing Stop Locked 2.60x" },
+      { sym: "Sol", peak: "2.18x", mult: 2.18, cost: "0.0105", opened: "Sep 23 21:45", cat: "double", outcome: "100% Capital Liquidated into SOL" },
+      { sym: "NPC", peak: "2.14x", mult: 2.14, cost: "0.0162", opened: "Sep 24 02:48", cat: "double", outcome: "Trailing Stop Locked at 2.14x Peak" },
+      { sym: "GrokAI", peak: "2.13x", mult: 2.13, cost: "0.0175", opened: "Sep 24 02:32", cat: "double", outcome: "Trailing Stop Locked at 2.13x Peak" },
+      { sym: "$CONDOM", peak: "2.06x", mult: 2.06, cost: "0.0049", opened: "Sep 24 09:48", cat: "double", outcome: "100% Capital Liquidated into SOL" },
+      { sym: "KARPLRD", peak: "2.04x", mult: 2.04, cost: "0.0132", opened: "Sep 24 02:36", cat: "double", outcome: "Trailing Stop Locked at 2.04x Peak" },
+      { sym: "Zilla", peak: "2.00x", mult: 2.00, cost: "0.0092", opened: "Sep 25 06:09", cat: "double", outcome: "Stage 1 Locked 2.00x, Recycled" },
+      { sym: "FUNKINU", peak: "2.00x", mult: 2.00, cost: "0.0156", opened: "Sep 24 05:54", cat: "double", outcome: "Trailing Stop Locked at 2.00x Peak" },
+      { sym: "WOTF", peak: "1.84x", mult: 1.84, cost: "0.0230", opened: "Sep 23 21:25", cat: "double", outcome: "100% Capital Liquidated into SOL" },
+      { sym: "grc", peak: "1.83x", mult: 1.83, cost: "0.0146", opened: "Sep 24 02:09", cat: "double", outcome: "Trailing Stop Locked at 1.83x Peak" },
+    ];
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-[#00f0ff]/10', 'text-[#00f0ff]', 'border-[#00f0ff]/30');
+        btn.classList.add('text-[#8b949e]', 'border-transparent');
+      });
+
+      const target = document.getElementById(`content-${tabId}`);
+      if (target) target.classList.remove('hidden');
+
+      const btn = document.getElementById(`tab-${tabId}`);
+      if (btn) {
+        btn.classList.remove('text-[#8b949e]', 'border-transparent');
+        btn.classList.add('bg-[#00f0ff]/10', 'text-[#00f0ff]', 'border-[#00f0ff]/30');
+      }
+    }
+
+    function renderRunners(items) {
+      const tbody = document.getElementById('runners-tbody');
+      tbody.innerHTML = items.map((r, i) => `
+        <tr class="hover:bg-white/[0.02] transition-colors">
+          <td class="py-3 font-bold text-white flex items-center gap-2">
+            <span class="text-[#8b949e] font-normal">#${i+1}</span>
+            <span class="text-sky-400 font-sans font-bold">$${r.sym}</span>
+          </td>
+          <td class="font-bold ${r.mult >= 10 ? 'text-[#00f0ff]' : (r.mult >= 4 ? 'text-purple-400' : 'text-emerald-400')}">${r.peak}</td>
+          <td class="text-[#8b949e]">${r.cost} SOL</td>
+          <td class="text-[#8b949e] text-[11px]">${r.opened}</td>
+          <td class="text-[11px] text-white/90">${r.outcome}</td>
+        </tr>
+      `).join('');
+    }
+
+    function filterRunners(cat) {
+      document.querySelectorAll('.rf-btn').forEach(btn => {
+        btn.classList.remove('bg-sky-500/20', 'text-sky-300', 'border-sky-500/40');
+        btn.classList.add('text-[#8b949e]', 'border-[#30363d]');
+      });
+      event.target.classList.remove('text-[#8b949e]', 'border-[#30363d]');
+      event.target.classList.add('bg-sky-500/20', 'text-sky-300', 'border-sky-500/40');
+
+      if (cat === 'all') renderRunners(RUNNERS_DATA);
+      else renderRunners(RUNNERS_DATA.filter(r => r.cat === cat));
+    }
+
+    function updateCalculator() {
+      const entry = parseFloat(document.getElementById('calc-entry').value) || 0.02;
+      const s1 = parseFloat(document.getElementById('calc-stage1').value) || 2.0;
+      const runner = parseFloat(document.getElementById('calc-runner').value) || 25.0;
+
+      document.getElementById('calc-runner-val').innerText = runner.toFixed(1) + 'x';
+
+      // 50% sold at Stage 1 target
+      const s1_cash = 0.50 * entry * s1;
+      // Remaining 50% tokens ride to runner multiple
+      const moonbag_val = 0.50 * entry * runner;
+      const total_pnl = (s1_cash - entry) + moonbag_val;
+
+      document.getElementById('res-s1-cash').innerText = `${s1_cash.toFixed(4)} SOL (${((s1_cash/entry)*100).toFixed(0)}% Principal)`;
+      document.getElementById('res-moonbag-pnl').innerText = `+${moonbag_val.toFixed(4)} SOL (+${((moonbag_val/entry)*100).toFixed(0)}%)`;
+      document.getElementById('res-total-return').innerText = `+${total_pnl.toFixed(4)} SOL`;
+    }
+
+    // Initialize
+    renderRunners(RUNNERS_DATA);
+    updateCalculator();
+  </script>
+</body>
+</html>

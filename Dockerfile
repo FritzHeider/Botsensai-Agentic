@@ -1,58 +1,48 @@
-# =============================================================================
-# Botsensai Container Image
-# =============================================================================
-FROM python:3.11-slim
+# ===============================================================
+# Botsensai FastAPI & Sentinel Production Cloud Run Container
+# ===============================================================
 
-# Install system dependencies & Chromium for Playwright
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    git \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libasound2 \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy dependency definition
-COPY pyproject.toml .
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies with browser & ml extras
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e ".[browser,ml]" && \
-    playwright install chromium
+# Security hardening: Create non-root user and persistent dirs
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/data && \
+    chown -R appuser:appuser /app
 
-# Copy application source
-COPY src/ src/
-COPY config/ config/
-COPY scripts/ scripts/
-COPY README.md .
+# Copy dependency manifests and install dependencies
+COPY --chown=appuser:appuser pyproject.toml README.md ./
+RUN pip install --no-cache-dir hatchling && pip install --no-cache-dir .
 
-# Create volume mounts for persistent data
-RUN mkdir -p /app/data /app/config && \
-    useradd -m -u 1000 botsensai && \
-    chown -R botsensai:botsensai /app
+# Copy application source code, static assets, and data
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser public/ ./public/
+COPY --chown=appuser:appuser data/ ./data/
 
-USER botsensai
+# Ensure package is installed with latest source
+RUN pip install --no-cache-dir --no-deps .
 
-ENV PYTHONUNBUFFERED=1 \
-    BOTSENSAI_DB_PATH=/app/data/botsensai.db \
-    BOTSENSAI_LOG_LEVEL=INFO
+# Cloud Run defaults
+ENV PORT=8080 \
+    HOST=0.0.0.0 \
+    PYTHONUNBUFFERED=1 \
+    BOTSENSAI_REPO_ROOT=/app \
+    BOTSENSAI_DB_PATH=/app/data/botsensai.db
 
 EXPOSE 8080
 
-ENTRYPOINT ["botsensai"]
-CMD ["run"]
+USER appuser
+
+# Healthcheck for container readiness & Cloud Run liveness
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["uvicorn", "botsensai.dashboard.server:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]

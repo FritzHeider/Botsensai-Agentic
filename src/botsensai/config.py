@@ -22,7 +22,7 @@ import yaml
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(os.getenv("BOTSENSAI_REPO_ROOT", str(Path(__file__).resolve().parents[2])))
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "botsensai.yaml"
 
 

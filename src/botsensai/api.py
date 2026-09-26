@@ -663,6 +663,13 @@ def create_headless_api_app(settings: Settings | None = None) -> FastAPI:
     # 2. Mount Dashboard router (/, /tokens/.../graph, /ws/live, /api/snapshot)
     app.include_router(dashboard_router)
 
+    # 3. Mount Monetization router (/api/v1/sentinel, /api/v1/reclaim)
+    try:
+        from botsensai.monetization.sentinel_api import router as monetization_router
+        app.include_router(monetization_router)
+    except Exception as e:
+        log.warning("monetization_router.import_failed", error=str(e))
+
     @app.get("/dashboard", include_in_schema=False)
     async def redirect_dashboard() -> RedirectResponse:
         return RedirectResponse(url="/")

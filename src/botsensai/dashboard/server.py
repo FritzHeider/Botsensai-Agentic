@@ -230,6 +230,7 @@ async def get_token_ask(request: Request, mint: str, q: str = "Explain score and
     }
 
 
+@router.get("/health", include_in_schema=False)
 @router.get("/api/health")
 async def get_health(request: Request) -> dict[str, Any]:
     settings = _get_active_settings(request)
@@ -297,6 +298,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = active_settings
     app.include_router(router)
+    try:
+        from botsensai.monetization.sentinel_api import router as monetization_router
+        app.include_router(monetization_router)
+    except Exception as e:
+        log.warning("monetization_router.import_failed", error=str(e))
     return app
 
 
