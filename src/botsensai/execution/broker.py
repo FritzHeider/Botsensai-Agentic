@@ -100,6 +100,18 @@ class RiskManager:
         if open_count >= s.max_concurrent_positions:
             return RiskDecision(False, f"at position limit ({s.max_concurrent_positions})")
 
+        reserved_slots = getattr(s, "reserved_elite_slots", 5)
+        elite_threshold = getattr(s, "elite_conviction_threshold", 0.90)
+        standard_limit = s.max_concurrent_positions - reserved_slots
+        score = order.score_at_entry or 0.0
+
+        if open_count >= standard_limit and score < elite_threshold:
+            return RiskDecision(
+                False,
+                f"standard capacity full ({standard_limit}/{s.max_concurrent_positions}); "
+                f"remaining slots reserved for elite conviction >= {elite_threshold:.2f} (score={score:.3f})",
+            )
+
         size, sizing_veto = self._size_within_limits(order, account)
         if sizing_veto is not None:
             return RiskDecision(False, sizing_veto)

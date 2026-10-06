@@ -807,6 +807,12 @@ class Pipeline:
             open_live = self.db.open_live_positions()
             if len(open_live) >= self.settings.risk.max_concurrent_positions:
                 return "skip: max concurrent live positions reached"
+
+            reserved_slots = getattr(self.settings.risk, "reserved_elite_slots", 5)
+            elite_threshold = getattr(self.settings.risk, "elite_conviction_threshold", 0.90)
+            standard_limit = self.settings.risk.max_concurrent_positions - reserved_slots
+            if len(open_live) >= standard_limit and result.composite < elite_threshold:
+                return f"skip: standard live capacity full ({standard_limit}/{self.settings.risk.max_concurrent_positions}), remaining reserved for elite conviction >= {elite_threshold:.2f} (score={result.composite:.3f})"
             if any(p["mint"] == launch.token.mint for p in open_live):
                 return "skip: already holding token in live wallet"
             if self.db.recent_reverts_count(launch.token.mint, window_seconds=600.0) >= 1:

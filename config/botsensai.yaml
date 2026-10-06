@@ -38,13 +38,15 @@ risk:
   max_token_age_seconds: 21600
   max_slippage_bps: 500
   stop_loss_pct: 0.20
-  take_profit_multiples: [2.5, 5.0, 10.0]
-  take_profit_fractions: [0.60, 0.25, 0.15]
+  take_profit_multiples: [2.0, 4.0, 10.0]
+  take_profit_fractions: [0.50, 0.30, 0.20]
   trailing_stop_pct: 0.25
   max_hold_seconds: 21600
   kill_switch: false
-  momentum_stop_seconds: 90
+  momentum_stop_seconds: 120
   momentum_min_gain_pct: 0.10
+  reserved_elite_slots: 5
+  elite_conviction_threshold: 0.90
 
 execution:
   base_latency_ms: 250
@@ -61,7 +63,7 @@ scoring:
   weights_version: v_heavy_artillery
   weights_path: config/weights.json
   min_coverage: 0.20                 # Pure on-chain reads without requiring Twitter
-  entry_threshold: 0.65
+  entry_threshold: 0.75
   exit_threshold: 0.35
   veto_top10_share: 0.55
   veto_insider_share: 0.30

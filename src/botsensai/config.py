@@ -137,6 +137,8 @@ class RiskSettings(BaseModel):
     min_curve_progress: float = 0.03
     max_curve_progress: float = 0.85
     sniper_min_token_age_seconds: float = 0.0
+    reserved_elite_slots: int = 5
+    elite_conviction_threshold: float = 0.90
 
     @model_validator(mode="after")
     def _check_ladder(self) -> RiskSettings:
@@ -180,7 +182,7 @@ class ScoringSettings(BaseModel):
     weights_version: str = "v0"
     weights_path: str | None = "config/weights.json"
     min_coverage: float = 0.20
-    entry_threshold: float = 0.65
+    entry_threshold: float = 0.75
     exit_threshold: float = 0.35
     regime_lookback_hours: float = 6.0
     # Graduation-rate thresholds separating hot / normal / dead markets.

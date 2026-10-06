@@ -27,6 +27,7 @@ from botsensai.models import (
     CurveStage,
     MetricValue,
     Order,
+    Position,
     Side,
     TokenRef,
     VetoReason,
@@ -298,6 +299,51 @@ def test_risk_manager_enforces_position_cap():
     decision = risk.check_entry(order, account, None, age_seconds=600)
     assert decision.allowed
     assert decision.adjusted_size == pytest.approx(0.1)
+
+
+def test_risk_manager_reserved_elite_slots():
+    settings = RiskSettings(
+        max_concurrent_positions=15,
+        reserved_elite_slots=5,
+        elite_conviction_threshold=0.90,
+        max_position_native=0.1,
+    )
+    risk = RiskManager(settings)
+    account = AccountState(cash_native=10.0)
+
+    # Populate 10 open positions (standard capacity limit reached: 15 - 5 = 10)
+    for i in range(10):
+        pos_token = TokenRef(mint=f"token_{i:02d}".ljust(32, "x"))
+        account.positions[pos_token.key] = Position(
+            token=pos_token, opened_at=utcnow(), amount_token=100.0, cost_basis_native=0.1
+        )
+
+    # A standard conviction order (score 0.78) should be BLOCKED because standard limit (10) is reached
+    candidate_standard = TokenRef(mint="standard_token".ljust(32, "x"))
+    order_standard = Order(
+        token=candidate_standard, as_of=utcnow(), side=Side.BUY, size_native=0.1, score_at_entry=0.78
+    )
+    dec_standard = risk.check_entry(order_standard, account, None, age_seconds=600)
+    assert not dec_standard.allowed
+    assert "reserved for elite conviction" in dec_standard.reason
+
+    # An elite conviction order (score 0.95) should be ALLOWED to enter the reserved capacity
+    candidate_elite = TokenRef(mint="elite_token".ljust(32, "x"))
+    order_elite = Order(
+        token=candidate_elite, as_of=utcnow(), side=Side.BUY, size_native=0.1, score_at_entry=0.95
+    )
+    dec_elite = risk.check_entry(order_elite, account, None, age_seconds=600)
+    assert dec_elite.allowed
+
+    # When all 15 positions are filled, even elite conviction is blocked
+    for i in range(10, 15):
+        pos_token = TokenRef(mint=f"token_{i:02d}".ljust(32, "x"))
+        account.positions[pos_token.key] = Position(
+            token=pos_token, opened_at=utcnow(), amount_token=100.0, cost_basis_native=0.1
+        )
+    dec_full = risk.check_entry(order_elite, account, None, age_seconds=600)
+    assert not dec_full.allowed
+    assert "at position limit" in dec_full.reason
 
 
 def test_risk_manager_blocks_duplicate_positions():
