@@ -51,6 +51,7 @@ dependencies = [
 [project.optional-dependencies]
 browser = ["playwright>=1.44"]
 ml = ["scikit-learn>=1.5", "lightgbm>=4.3"]
+agents = ["google-antigravity>=1.0"]
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
