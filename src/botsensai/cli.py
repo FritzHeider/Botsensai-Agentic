@@ -263,9 +263,9 @@ def sweep(
 ) -> None:
     """Run the live loop in paper mode: discover, screen, enrich, score, decide."""
     settings = _settings(config, log_level)
-    if settings.trading_mode is TradingMode.LIVE:
-        console.print("[red]refusing to sweep in live mode; this build cannot trade[/red]")
-        raise typer.Exit(2)
+    # NOTE: The sweep command is safe to run in LIVE mode — it only discovers,
+    # scores, and writes execution_signals to SQLite. Actual trade execution is
+    # handled by the separate botsensai-executor service (jito_executor.py).
     _banner(settings)
 
     async def run() -> None:
@@ -335,9 +335,8 @@ def collect(
     being silently indistinguishable from a quiet market.
     """
     settings = _settings(config, log_level)
-    if settings.trading_mode is TradingMode.LIVE:
-        console.print("[red]refusing to collect in live mode; this build cannot trade[/red]")
-        raise typer.Exit(2)
+    # NOTE: collect is safe in LIVE mode — it builds the corpus. Execution is
+    # handled by the separate botsensai-executor daemon.
     _banner(settings)
 
     db = Database(settings.path(settings.db_path))
