@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Top Traders",
+  "type": "object",
+  "properties": {
+    "traders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "mint": { "type": "string" },
+          "mid_rise_score": { "type": "integer", "minimum": 0 },
+          "score": { "type": "number" },
+          "name": { "type": "string" }
+        },
+        "required": ["mint", "mid_rise_score"]
+      }
+    }
+  },
+  "required": ["traders"]
+}
