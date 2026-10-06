@@ -37,6 +37,25 @@ MAX_LIQUIDITY_USD = 600_000.0  # above this = institutional / harder to move
 MIN_MID_RISE_SCORE = 40        # minimum score to pass to Sentinel
 TOP_N_CANDIDATES = 10
 
+# ── Firehose integration ───────────────────────────────────────────────────────
+# Global buffer for candidate dicts received from the Helius Firehose listener.
+# The listener will call `ingest_candidate` to add enriched token data here.
+FIREHOSE_BUFFER: list[dict] = []
+
+def ingest_candidate(candidate: dict) -> None:
+    """Add a firehose‑derived candidate to the global buffer.
+
+    The candidate dict is expected to have the same schema as the entries
+    produced by `fetch_dexscreener_top_solana`.  We simply append it; the
+    scanner will merge the buffer into the DexScreener results before scoring.
+    """
+    global FIREHOSE_BUFFER
+    # Basic validation – ensure required keys exist.
+    if not candidate.get("mint"):
+        return
+    FIREHOSE_BUFFER.append(candidate)
+
+
 # Search vectors: broad keyword coverage of pump.fun meme ecosystem
 _SEARCH_VECTORS = [
     "pump",    # pump.fun tokens directly
