@@ -1389,7 +1389,7 @@ class Pipeline:
         hours: float | None = None,
         interval_seconds: float = 60.0,
         discover_limit: int = 60,
-        max_candidates: int = 25,
+        max_candidates: int = 10,
         max_sweeps: int | None = None,
         sweep_timeout: float | None = None,
         on_report: Any = None,
