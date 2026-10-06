@@ -1170,6 +1170,12 @@ class JitoLiveExecutor:
                     sell_amount = "100%"
                     is_partial = False
                     exit_reason = f"moonbag_dead_curve_recycler_{int(age_seconds/3600)}h_vol_${int(vol_5m)}"
+            # Hard Stop-Loss: -15% protection (age > 180s prevents RPC-lag false triggers)
+            # Fires before stagnation recycler to cut losses fast on dead setups.
+            elif "stage1" not in prev_exit_reason and multiple <= 0.85 and age_seconds >= 180.0:
+                sell_amount = "100%"
+                is_partial = False
+                exit_reason = f"hard_stop_loss_15pct_{multiple:.3f}x_at_{int(age_seconds)}s"
             # Breakeven Protection: If coin rallied >= 1.75x and retraces to <= 1.05x, lock in breakeven before decaying
             elif "stage1" not in prev_exit_reason and peak_multiple >= 1.75 and multiple <= 1.05:
                 sell_amount = "100%"
@@ -1180,12 +1186,12 @@ class JitoLiveExecutor:
                 sell_amount = "100%"
                 is_partial = False
                 exit_reason = f"trailing_stop_45pct_off_peak_{peak_multiple:.2f}x"
-            # Pre-Stage 1 Stagnation Recycler: Give setups 15 minutes (900s) to build volume rather than cutting after 5m!
+            # Pre-Stage 1 Stagnation Recycler: 10 min (600s) grace period, then exit if flat + low volume
             elif (
                 "stage1" not in prev_exit_reason
                 and (
-                    (age_seconds >= 900 and multiple < 1.05 and self._fetch_live_5m_volume(mint) < 150)
-                    or (age_seconds >= 1800 and multiple < 0.85)
+                    (age_seconds >= 600 and multiple < 1.05 and self._fetch_live_5m_volume(mint) < 300)
+                    or (age_seconds >= 1200 and multiple < 0.92)
                 )
             ):
                 vol_5m = self._fetch_live_5m_volume(mint)

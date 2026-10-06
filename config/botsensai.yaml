@@ -33,18 +33,18 @@ risk:
   max_concurrent_positions: 3        # Strictly concentrated: 3 positions max (only sure things)
   max_daily_loss_native: 0.20
   max_trades_per_hour: 5
-  min_liquidity_usd: 8000
-  min_token_age_seconds: 60
+  min_liquidity_usd: 15000           # raised: 8000→15000 — require real DEX depth at entry
+  min_token_age_seconds: 90          # raised: 60→90 — avoid the first 90s pump-and-dump spike
   max_token_age_seconds: 21600
   max_slippage_bps: 350
-  stop_loss_pct: 0.20
+  stop_loss_pct: 0.15                # tightened: 0.20→0.15 — cut losses faster
   take_profit_multiples: [2.0, 4.0, 10.0]
   take_profit_fractions: [0.50, 0.30, 0.20]
   trailing_stop_pct: 0.25
   max_hold_seconds: 21600
   kill_switch: false
   momentum_stop_seconds: 120
-  momentum_min_gain_pct: 0.10
+  momentum_min_gain_pct: 0.15        # raised: 0.10→0.15 — stronger momentum filter
   reserved_elite_slots: 1            # 2 standard slots + 1 strictly reserved for elite conviction >= 0.95
   elite_conviction_threshold: 0.95
 
@@ -63,7 +63,7 @@ scoring:
   weights_version: v_heavy_artillery
   weights_path: config/weights.json
   min_coverage: 0.20                 # Pure on-chain reads without requiring Twitter
-  entry_threshold: 0.85              # Stricter entry gate: 0.85 with smart money, 0.95 without
+  entry_threshold: 0.87              # raised: 0.85→0.87 — stricter quality gate
   exit_threshold: 0.35
   veto_top10_share: 0.55
   veto_insider_share: 0.30

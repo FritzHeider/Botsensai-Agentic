@@ -786,12 +786,12 @@ class Pipeline:
         known_holders = len(holder_wallets)
 
         if holder_count is not None:
-            if holder_count < 85:
-                return f"skip: holder count too low ({holder_count} < 85) - small holder tokens prone to single-seller rugs"
-            if token_age_sec >= 300 and holder_count < 120:
-                return f"skip: holder count too low for age ({holder_count} < 120 at {token_age_sec:.0f}s)"
-            if token_age_sec >= 600 and holder_count < 200:
-                return f"skip: holder count too low for age ({holder_count} < 200 at {token_age_sec:.0f}s)"
+            if holder_count < 120:
+                return f"skip: holder count too low ({holder_count} < 120) - insufficient community breadth for runner potential"
+            if token_age_sec >= 300 and holder_count < 175:
+                return f"skip: holder count too low for age ({holder_count} < 175 at {token_age_sec:.0f}s)"
+            if token_age_sec >= 600 and holder_count < 275:
+                return f"skip: holder count too low for age ({holder_count} < 275 at {token_age_sec:.0f}s)"
         else:
             # If snapshot holder_count is absent, enforce on distinct on-chain buyers & enriched holders
             if distinct_buyers < 35 and known_holders < 20:
@@ -799,8 +799,8 @@ class Pipeline:
 
         # 3. Zero-Latency Alpha Sieve: Require smart money copy-trade confirmation unless score is extraordinary
         matched_count = len(matched) if "matched" in locals() and matched else 0
-        if matched_count == 0 and result.composite < 0.98:
-            return "skip: no verified smart money copy-trade detected & score < 0.98 (focusing strictly on smart wallet copy trades)"
+        if matched_count == 0 and result.composite < 0.995:
+            return "skip: no verified smart money copy-trade detected & score < 0.995 (only entering on smart wallet confirmation or near-perfect composite)"
 
         # 4. Gate entry on the boosted conviction score
         ok, reason = self.scorer.should_enter(result)
