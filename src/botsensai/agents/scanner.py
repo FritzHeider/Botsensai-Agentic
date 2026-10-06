@@ -1,15 +1,23 @@
 """
-Botsensai ScannerAgent — DexScreener top-50 momentum scanner.
+Botsensai ScannerAgent — DexScreener top-100 mid-rise momentum scanner.
 
 Leaf subagent (depth 1). Called by OrchestratorAgent each sweep cycle.
-Fetches the top Solana tokens from DexScreener, applies holder breadth,
-liquidity, volume, and buy-pressure filters, and returns a ranked candidate
-list for the Orchestrator to route through the Sentinel.
+Fetches the top Solana tokens from DexScreener across multiple search vectors,
+applies the MID-RISE momentum algorithm, and returns a ranked candidate list
+for the Orchestrator to route through the Sentinel.
+
+Mid-Rise Definition:
+  A token is "mid-rise" when it has sustained upward price momentum (h24 > 15%,
+  h1 > 3%), volume is accelerating relative to its 24h baseline (last 1h vol >
+  baseline), it has NOT gone parabolic in the last 5 min (m5 < 30%), and it
+  has NOT been pumping for more than 48h (avoiding exhausted trends). The goal
+  is to enter after initial price discovery but before the main crowd push.
 """
 
 from __future__ import annotations
 
 import json
+import time
 import urllib.request
 from typing import Any
 
@@ -22,67 +30,181 @@ except ImportError:
     types = None  # type: ignore[assignment]
     HAS_AGY_SDK = False
 
-# ── Scanner tools ─────────────────────────────────────────────────────────────
+# ── Scanner constants ─────────────────────────────────────────────────────────
 
-MIN_LIQUIDITY_USD = 15_000.0
-MIN_HOLDERS = 50
+MIN_LIQUIDITY_USD = 15_000.0   # hard floor (GEMINI.md fix #10)
+MAX_LIQUIDITY_USD = 600_000.0  # above this = institutional / harder to move
+MIN_MID_RISE_SCORE = 40        # minimum score to pass to Sentinel
 TOP_N_CANDIDATES = 10
 
+# Search vectors: broad keyword coverage of pump.fun meme ecosystem
+_SEARCH_VECTORS = [
+    "pump",    # pump.fun tokens directly
+    "meme",    # meme category
+    "dog",     # dog-themed (high pump.fun volume)
+    "cat",     # cat-themed
+    "ai",      # AI narrative tokens
+    "pepe",    # pepe variants
+    "sol",     # SOL-themed
+    "inu",     # inu/dog variants
+    "trump",   # political memes
+    "baby",    # baby variants
+]
 
-def fetch_dexscreener_top_solana(limit: int = 50) -> str:
-    """Fetch top Solana tokens by 6h volume from DexScreener.
+
+# ── DexScreener fetcher ───────────────────────────────────────────────────────
+
+def fetch_dexscreener_top_solana(limit: int = 100) -> str:
+    """Fetch top Solana pump.fun tokens across multiple search vectors.
+
+    Queries DexScreener across 10 search vectors to build a broad universe
+    of pump.fun and pumpswap tokens, deduplicates by mint address, and returns
+    up to `limit` unique pairs sorted by 24h volume descending.
+
+    Filters to Solana-native DEXes only (pumpfun, pumpswap, raydium).
 
     Args:
-        limit: Maximum number of pairs to retrieve (max 50).
+        limit: Maximum unique pairs to return.
 
     Returns:
-        JSON string with a list of token pairs sorted by 6h volume descending.
+        JSON string with a list of token pairs, each enriched with mid-rise
+        fields: age_hours, vol_1h_to_baseline_ratio, is_pump_native.
     """
-    url = "https://api.dexscreener.com/latest/dex/search?q=SOL&rankBy=volume6h&chain=solana"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Botsensai-Scanner/1.0"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        pairs: list[dict[str, Any]] = data.get("pairs", [])[:limit]
-        simplified = []
-        for p in pairs:
-            simplified.append({
-                "mint": p.get("baseToken", {}).get("address", ""),
-                "symbol": p.get("baseToken", {}).get("symbol", ""),
-                "name": p.get("baseToken", {}).get("name", ""),
-                "dex_id": p.get("dexId", ""),
-                "liquidity_usd": float(p.get("liquidity", {}).get("usd") or 0),
-                "volume_6h_usd": float(p.get("volume", {}).get("h6") or 0),
-                "volume_1h_usd": float(p.get("volume", {}).get("h1") or 0),
-                "volume_5m_usd": float(p.get("volume", {}).get("m5") or 0),
-                "price_change_5m": float(p.get("priceChange", {}).get("m5") or 0),
-                "price_change_1h": float(p.get("priceChange", {}).get("h1") or 0),
-                "txns_5m_buys": p.get("txns", {}).get("m5", {}).get("buys", 0),
-                "txns_5m_sells": p.get("txns", {}).get("m5", {}).get("sells", 0),
-                "market_cap_usd": float(p.get("marketCap") or 0),
-            })
-        return json.dumps(simplified)
-    except Exception as exc:
-        return json.dumps({"error": str(exc)})
+    now_ms = time.time() * 1000
+    seen: dict[str, dict[str, Any]] = {}
 
+    for keyword in _SEARCH_VECTORS:
+        url = (
+            f"https://api.dexscreener.com/latest/dex/search"
+            f"?q={keyword}&chainId=solana"
+        )
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "Botsensai-Scanner/2.0"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            for p in data.get("pairs", []):
+                # Solana-native DEXes only (no cross-chain noise)
+                dex = p.get("dexId", "")
+                if dex not in ("pumpfun", "pumpswap", "raydium", "orca", "meteora"):
+                    continue
+                mint = p.get("baseToken", {}).get("address", "")
+                if not mint or mint in seen:
+                    continue
+                seen[mint] = p
+        except Exception:
+            continue
+
+    # Also pull from token-profiles (recently profiled tokens)
+    try:
+        req = urllib.request.Request(
+            "https://api.dexscreener.com/token-profiles/latest/v1",
+            headers={"User-Agent": "Botsensai-Scanner/2.0"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            profiles = json.loads(resp.read().decode("utf-8"))
+        if isinstance(profiles, list):
+            for prof in profiles[:30]:
+                if prof.get("chainId") != "solana":
+                    continue
+                addr = prof.get("tokenAddress", "")
+                if not addr or addr in seen:
+                    continue
+                # fetch pair data
+                try:
+                    req2 = urllib.request.Request(
+                        f"https://api.dexscreener.com/latest/dex/tokens/{addr}",
+                        headers={"User-Agent": "Botsensai-Scanner/2.0"},
+                    )
+                    with urllib.request.urlopen(req2, timeout=5) as resp2:
+                        pdata = json.loads(resp2.read().decode("utf-8"))
+                    for pair in pdata.get("pairs", [])[:1]:
+                        dex = pair.get("dexId", "")
+                        if dex in ("pumpfun", "pumpswap", "raydium", "orca", "meteora"):
+                            m = pair.get("baseToken", {}).get("address", "")
+                            if m and m not in seen:
+                                seen[m] = pair
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    # Simplify and enrich each pair
+    simplified = []
+    for p in seen.values():
+        created_at = p.get("pairCreatedAt") or 0
+        age_h = (now_ms - created_at) / 3_600_000 if created_at else 999.0
+
+        vol_24h = float(p.get("volume", {}).get("h24") or 0)
+        vol_1h = float(p.get("volume", {}).get("h1") or 0)
+        # How active is the last 1h vs the 24h baseline hourly average?
+        baseline_1h = vol_24h / 24.0 if vol_24h > 0 else 0.0
+        vol_ratio = (vol_1h / baseline_1h) if baseline_1h > 0 else (1.0 if vol_1h > 0 else 0.0)
+
+        dex = p.get("dexId", "")
+        simplified.append({
+            "mint": p.get("baseToken", {}).get("address", ""),
+            "symbol": p.get("baseToken", {}).get("symbol", ""),
+            "name": p.get("baseToken", {}).get("name", ""),
+            "dex_id": dex,
+            "is_pump_native": dex in ("pumpfun", "pumpswap"),
+            "liquidity_usd": float(p.get("liquidity", {}).get("usd") or 0),
+            "volume_24h_usd": vol_24h,
+            "volume_6h_usd": float(p.get("volume", {}).get("h6") or 0),
+            "volume_1h_usd": vol_1h,
+            "volume_5m_usd": float(p.get("volume", {}).get("m5") or 0),
+            "price_change_24h": float(p.get("priceChange", {}).get("h24") or 0),
+            "price_change_6h": float(p.get("priceChange", {}).get("h6") or 0),
+            "price_change_1h": float(p.get("priceChange", {}).get("h1") or 0),
+            "price_change_5m": float(p.get("priceChange", {}).get("m5") or 0),
+            "txns_5m_buys": p.get("txns", {}).get("m5", {}).get("buys", 0),
+            "txns_5m_sells": p.get("txns", {}).get("m5", {}).get("sells", 0),
+            "txns_1h_buys": p.get("txns", {}).get("h1", {}).get("buys", 0),
+            "txns_1h_sells": p.get("txns", {}).get("h1", {}).get("sells", 0),
+            "market_cap_usd": float(p.get("marketCap") or 0),
+            "age_hours": round(age_h, 2),
+            "vol_1h_to_baseline_ratio": round(vol_ratio, 2),
+        })
+
+    # Sort by 24h volume descending, take top limit
+    simplified.sort(key=lambda x: x["volume_24h_usd"], reverse=True)
+    return json.dumps(simplified[:limit])
+
+
+# ── Mid-rise scoring ─────────────────────────────────────────────────────────
 
 def filter_and_rank_candidates(pairs_json: str) -> str:
-    """Filter and rank DexScreener pairs by profitability criteria.
+    """Score and rank pairs using the Mid-Rise Momentum Algorithm.
 
-    Applies gates:
-    - liquidity_usd >= 15,000 (DEX pool minimum per GEMINI.md fix #10)
-    - volume_5m_usd > 0 (active trading)
-    - txns_5m_buys > txns_5m_sells (net buy pressure)
-    - price_change_1h > 0 (positive momentum)
+    Mid-Rise Scoring (100 points max):
+      +30  24h gain in sweet spot (15–800%) — rising but not exhausted
+      +25  h1 gain > 3% — still actively moving up
+      +15  m5 < 30% AND m5 > -5% — not blow-off top, not crashing
+      +20  vol_1h_to_baseline_ratio > 1.2x — volume accelerating
+      +15  liquidity $15k–$600k — tradeable size
+      +10  age 0.5h–36h — past launch dump, before exhaustion
+      -20  h24 > 800% — likely near peak / already pumped
+      -30  h1 < -10% — actively dumping
+      -10  m5 > 50% — parabolic blow-off top signal
+      -50  liquidity < $15k — below DEX floor
+      -15  age > 48h — trend likely exhausted
 
-    Scores each candidate as:
-        score = (buy_ratio * 0.4) + (volume_momentum * 0.4) + (liquidity_score * 0.2)
+    Additional pump.fun bonus:
+      +5   is_pump_native (pumpfun or pumpswap DEX) — on-chain pedigree
+
+    Gates (must pass ALL to qualify):
+      - liquidity_usd >= 15,000
+      - mint address present
+      - NOT actively dumping (h1 >= -20%)
+      - Total mid_rise_score >= MIN_MID_RISE_SCORE (40)
 
     Args:
         pairs_json: JSON string from fetch_dexscreener_top_solana.
 
     Returns:
-        JSON string with top-10 ranked candidates, each with a momentum_score.
+        JSON with keys: candidates (list), total_scanned, total_qualified, top_n.
+        Each candidate includes mid_rise_score and score_breakdown.
     """
     try:
         pairs = json.loads(pairs_json)
@@ -95,58 +217,141 @@ def filter_and_rank_candidates(pairs_json: str) -> str:
     candidates = []
     for p in pairs:
         liq = p.get("liquidity_usd", 0)
-        vol_5m = p.get("volume_5m_usd", 0)
-        buys = p.get("txns_5m_buys", 0)
-        sells = p.get("txns_5m_sells", 0)
-        px_change_1h = p.get("price_change_1h", 0)
+        mint = p.get("mint", "")
+        h24 = p.get("price_change_24h", 0)
+        h1 = p.get("price_change_1h", 0)
+        m5 = p.get("price_change_5m", 0)
+        vol_ratio = p.get("vol_1h_to_baseline_ratio", 0)
+        age_h = p.get("age_hours", 999)
 
         # Hard gates
         if liq < MIN_LIQUIDITY_USD:
             continue
-        if vol_5m <= 0:
+        if not mint:
             continue
-        if buys <= sells:
-            continue
-        if px_change_1h <= 0:
-            continue
-        if not p.get("mint"):
+        if h1 < -20:  # actively dumping
             continue
 
-        # Score
-        total_txns = buys + sells
-        buy_ratio = buys / total_txns if total_txns > 0 else 0.5
-        vol_momentum = min(1.0, vol_5m / 50_000)  # normalize to $50k ceiling
-        liq_score = min(1.0, liq / 100_000)        # normalize to $100k ceiling
-        momentum_score = (buy_ratio * 0.4) + (vol_momentum * 0.4) + (liq_score * 0.2)
+        # Mid-rise scoring
+        score = 0
+        breakdown: dict[str, int] = {}
 
-        candidates.append({**p, "momentum_score": round(momentum_score, 4)})
+        # 24h gain sweet spot
+        if 15 <= h24 <= 800:
+            score += 30; breakdown["h24_gain"] = 30
+        elif h24 > 800:
+            score -= 20; breakdown["h24_too_high"] = -20
+        # else flat/negative — no bonus
 
-    # Sort by score descending, take top N
-    candidates.sort(key=lambda x: x["momentum_score"], reverse=True)
+        # h1 momentum
+        if h1 > 3:
+            score += 25; breakdown["h1_rising"] = 25
+        elif h1 < -10:
+            score -= 30; breakdown["h1_dumping"] = -30
+
+        # m5 not blow-off
+        if -5 < m5 < 30:
+            score += 15; breakdown["m5_stable"] = 15
+        elif m5 > 50:
+            score -= 10; breakdown["m5_parabolic"] = -10
+
+        # Volume accelerating
+        if vol_ratio > 1.5:
+            score += 20; breakdown["vol_accel_strong"] = 20
+        elif vol_ratio > 1.2:
+            score += 15; breakdown["vol_accel"] = 15
+        elif vol_ratio > 0.8:
+            score += 8; breakdown["vol_steady"] = 8
+
+        # Liquidity sweet spot
+        if MIN_LIQUIDITY_USD <= liq <= MAX_LIQUIDITY_USD:
+            score += 15; breakdown["liq_ok"] = 15
+        elif liq > MAX_LIQUIDITY_USD:
+            score += 5; breakdown["liq_high"] = 5  # good but harder to move
+
+        # Age sweet spot (past initial dump, before exhaustion)
+        if 0.5 <= age_h <= 12:
+            score += 10; breakdown["age_early"] = 10
+        elif 12 < age_h <= 36:
+            score += 5; breakdown["age_mid"] = 5
+        elif age_h > 48:
+            score -= 15; breakdown["age_old"] = -15
+
+        # pump.fun native bonus
+        if p.get("is_pump_native"):
+            score += 5; breakdown["pump_native"] = 5
+
+        # Score gate
+        if score < MIN_MID_RISE_SCORE:
+            continue
+
+        # Buy pressure from txns
+        buys_5m = p.get("txns_5m_buys", 0)
+        sells_5m = p.get("txns_5m_sells", 0)
+        total_5m = buys_5m + sells_5m
+        buy_ratio_5m = buys_5m / total_5m if total_5m > 0 else 0.5
+
+        buys_1h = p.get("txns_1h_buys", 0)
+        sells_1h = p.get("txns_1h_sells", 0)
+        total_1h = buys_1h + sells_1h
+        buy_ratio_1h = buys_1h / total_1h if total_1h > 0 else 0.5
+
+        candidates.append({
+            **p,
+            "mid_rise_score": score,
+            "score_breakdown": breakdown,
+            "buy_ratio_5m": round(buy_ratio_5m, 3),
+            "buy_ratio_1h": round(buy_ratio_1h, 3),
+        })
+
+    # Sort: mid_rise_score desc, then 1h vol desc
+    candidates.sort(
+        key=lambda x: (x["mid_rise_score"], x["volume_1h_usd"]),
+        reverse=True,
+    )
     top = candidates[:TOP_N_CANDIDATES]
 
-    return json.dumps({"candidates": top, "total_filtered": len(candidates), "top_n": len(top)})
+    return json.dumps({
+        "candidates": top,
+        "total_scanned": len(pairs),
+        "total_qualified": len(candidates),
+        "top_n": len(top),
+        "algorithm": "mid_rise_v2",
+    })
 
 
-# ── Scanner subagent config ───────────────────────────────────────────────────
+# ── Scanner system prompt ─────────────────────────────────────────────────────
 
 SCANNER_SYSTEM = """
-You are the BotsensaiScannerAgent — a momentum scanner that identifies the
-top Solana meme token opportunities from DexScreener.
+You are the BotsensaiScannerAgent — a mid-rise momentum scanner for Solana
+pump.fun tokens. Your goal is to find tokens that are IN THE MIDDLE of their
+rise: past the initial launch dump, volume accelerating, price still climbing,
+liquidity healthy, not yet parabolic or exhausted.
 
-Your ONLY job: return a ranked list of candidate mints for the Orchestrator.
+Your ONLY job: return a ranked candidate list using the Mid-Rise algorithm.
 
 Protocol:
-1. Call fetch_dexscreener_top_solana(limit=50) to get live top-50 Solana pairs.
-2. Call filter_and_rank_candidates(pairs_json) with the result.
-3. Return the JSON output from filter_and_rank_candidates directly.
+1. Call fetch_dexscreener_top_solana(limit=100) — scans 10 search vectors.
+2. Call filter_and_rank_candidates(pairs_json) — applies Mid-Rise scoring.
+3. Return the JSON from filter_and_rank_candidates ONLY. No prose.
+
+Mid-Rise criteria (target tokens):
+  - 24h gain 15–800% (rising but not exhausted)
+  - h1 > 3% (still actively moving up right now)
+  - m5 < 30% (not blow-off parabolic top)
+  - Volume last 1h > baseline hourly average (accelerating, not fading)
+  - Liquidity $15k–$600k (tradeable, not institutional)
+  - Age 0.5h–36h (past launch dump, before trend exhaustion)
+  - pump.fun or pumpswap DEX preferred
 
 Rules:
 - Do NOT fabricate mints or prices.
 - Do NOT call any tool other than the two above.
-- Output ONLY the JSON from filter_and_rank_candidates. No prose.
+- Output ONLY the JSON from filter_and_rank_candidates.
 """.strip()
 
+
+# ── Subagent config ───────────────────────────────────────────────────────────
 
 def build_scanner_subagent_config() -> "types.SubagentConfig":
     """Return SubagentConfig for use inside OrchestratorAgent."""
@@ -155,22 +360,23 @@ def build_scanner_subagent_config() -> "types.SubagentConfig":
     return types.SubagentConfig(
         name="scanner",
         description=(
-            "DexScreener top-50 momentum scanner for Solana meme tokens. "
-            "Returns a JSON list of ranked candidate mints with momentum scores. "
-            "Call at the start of each sweep cycle."
+            "DexScreener top-100 mid-rise momentum scanner for Solana pump.fun tokens. "
+            "Scans 10 search vectors, scores each token for mid-rise characteristics "
+            "(h24 gain, h1 momentum, volume acceleration, age, liquidity), and returns "
+            "a ranked JSON list of candidate mints. Call each sweep cycle."
         ),
         capabilities=types.SubagentCapabilities(
             agent_behavior=types.AgentBehavior.AUTONOMOUS,
-            # Leaf: no further subagent delegation
         ),
     )
 
 
+# ── Standalone runner ─────────────────────────────────────────────────────────
+
 async def run_scanner_standalone() -> dict:
     """Run ScannerAgent standalone (for testing / CLI use)."""
     if not HAS_AGY_SDK:
-        # Deterministic fallback
-        pairs_json = fetch_dexscreener_top_solana(50)
+        pairs_json = fetch_dexscreener_top_solana(100)
         result_json = filter_and_rank_candidates(pairs_json)
         return json.loads(result_json)
 
@@ -183,11 +389,13 @@ async def run_scanner_standalone() -> dict:
         ),
     )
     async with Agent(config) as agent:
-        response = await agent.chat("Run a full top-50 Solana scan and return the ranked candidates.")
+        response = await agent.chat(
+            "Run a full top-100 Solana mid-rise scan and return the ranked candidates."
+        )
         text = await response.text()
         try:
             import re
-            m = re.search(r'\{.*\}', text, re.DOTALL)
+            m = re.search(r"\{.*\}", text, re.DOTALL)
             return json.loads(m.group()) if m else {"candidates": [], "error": text}
         except Exception:
             return {"candidates": [], "error": text}
@@ -197,6 +405,20 @@ if __name__ == "__main__":
     import asyncio
     result = asyncio.run(run_scanner_standalone())
     candidates = result.get("candidates", [])
-    print(f"Top {len(candidates)} candidates:")
+    total = result.get("total_scanned", "?")
+    qualified = result.get("total_qualified", "?")
+    print(f"Scanned {total} tokens → {qualified} qualified → top {len(candidates)}:")
+    print()
     for i, c in enumerate(candidates, 1):
-        print(f"  {i}. {c['symbol']:10} {c['mint'][:8]}... score={c['momentum_score']:.3f} liq=${c['liquidity_usd']:,.0f}")
+        print(
+            f"  {i:2d}. [{c['mid_rise_score']:3d}] {c['symbol']:12s} "
+            f"{c['mint'][:10]}  "
+            f"h24={c['price_change_24h']:+6.0f}%  "
+            f"h1={c['price_change_1h']:+5.0f}%  "
+            f"m5={c['price_change_5m']:+4.1f}%  "
+            f"liq=${c['liquidity_usd']/1000:.0f}k  "
+            f"age={c['age_hours']:.1f}h  "
+            f"vol_ratio={c['vol_1h_to_baseline_ratio']:.1f}x  "
+            f"dex={c['dex_id']}"
+        )
+        print(f"       breakdown: {c['score_breakdown']}")
