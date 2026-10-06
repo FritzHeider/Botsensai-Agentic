@@ -824,10 +824,13 @@ class Pipeline:
                 return f"skip: buyer/holder breadth too small ({distinct_buyers} buyers, {known_holders} holders < 35 threshold) - waiting for distributed community"
 
         # 3a. Coverage floor guard: block enrich-degraded score inflation
-        # When only 1-2 metrics score (coverage ≤ 0.25), a single DexScreener depth
+        # When only 1-2 metrics score (coverage ≤ 0.15), a single DexScreener depth
         # metric can inflate the composite to 0.95-1.0 — not a real quality signal.
+        # Fix #11: Backtest showed coverage median=0.265 — old 0.25 threshold was
+        # blocking ~47% of clean-scoring candidates during Helius degraded sweeps.
+        # 0.15 catches truly sparse (1/6 metrics) while letting degraded-but-valid pass.
         coverage = getattr(result, "coverage", None) or getattr(result, "metric_coverage", None)
-        if coverage is not None and coverage <= 0.25 and result.composite >= 0.92:
+        if coverage is not None and coverage <= 0.15 and result.composite >= 0.92:
             return f"skip: score {result.composite:.3f} unreliable — coverage too low ({coverage:.1%}) suggests enrich-degraded inflation"
 
         # 3b. Zero-Latency Alpha Sieve: Require smart money copy-trade confirmation unless score is extraordinary
