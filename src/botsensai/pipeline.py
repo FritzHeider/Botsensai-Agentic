@@ -819,8 +819,8 @@ class Pipeline:
 
         # 3. Zero-Latency Alpha Sieve: Require smart money copy-trade confirmation unless score is extraordinary
         matched_count = len(matched) if "matched" in locals() and matched else 0
-        if matched_count == 0 and result.composite < 0.995:
-            return "skip: no verified smart money copy-trade detected & score < 0.995 (only entering on smart wallet confirmation or near-perfect composite)"
+        if matched_count == 0 and result.composite < 0.92:
+            return "skip: no verified smart money copy-trade detected & score < 0.92 (need smart wallet confirmation or near-maximal composite)"
 
         # 4. Gate entry on the boosted conviction score
         ok, reason = self.scorer.should_enter(result)
