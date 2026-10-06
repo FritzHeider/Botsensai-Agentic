@@ -52,20 +52,37 @@ def check_wallet():
         "method": "getBalance",
         "params": [HOT_WALLET]
     }).encode("utf-8")
-    req = urllib.request.Request(
-        RPC_URL,
-        data=payload,
-        headers={"Content-Type": "application/json", "User-Agent": "Botsensai/1.0"}
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            lamports = data.get("result", {}).get("value", 0)
-            sol = lamports / 1e9
-            print(f" Address : {HOT_WALLET}")
-            print(f" Balance : {sol:.6f} SOL ({lamports:,} lamports)")
-    except Exception as e:
-        print(f" RPC Query Error: {e}")
+
+    rpc_candidates = [
+        u for u in [
+            os.getenv("SOLANA_RPC_URL"),
+            os.getenv("BOTSENSAI_SOLANA_RPC_URL"),
+            os.getenv("HELIUS_RPC_URL"),
+            os.getenv("BOTSENSAI_HELIUS_FALLBACK_RPC_URL"),
+            "https://api.mainnet-beta.solana.com",
+        ] if u
+    ]
+
+    last_err = None
+    for rpc_url in rpc_candidates:
+        req = urllib.request.Request(
+            rpc_url,
+            data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "Botsensai/2.0"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                lamports = data.get("result", {}).get("value", 0)
+                sol = lamports / 1e9
+                print(f" Address : {HOT_WALLET}")
+                print(f" Balance : {sol:.6f} SOL ({lamports:,} lamports)")
+                return
+        except Exception as e:
+            last_err = e
+            continue
+
+    print(f" RPC Query Error (all endpoints): {last_err}")
 
 
 def check_database():

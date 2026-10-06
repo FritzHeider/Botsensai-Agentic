@@ -73,6 +73,7 @@ class JitoLiveExecutor:
             if cand and cand not in self.rpc_urls:
                 self.rpc_urls.append(cand)
         self.running = True
+        self._exit_attempt_times: dict[str, float] = {}
         self.keypair: Keypair | None = None
         self._load_keypair()
 
@@ -298,7 +299,7 @@ class JitoLiveExecutor:
             except Exception:
                 continue
 
-        # 2. Fast Fallback via Solana RPC sendTransaction
+        # 2. Fast Fallback via Solana RPC sendTransaction across configured RPC URLs
         rpc_payload = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -308,20 +309,25 @@ class JitoLiveExecutor:
                 {"encoding": "base64", "skipPreflight": True, "preflightCommitment": "processed"},
             ],
         }
-        try:
-            req = urllib.request.Request(
-                self.rpc_url,
-                data=json.dumps(rpc_payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                res = json.loads(resp.read().decode())
-                if "result" in res:
-                    return True, str(res["result"])
-        except Exception as e:
-            return False, f"Dispatch failed across Jito and RPC: {e}"
+        last_rpc_err = "Unknown error"
+        for endpoint in self.rpc_urls:
+            try:
+                req = urllib.request.Request(
+                    endpoint,
+                    data=json.dumps(rpc_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "User-Agent": "Botsensai-Executor/2.0"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    res = json.loads(resp.read().decode())
+                    if "result" in res:
+                        return True, str(res["result"])
+                    elif "error" in res:
+                        last_rpc_err = str(res["error"])
+            except Exception as e:
+                last_rpc_err = str(e)
+                continue
 
-        return True, signature
+        return False, f"Dispatch failed across Jito and all RPCs: {last_rpc_err}"
 
     def get_pending_signals(self) -> list[dict[str, Any]]:
         if not self.db_path.exists():
@@ -946,6 +952,10 @@ class JitoLiveExecutor:
             age_seconds = now - opened_at
             prev_exit_reason = str(pos.get("exit_reason") or "")
 
+            # Cooldown check: avoid hammering endpoints for the same token within 45s if prior attempt failed
+            if now - self._exit_attempt_times.get(mint, 0.0) < 45.0:
+                continue
+
             # Check actual on-chain token balance
             actual_token_bal = self.get_token_balance(mint)
             if actual_token_bal <= 0.0:
@@ -1036,6 +1046,7 @@ class JitoLiveExecutor:
                     sell_amount=sell_amount,
                 )
                 if tx:
+                    self._exit_attempt_times[mint] = now
                     try:
                         signed_tx = self.sign_transaction(tx)
                         ok, sig = self.dispatch_jito_bundle(signed_tx)
@@ -1063,8 +1074,13 @@ class JitoLiveExecutor:
                                 print(f"[EXECUTOR] 🚀 Staged Profit Locked for ${symbol}! Remaining Moonbag: {rem_token_bal:,.2f} tokens (Targeting +500% to +5000%!)")
                             else:
                                 self._record_live_sell(mint=mint, exit_tx_hash=sig, exit_reason=exit_reason)
+                        else:
+                            print(f"[EXECUTOR] ❌ Live exit dispatch failed for ${symbol}: {sig} (cooldown 45s)")
                     except Exception as e:
                         print(f"[EXECUTOR] Live exit execution failed: {e}")
+                else:
+                    self._exit_attempt_times[mint] = now
+                    print(f"[EXECUTOR] ⚠️ Failed to build exit transaction for ${symbol} across pools: {pool_type} (cooldown 45s)")
 
     async def run_loop(self, interval: float = 1.0) -> None:
         print(f"[EXECUTOR] Pure Live Mode: Monitoring {self.db_path} for signals & open on-chain positions...")
