@@ -824,7 +824,14 @@ class Pipeline:
             if distinct_buyers < 35 and known_holders < 20:
                 return f"skip: buyer/holder breadth too small ({distinct_buyers} buyers, {known_holders} holders < 35 threshold) - waiting for distributed community"
 
-        # 3. Zero-Latency Alpha Sieve: Require smart money copy-trade confirmation unless score is extraordinary
+        # 3a. Coverage floor guard: block enrich-degraded score inflation
+        # When only 1-2 metrics score (coverage ≤ 0.25), a single DexScreener depth
+        # metric can inflate the composite to 0.95-1.0 — not a real quality signal.
+        coverage = getattr(result, "coverage", None) or getattr(result, "metric_coverage", None)
+        if coverage is not None and coverage <= 0.25 and result.composite >= 0.92:
+            return f"skip: score {result.composite:.3f} unreliable — coverage too low ({coverage:.1%}) suggests enrich-degraded inflation"
+
+        # 3b. Zero-Latency Alpha Sieve: Require smart money copy-trade confirmation unless score is extraordinary
         matched_count = len(matched) if "matched" in locals() and matched else 0
         if matched_count == 0 and result.composite < 0.92:
             return "skip: no verified smart money copy-trade detected & score < 0.92 (need smart wallet confirmation or near-maximal composite)"
