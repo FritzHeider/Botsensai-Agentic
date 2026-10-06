@@ -1831,113 +1831,100 @@ class Database:
     def upsert_top_traders(self, traders: list[dict[str, Any]]) -> int:
         """Bulk-insert or replace top-trader rows from the pump.fun leaderboard.
 
-        Handles both pre-v8 top_traders schemas (which have mean_multiple,
-        total_trades, winning_trades, last_trade_at columns) and fresh schemas.
-        Detects the live schema via PRAGMA before inserting.
+        Uses PRAGMA table_info to discover the live schema dynamically so that
+        any pre-existing legacy columns (mean_multiple, updated_at, total_trades,
+        winning_trades, last_trade_at, etc.) are satisfied with safe defaults.
+        This prevents IntegrityError on NOT NULL columns we do not have data for.
 
         Returns the number of rows written.
         """
         import json as _json
         now = utcnow().timestamp()
         written = 0
+
         with self.tx() as conn:
-            # Detect which columns exist (pre-v8 DB has extra legacy columns)
-            existing_cols = {
-                r[1] for r in conn.execute("PRAGMA table_info(top_traders)").fetchall()
+            # Map every column in the live top_traders table to a default value.
+            # We'll build the INSERT dynamically so unknown legacy columns are
+            # always satisfied.
+            col_defaults: dict[str, Any] = {
+                "wallet":           None,   # required — skipped if absent
+                "rank":             999,
+                "win_rate":         0.0,
+                "profit_7d":        0.0,
+                "txs_1d":           0,
+                "sol_balance":      0.0,
+                "skill_score":      0.70,
+                "runner_count":     0,
+                "typical_size_sol": 0.015,
+                "tags":             "[]",
+                "status":           "ACTIVE",
+                "source":           "pump_fun",
+                "refreshed_at":     now,
+                # legacy columns present in pre-v8 DBs
+                "mean_multiple":    1.0,
+                "total_trades":     0,
+                "winning_trades":   0,
+                "last_trade_at":    now,
+                "updated_at":       now,
             }
-            has_mean_multiple = "mean_multiple" in existing_cols
+            live_cols = [
+                r[1] for r in
+                conn.execute("PRAGMA table_info(top_traders)").fetchall()
+            ]
+            # Only insert columns that actually exist in the live DB
+            insert_cols = [c for c in live_cols if c in col_defaults]
+
+            placeholders = ", ".join("?" for _ in insert_cols)
+            col_list = ", ".join(insert_cols)
+            update_pairs = ", ".join(
+                f"{c} = excluded.{c}"
+                for c in insert_cols
+                if c != "wallet"
+            )
+            sql = (
+                f"INSERT INTO top_traders ({col_list}) VALUES ({placeholders})
+"
+                f"ON CONFLICT(wallet) DO UPDATE SET {update_pairs}"
+            )
 
             for t in traders:
                 wallet = t.get("wallet") or t.get("address")
                 if not wallet:
                     continue
+
                 wr_raw = t.get("winrate", t.get("win_rate", 0.0))
                 win_rate = float(wr_raw) / 100.0 if float(wr_raw) > 1.0 else float(wr_raw)
-                skill = float(t.get("skill_score", min(1.0, win_rate)))
                 p7d = float(t.get("profit_7d", 0.0))
+                skill = float(t.get("skill_score", min(1.0, win_rate)))
 
-                if has_mean_multiple:
-                    # Pre-v8 schema with legacy NOT NULL columns
-                    mean_mult = float(t.get("mean_multiple",
-                                      max(1.0, p7d / 0.015) if p7d > 0 else 1.0))
-                    conn.execute(
-                        """
-                        INSERT INTO top_traders (
-                            wallet, rank, win_rate, profit_7d, txs_1d, sol_balance,
-                            skill_score, runner_count, typical_size_sol, tags,
-                            status, source, refreshed_at,
-                            mean_multiple, total_trades, winning_trades, last_trade_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?,
-                                  ?, ?, ?, ?)
-                        ON CONFLICT(wallet) DO UPDATE SET
-                            rank             = excluded.rank,
-                            win_rate         = excluded.win_rate,
-                            profit_7d        = excluded.profit_7d,
-                            txs_1d           = excluded.txs_1d,
-                            sol_balance      = excluded.sol_balance,
-                            skill_score      = excluded.skill_score,
-                            runner_count     = excluded.runner_count,
-                            typical_size_sol = excluded.typical_size_sol,
-                            tags             = excluded.tags,
-                            status           = 'ACTIVE',
-                            source           = excluded.source,
-                            refreshed_at     = excluded.refreshed_at,
-                            mean_multiple    = excluded.mean_multiple
-                        """,
-                        (
-                            wallet,
-                            int(t.get("rank", 999)),
-                            win_rate, p7d,
-                            int(t.get("txs_1d", 0)),
-                            float(t.get("sol_balance", 0.0)),
-                            skill,
-                            int(t.get("runner_count", 0)),
-                            float(t.get("typical_size_sol", 0.015)),
-                            _json.dumps(t.get("tags", [])),
-                            str(t.get("source", "pump_fun")), now,
-                            mean_mult,
-                            int(t.get("total_trades", t.get("txs_1d", 0))),
-                            int(t.get("winning_trades", 0)),
-                            float(t.get("last_trade_at", now)),
-                        ),
-                    )
-                else:
-                    # Fresh v8 schema (no legacy columns)
-                    conn.execute(
-                        """
-                        INSERT INTO top_traders (
-                            wallet, rank, win_rate, profit_7d, txs_1d, sol_balance,
-                            skill_score, runner_count, typical_size_sol, tags,
-                            status, source, refreshed_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-                        ON CONFLICT(wallet) DO UPDATE SET
-                            rank             = excluded.rank,
-                            win_rate         = excluded.win_rate,
-                            profit_7d        = excluded.profit_7d,
-                            txs_1d           = excluded.txs_1d,
-                            sol_balance      = excluded.sol_balance,
-                            skill_score      = excluded.skill_score,
-                            runner_count     = excluded.runner_count,
-                            typical_size_sol = excluded.typical_size_sol,
-                            tags             = excluded.tags,
-                            status           = 'ACTIVE',
-                            source           = excluded.source,
-                            refreshed_at     = excluded.refreshed_at
-                        """,
-                        (
-                            wallet,
-                            int(t.get("rank", 999)),
-                            win_rate, p7d,
-                            int(t.get("txs_1d", 0)),
-                            float(t.get("sol_balance", 0.0)),
-                            skill,
-                            int(t.get("runner_count", 0)),
-                            float(t.get("typical_size_sol", 0.015)),
-                            _json.dumps(t.get("tags", [])),
-                            str(t.get("source", "pump_fun")), now,
-                        ),
-                    )
+                # Build value mapping for this trader
+                row_values: dict[str, Any] = {
+                    "wallet":           wallet,
+                    "rank":             int(t.get("rank", 999)),
+                    "win_rate":         win_rate,
+                    "profit_7d":        p7d,
+                    "txs_1d":           int(t.get("txs_1d", 0)),
+                    "sol_balance":      float(t.get("sol_balance", 0.0)),
+                    "skill_score":      skill,
+                    "runner_count":     int(t.get("runner_count", 0)),
+                    "typical_size_sol": float(t.get("typical_size_sol", 0.015)),
+                    "tags":             _json.dumps(t.get("tags", [])),
+                    "status":           "ACTIVE",
+                    "source":           str(t.get("source", "pump_fun")),
+                    "refreshed_at":     now,
+                    # legacy defaults — overridden by actual data if present
+                    "mean_multiple":    float(t.get("mean_multiple",
+                                          max(1.0, p7d / 0.015) if p7d > 0 else 1.0)),
+                    "total_trades":     int(t.get("total_trades", t.get("txs_1d", 0))),
+                    "winning_trades":   int(t.get("winning_trades", 0)),
+                    "last_trade_at":    float(t.get("last_trade_at", now)),
+                    "updated_at":       now,
+                }
+
+                values = tuple(row_values[c] for c in insert_cols)
+                conn.execute(sql, values)
                 written += 1
+
         return written
 
     def top_traders_active(self, limit: int = 200) -> list[dict[str, Any]]:
