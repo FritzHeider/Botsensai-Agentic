@@ -1831,57 +1831,112 @@ class Database:
     def upsert_top_traders(self, traders: list[dict[str, Any]]) -> int:
         """Bulk-insert or replace top-trader rows from the pump.fun leaderboard.
 
-        Each dict must have at least ``wallet`` or ``address``.  All other
-        fields are optional and fall back to column defaults.  Existing rows
-        are replaced so a fresh seeding run always reflects the current list.
+        Handles both pre-v8 top_traders schemas (which have mean_multiple,
+        total_trades, winning_trades, last_trade_at columns) and fresh schemas.
+        Detects the live schema via PRAGMA before inserting.
+
         Returns the number of rows written.
         """
         import json as _json
         now = utcnow().timestamp()
         written = 0
         with self.tx() as conn:
+            # Detect which columns exist (pre-v8 DB has extra legacy columns)
+            existing_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(top_traders)").fetchall()
+            }
+            has_mean_multiple = "mean_multiple" in existing_cols
+
             for t in traders:
                 wallet = t.get("wallet") or t.get("address")
                 if not wallet:
                     continue
                 wr_raw = t.get("winrate", t.get("win_rate", 0.0))
                 win_rate = float(wr_raw) / 100.0 if float(wr_raw) > 1.0 else float(wr_raw)
-                conn.execute(
-                    """
-                    INSERT INTO top_traders (
-                        wallet, rank, win_rate, profit_7d, txs_1d, sol_balance,
-                        skill_score, runner_count, typical_size_sol, tags,
-                        status, source, refreshed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-                    ON CONFLICT(wallet) DO UPDATE SET
-                        rank               = excluded.rank,
-                        win_rate           = excluded.win_rate,
-                        profit_7d          = excluded.profit_7d,
-                        txs_1d             = excluded.txs_1d,
-                        sol_balance        = excluded.sol_balance,
-                        skill_score        = excluded.skill_score,
-                        runner_count       = excluded.runner_count,
-                        typical_size_sol   = excluded.typical_size_sol,
-                        tags               = excluded.tags,
-                        status             = 'ACTIVE',
-                        source             = excluded.source,
-                        refreshed_at       = excluded.refreshed_at
-                    """,
-                    (
-                        wallet,
-                        int(t.get("rank", 999)),
-                        win_rate,
-                        float(t.get("profit_7d", 0.0)),
-                        int(t.get("txs_1d", 0)),
-                        float(t.get("sol_balance", 0.0)),
-                        float(t.get("skill_score", min(1.0, win_rate))),
-                        int(t.get("runner_count", 0)),
-                        float(t.get("typical_size_sol", 0.015)),
-                        _json.dumps(t.get("tags", [])),
-                        str(t.get("source", "pump_fun")),
-                        now,
-                    ),
-                )
+                skill = float(t.get("skill_score", min(1.0, win_rate)))
+                p7d = float(t.get("profit_7d", 0.0))
+
+                if has_mean_multiple:
+                    # Pre-v8 schema with legacy NOT NULL columns
+                    mean_mult = float(t.get("mean_multiple",
+                                      max(1.0, p7d / 0.015) if p7d > 0 else 1.0))
+                    conn.execute(
+                        """
+                        INSERT INTO top_traders (
+                            wallet, rank, win_rate, profit_7d, txs_1d, sol_balance,
+                            skill_score, runner_count, typical_size_sol, tags,
+                            status, source, refreshed_at,
+                            mean_multiple, total_trades, winning_trades, last_trade_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?,
+                                  ?, ?, ?, ?)
+                        ON CONFLICT(wallet) DO UPDATE SET
+                            rank             = excluded.rank,
+                            win_rate         = excluded.win_rate,
+                            profit_7d        = excluded.profit_7d,
+                            txs_1d           = excluded.txs_1d,
+                            sol_balance      = excluded.sol_balance,
+                            skill_score      = excluded.skill_score,
+                            runner_count     = excluded.runner_count,
+                            typical_size_sol = excluded.typical_size_sol,
+                            tags             = excluded.tags,
+                            status           = 'ACTIVE',
+                            source           = excluded.source,
+                            refreshed_at     = excluded.refreshed_at,
+                            mean_multiple    = excluded.mean_multiple
+                        """,
+                        (
+                            wallet,
+                            int(t.get("rank", 999)),
+                            win_rate, p7d,
+                            int(t.get("txs_1d", 0)),
+                            float(t.get("sol_balance", 0.0)),
+                            skill,
+                            int(t.get("runner_count", 0)),
+                            float(t.get("typical_size_sol", 0.015)),
+                            _json.dumps(t.get("tags", [])),
+                            str(t.get("source", "pump_fun")), now,
+                            mean_mult,
+                            int(t.get("total_trades", t.get("txs_1d", 0))),
+                            int(t.get("winning_trades", 0)),
+                            float(t.get("last_trade_at", now)),
+                        ),
+                    )
+                else:
+                    # Fresh v8 schema (no legacy columns)
+                    conn.execute(
+                        """
+                        INSERT INTO top_traders (
+                            wallet, rank, win_rate, profit_7d, txs_1d, sol_balance,
+                            skill_score, runner_count, typical_size_sol, tags,
+                            status, source, refreshed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                        ON CONFLICT(wallet) DO UPDATE SET
+                            rank             = excluded.rank,
+                            win_rate         = excluded.win_rate,
+                            profit_7d        = excluded.profit_7d,
+                            txs_1d           = excluded.txs_1d,
+                            sol_balance      = excluded.sol_balance,
+                            skill_score      = excluded.skill_score,
+                            runner_count     = excluded.runner_count,
+                            typical_size_sol = excluded.typical_size_sol,
+                            tags             = excluded.tags,
+                            status           = 'ACTIVE',
+                            source           = excluded.source,
+                            refreshed_at     = excluded.refreshed_at
+                        """,
+                        (
+                            wallet,
+                            int(t.get("rank", 999)),
+                            win_rate, p7d,
+                            int(t.get("txs_1d", 0)),
+                            float(t.get("sol_balance", 0.0)),
+                            skill,
+                            int(t.get("runner_count", 0)),
+                            float(t.get("typical_size_sol", 0.015)),
+                            _json.dumps(t.get("tags", [])),
+                            str(t.get("source", "pump_fun")), now,
+                        ),
+                    )
                 written += 1
         return written
 
