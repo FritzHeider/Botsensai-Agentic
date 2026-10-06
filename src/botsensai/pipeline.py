@@ -751,19 +751,26 @@ class Pipeline:
         matched: list[str] = []
         if candidate_wallets:
             try:
-                matched = [w for w in candidate_wallets if w in self._wallet_weights]
+                # Match ONLY against recent BUY trades — holder records are stale and inflate matches
+                buy_only_wallets = list(dict.fromkeys(buyer_wallets))
+                matched = [w for w in buy_only_wallets if w in self._wallet_weights]
                 if matched:
                     weights = [self._wallet_weights[w] for w in matched]
-                    # Hyper-Confluence Trigger: Multiple Elite Alpha Whales
-                    if len(matched) >= 2:
-                        boost = 0.60 * max(weights)
-                        result.composite = min(1.0, max(result.composite + boost, 0.990))
-                    else:
-                        boost = 0.45 * weights[0]
+                    pre_boost = result.composite
+                    if len(matched) >= 2 and pre_boost >= 0.55:
+                        # Hyper-Confluence: multiple tracked wallets buying right now
+                        # Boost proportional to weight but cap so low-quality tokens can't skip gates
+                        boost = 0.45 * max(weights)
+                        result.composite = min(1.0, result.composite + boost)
+                        # Only override to high composite if token was already decent quality
+                        if pre_boost >= 0.75:
+                            result.composite = min(1.0, max(result.composite, 0.92))
+                    elif len(matched) >= 1 and pre_boost >= 0.50:
+                        boost = 0.30 * weights[0]
                         result.composite = min(1.0, result.composite + boost)
 
-                    # Consensus override: top profitable traders entering clears trivial vetoes
-                    if len(matched) >= 2 and result.composite >= 0.70:
+                    # Clear non-critical vetoes only for high-quality tokens with multi-wallet confirmation
+                    if len(matched) >= 2 and result.composite >= 0.87:
                         result.vetoes = [
                             v for v in result.vetoes
                             if getattr(v, "value", str(v)) not in (
