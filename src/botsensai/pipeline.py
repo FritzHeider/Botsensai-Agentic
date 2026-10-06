@@ -1178,7 +1178,7 @@ class Pipeline:
                 except Exception as ex:
                     log.warning("manage_positions.db_record_failed", error=str(ex), token=key)
 
-    async def sweep(self, discover_limit: int = 60, max_candidates: int = 25) -> SweepReport:
+    async def sweep(self, discover_limit: int = 60, max_candidates: int = 10) -> SweepReport:
         report = SweepReport(started_at=utcnow())
 
         # Refresh top-100 pump.fun wallet weights once per sweep (not per token)
