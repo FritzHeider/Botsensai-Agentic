@@ -76,8 +76,11 @@ DEFAULT_METRIC_WEIGHTS: dict[str, float] = {
     "realizable_exit_depth": 0.30,         # Liquidity depth: ensuring 0% slippage on exit
     "price_stability_under_flow": 0.20,    # Support floor integrity: holding higher lows
     # team_credibility (10% total weight)
-    "deployer_behaviour_now": 0.50,        # Confirming dev is disarmed / CTO floor established
-    "insider_supply_overhang": 0.50,       # Zero hidden dev sybils holding supply bombs
+    "deployer_behaviour_now": 1.00,        # Confirming dev is disarmed / CTO floor established
+    # insider_supply_overhang zeroed: pumpfun enrich consistently times out so
+    # this metric returns the same midpoint default for every token — making it
+    # a constant that adds noise without signal. Weight shifted to deployer_behaviour_now.
+    "insider_supply_overhang": 0.00,       # DISABLED: always constant (enrich timeout) — re-enable when enrichment is stable
     # Legacy noisy metrics zeroed out
     "social_velocity_acceleration": 0.00,
     "purchased_follower_signal": 0.00,
@@ -375,11 +378,11 @@ class VetoEngine:
         # Hard Holder Breadth Rail: Strictly reject tokens with small holder counts.
         # Mega-runners (1000%+) require wide organic holder distribution to absorb whale profit-taking.
         if latest is not None and latest.holder_count is not None:
-            if latest.holder_count < 85:
+            if latest.holder_count < 120:
                 vetoes.append(VetoReason.HOLDERS_TOO_LOW_FOR_AGE)
-            elif ctx.age_seconds >= 300 and latest.holder_count < 120:
+            elif ctx.age_seconds >= 300 and latest.holder_count < 175:
                 vetoes.append(VetoReason.HOLDERS_TOO_LOW_FOR_AGE)
-            elif ctx.age_seconds >= 600 and latest.holder_count < 200:
+            elif ctx.age_seconds >= 600 and latest.holder_count < 275:
                 vetoes.append(VetoReason.HOLDERS_TOO_LOW_FOR_AGE)
             
         return vetoes
