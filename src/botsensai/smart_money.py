@@ -31,6 +31,30 @@ class SmartWalletProfile:
     total_sol_invested: float
 
 
+def _build_outcome_index(db: Database) -> dict[str, dict]:
+    """Build {token_key: {cost_sol, realized_pnl_sol, opened_at}} from live_positions.
+
+    Used to compute real per-trade win/loss rather than fabricating 65% win rate.
+    """
+    index: dict[str, dict] = {}
+    try:
+        rows = db.conn.execute(
+            "SELECT token_key, cost_sol, realized_pnl_sol, opened_at "
+            "FROM live_positions WHERE status='CLOSED' AND cost_sol > 0"
+        ).fetchall()
+        for token_key, cost, pnl, opened_at in rows:
+            if token_key:
+                index[token_key] = {
+                    "cost_sol": float(cost or 0),
+                    "realized_pnl_sol": float(pnl or 0),
+                    "opened_at": opened_at,
+                    "profitable": (pnl or 0) > 0,
+                }
+    except Exception:
+        pass
+    return index
+
+
 def discover_smart_money_wallets(
     db: Database, as_of: datetime | None = None, min_trades: int = 2
 ) -> list[SmartWalletProfile]:
@@ -39,11 +63,13 @@ def discover_smart_money_wallets(
     trades = db.trades_as_of("%", ref_time) if hasattr(db, "all_trades_as_of") else []
     # If no wildcard support, query recent scores and trade samples
     if not trades:
-        # Construct sample from available trades
         scores = db.recent_scores(limit=50)
         for s in scores:
             t_list = db.trades_as_of(s["token_key"], ref_time)
             trades.extend(t_list)
+
+    # Real outcome index from live_positions — avoids fabricating win rates
+    outcome_index = _build_outcome_index(db)
 
     wallet_trades: dict[str, list[Any]] = {}
     for t in trades:
@@ -56,8 +82,40 @@ def discover_smart_money_wallets(
             continue
         token_count = len({t.token.key for t in t_list})
         total_sol = sum(t.amount_native for t in t_list)
-        win_count = max(1, round(len(t_list) * 0.65))
-        win_rate = win_count / len(t_list)
+
+        # Real win rate: cross-reference trades against closed live_positions outcomes
+        tokens_with_outcomes = [
+            t for t in t_list if t.token.key in outcome_index
+        ]
+        if tokens_with_outcomes:
+            win_count = sum(
+                1 for t in tokens_with_outcomes
+                if outcome_index[t.token.key]["profitable"]
+            )
+            win_rate = win_count / len(tokens_with_outcomes)
+
+            # Real avg entry offset: seconds from token creation to first buy by this wallet
+            entry_offsets = []
+            for t in tokens_with_outcomes:
+                outcome = outcome_index[t.token.key]
+                opened_at = outcome.get("opened_at")
+                if opened_at and t.timestamp:
+                    try:
+                        # opened_at is ISO string; t.timestamp is datetime
+                        from datetime import timezone
+                        if isinstance(opened_at, str):
+                            oa = datetime.fromisoformat(opened_at.replace("Z", "+00:00"))
+                        else:
+                            oa = opened_at
+                        offset = (t.timestamp - oa).total_seconds()
+                        if 0 <= offset < 3600:  # sanity: within first hour
+                            entry_offsets.append(offset)
+                    except Exception:
+                        pass
+            avg_entry_offset = sum(entry_offsets) / len(entry_offsets) if entry_offsets else 0.0
+        else:
+            # No outcome data yet — cannot compute real win rate, skip wallet
+            continue
 
         profiles.append(
             SmartWalletProfile(
@@ -66,7 +124,7 @@ def discover_smart_money_wallets(
                 tokens_traded=token_count,
                 profitable_trades=win_count,
                 win_rate=win_rate,
-                avg_entry_offset_seconds=42.0,
+                avg_entry_offset_seconds=avg_entry_offset,
                 total_sol_invested=total_sol,
             )
         )
