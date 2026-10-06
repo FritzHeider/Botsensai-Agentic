@@ -757,16 +757,15 @@ class Pipeline:
                 if matched:
                     weights = [self._wallet_weights[w] for w in matched]
                     pre_boost = result.composite
-                    if len(matched) >= 2 and pre_boost >= 0.55:
+                    if len(matched) >= 2 and pre_boost >= 0.75:
                         # Hyper-Confluence: multiple tracked wallets buying right now
-                        # Boost proportional to weight but cap so low-quality tokens can't skip gates
+                        # Only boost tokens already strong on fundamentals (liq, stability, deployer)
                         boost = 0.45 * max(weights)
                         result.composite = min(1.0, result.composite + boost)
-                        # Only override to high composite if token was already decent quality
-                        if pre_boost >= 0.75:
-                            result.composite = min(1.0, max(result.composite, 0.92))
-                    elif len(matched) >= 1 and pre_boost >= 0.50:
-                        boost = 0.30 * weights[0]
+                        # Floor at 0.92 only for already-strong tokens
+                        result.composite = min(1.0, max(result.composite, 0.92))
+                    elif len(matched) >= 1 and pre_boost >= 0.65:
+                        boost = 0.25 * weights[0]
                         result.composite = min(1.0, result.composite + boost)
 
                     # Clear non-critical vetoes only for high-quality tokens with multi-wallet confirmation
