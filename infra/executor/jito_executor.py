@@ -45,9 +45,11 @@ SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
 
 # Safety Guardrails
-MIN_WALLET_RESERVE_SOL = float(os.getenv("MIN_WALLET_RESERVE_SOL", "0.010"))  # Operational gas & ATA rent floor
-MAX_POSITION_SIZE_SOL = 0.035   # Raised ceiling: allows dynamic compounding up to 0.035 SOL
-DEFAULT_POSITION_SIZE_SOL = 0.018
+MIN_WALLET_RESERVE_SOL = float(os.getenv("MIN_WALLET_RESERVE_SOL", "0.010"))  # Rule 2: Operational gas reserve floor
+MIN_RESERVE_BUFFER_SOL = 0.0035  # ATA rent exemption (~0.00204 SOL) + network fee safety buffer
+MIN_TOTAL_FLOOR_SOL = MIN_WALLET_RESERVE_SOL + MIN_RESERVE_BUFFER_SOL  # 0.0135 SOL hard barrier
+MAX_POSITION_SIZE_SOL = 0.075   # Concentrated high-conviction sizing for whale confluence / sure-fire runners
+DEFAULT_POSITION_SIZE_SOL = 0.035
 MAX_SLIPPAGE_BPS = 350         # 3.5% maximum slippage protection for fast meme runners
 
 
@@ -399,21 +401,33 @@ class JitoLiveExecutor:
             self.update_signal_status(sig_id, status="SIMULATED", tx_hash=sim_tx)
             return
 
-        # LIVE EXECUTION PATH: Trade with remaining Solana in hot wallet (Trade floor & capital guard removed per user directive)
+        # LIVE EXECUTION PATH: Strict Capital Preservation Floor & Concentrated Sizing
         wallet_balance = self.get_wallet_balance_sol()
-        MIN_GAS_RENT_SOL = 0.0025  # Minimum Solana network fee + ATA rent exemption
-        if side == "BUY" and wallet_balance < MIN_GAS_RENT_SOL:
-            warn = f"Insufficient SOL for network transaction fee and ATA rent ({wallet_balance:.4f} < {MIN_GAS_RENT_SOL} SOL)."
-            print(f"[EXECUTOR] 🛑 {warn}")
-            self.update_signal_status(sig_id, status="BLOCKED", error=warn)
-            return
-
         if side == "BUY":
-            available_for_trade = max(0.0, wallet_balance - MIN_GAS_RENT_SOL)
-            # Deploy active capital: size dynamically 0.015 - 0.025 SOL, capped by available balance
-            scaled_size = min(max(size_sol, available_for_trade * 0.25, 0.015), available_for_trade, MAX_POSITION_SIZE_SOL)
+            if wallet_balance < MIN_TOTAL_FLOOR_SOL:
+                warn = (
+                    f"Operational Gas Floor Protected: Balance {wallet_balance:.4f} SOL is below "
+                    f"hard floor {MIN_TOTAL_FLOOR_SOL:.4f} SOL (0.010 gas + 0.0035 ATA reserve). BUY blocked."
+                )
+                print(f"[EXECUTOR] 🛑 {warn}")
+                self.update_signal_status(sig_id, status="BLOCKED", error=warn)
+                return
+
+            available_for_trade = max(0.0, wallet_balance - MIN_TOTAL_FLOOR_SOL)
+            # Require minimum 0.020 SOL buffer above floor for aggressive entry (preventing dust trades)
+            if available_for_trade < 0.020:
+                warn = (
+                    f"Insufficient Trade Buffer: Available capital {available_for_trade:.4f} SOL is under "
+                    f"minimum 0.020 SOL entry threshold above gas floor. BUY blocked."
+                )
+                print(f"[EXECUTOR] 🛑 {warn}")
+                self.update_signal_status(sig_id, status="BLOCKED", error=warn)
+                return
+
+            # Deploy concentrated capital: respect pipeline size (up to 0.075 SOL) bounded by available trade funds
+            scaled_size = min(max(size_sol, 0.025), available_for_trade, MAX_POSITION_SIZE_SOL)
             safe_size_sol = round(scaled_size, 4)
-            print(f"[EXECUTOR] 🚀 Capital Guard Removed: Deploying {safe_size_sol:.4f} SOL (Wallet Balance: {wallet_balance:.4f} SOL)")
+            print(f"[EXECUTOR] 🎯 Concentrated Execution Gate: Deploying {safe_size_sol:.4f} SOL (Wallet: {wallet_balance:.4f} SOL, Buffer: {available_for_trade:.4f} SOL)")
 
             # 2. Autonomous Sentinel Agent Risk & Alpha Pre-Trade Audit
             print(f"[EXECUTOR] 🤖 Auditing ${symbol} ({mint[:8]}...) via Autonomous Sentinel Agent...")

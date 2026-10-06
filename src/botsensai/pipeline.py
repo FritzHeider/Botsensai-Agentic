@@ -689,9 +689,26 @@ class Pipeline:
         buyer_wallets = [t.wallet for t in trades if t.wallet and getattr(t.side, "value", str(t.side)).lower() == "buy"]
         if buyer_wallets:
             try:
-                import json, os
+                import json, os, sqlite3
                 if getattr(self, "wallet_weights", None) is None:
                     self.wallet_weights = {}
+                    # 1. Load active smart money profiles from SQLite top_traders table
+                    try:
+                        db_file = self.settings.path(self.settings.db_path)
+                        with sqlite3.connect(db_file) as conn:
+                            for row in conn.execute(
+                                "SELECT wallet, skill_score, win_rate, runner_count, typical_size_sol "
+                                "FROM top_traders WHERE status = 'ACTIVE'"
+                            ):
+                                w, skill, wr, runners, typ_sz = row
+                                weight = max(0.9, float(skill or 0.7) * (1.0 + float(wr or 0.5) * 0.5))
+                                if runners and runners > 10:
+                                    weight *= 1.30
+                                self.wallet_weights[w] = min(2.5, weight)
+                    except Exception:
+                        pass
+
+                    # 2. Also load JSON files if available
                     for path in ("data/top_500_wallets.json", "data/wallet_weights.json", "data/top_200_wallets.json"):
                         if os.path.exists(path):
                             with open(path, "r") as f:
@@ -730,10 +747,10 @@ class Pipeline:
             except Exception:
                 pass
 
-        # Zero-Latency Alpha Sieve: Require smart money confirmation unless score is extraordinary
+        # Zero-Latency Alpha Sieve: Require smart money copy-trade confirmation unless score is extraordinary
         matched_count = len(matched) if "matched" in locals() and matched else 0
-        if matched_count == 0 and result.composite < 0.94:
-            return "skip: waiting for high-value smart money alpha confirmation"
+        if matched_count == 0 and result.composite < 0.95:
+            return "skip: no verified smart money copy-trade detected & score < 0.95 (waiting for sure things)"
 
         # 2. Gate entry on the boosted conviction score
         ok, reason = self.scorer.should_enter(result)
@@ -745,12 +762,12 @@ class Pipeline:
             return "skip: no market snapshot"
         latest = snapshots[-1]
 
-        # Dynamic Sizing: Method 6 Multi-Wallet Smart Trader Confluence Multiplier
+        # Dynamic Sizing: Method 6 Multi-Wallet Smart Trader Confluence Multiplier (Aggressive Sure Winners)
         matched_count = len(matched) if "matched" in locals() and matched else 0
         base_max_pos = self.settings.risk.max_position_native
         if matched_count >= 2:
-            # Alpha Confluence: Scale up sizing to max ceiling (0.035 SOL) on smart money accumulation
-            effective_max_pos = min(0.035, base_max_pos * 1.95)
+            # Alpha Confluence: Multiple verified whales buying simultaneously -> Aggressive max sizing
+            effective_max_pos = min(0.075, base_max_pos * 1.50)
             result.composite = min(1.0, max(result.composite, 0.985))
             # Record smart money confluence events for copy-trading tracking
             try:
@@ -762,7 +779,7 @@ class Pipeline:
                         trader_wallet=w,
                         trader_skill=float(self.wallet_weights.get(w, 0.85)),
                         trader_win_rate=0.85,
-                        trader_buy_sol=0.035,
+                        trader_buy_sol=0.045,
                         entry_delay_seconds=age if "age" in locals() else 0.0,
                         conviction_boost=0.55,
                         recommended_size_sol=effective_max_pos,
@@ -770,7 +787,26 @@ class Pipeline:
             except Exception:
                 pass
         elif matched_count == 1:
-            effective_max_pos = min(0.025, base_max_pos * 1.25)  # Confident entry on elite whale
+            # Single Verified Elite Smart Whale -> High conviction copy trade
+            effective_max_pos = min(0.050, base_max_pos * 1.15)
+            try:
+                self.db.record_copy_trade_event(
+                    token_key=launch.token.key,
+                    symbol=launch.token.symbol,
+                    mint=launch.token.mint,
+                    trader_wallet=matched[0],
+                    trader_skill=float(self.wallet_weights.get(matched[0], 0.85)),
+                    trader_win_rate=0.85,
+                    trader_buy_sol=0.035,
+                    entry_delay_seconds=age if "age" in locals() else 0.0,
+                    conviction_boost=0.40,
+                    recommended_size_sol=effective_max_pos,
+                )
+            except Exception:
+                pass
+        elif result.composite >= 0.95:
+            # Generational Outlier Sure Winner
+            effective_max_pos = min(0.065, base_max_pos * 1.35)
         else:
             effective_max_pos = base_max_pos
 

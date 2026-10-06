@@ -28,15 +28,15 @@ x_session:
   verify_every_sweep: false
 
 risk:
-  max_position_native: 0.25          # SOL per position
-  max_portfolio_exposure_native: 2.0
-  max_concurrent_positions: 15
-  max_daily_loss_native: 5.0
-  max_trades_per_hour: 20
-  min_liquidity_usd: 6000
-  min_token_age_seconds: 90
+  max_position_native: 0.06          # Concentrated capital per position (up to 0.075 for whale confluence)
+  max_portfolio_exposure_native: 0.20
+  max_concurrent_positions: 3        # Strictly concentrated: 3 positions max (only sure things)
+  max_daily_loss_native: 0.20
+  max_trades_per_hour: 5
+  min_liquidity_usd: 8000
+  min_token_age_seconds: 60
   max_token_age_seconds: 21600
-  max_slippage_bps: 500
+  max_slippage_bps: 350
   stop_loss_pct: 0.20
   take_profit_multiples: [2.0, 4.0, 10.0]
   take_profit_fractions: [0.50, 0.30, 0.20]
@@ -45,8 +45,8 @@ risk:
   kill_switch: false
   momentum_stop_seconds: 120
   momentum_min_gain_pct: 0.10
-  reserved_elite_slots: 5
-  elite_conviction_threshold: 0.90
+  reserved_elite_slots: 1            # 2 standard slots + 1 strictly reserved for elite conviction >= 0.95
+  elite_conviction_threshold: 0.95
 
 execution:
   base_latency_ms: 250
@@ -63,7 +63,7 @@ scoring:
   weights_version: v_heavy_artillery
   weights_path: config/weights.json
   min_coverage: 0.20                 # Pure on-chain reads without requiring Twitter
-  entry_threshold: 0.75
+  entry_threshold: 0.85              # Stricter entry gate: 0.85 with smart money, 0.95 without
   exit_threshold: 0.35
   veto_top10_share: 0.55
   veto_insider_share: 0.30

@@ -113,23 +113,23 @@ class XSessionSettings(BaseModel):
 class RiskSettings(BaseModel):
     """Hard limits. These are enforced in the broker, not merely advisory."""
 
-    max_position_native: float = 0.25
+    max_position_native: float = 0.06
     max_portfolio_exposure_native: float = 2.0
-    max_concurrent_positions: int = 15
-    max_daily_loss_native: float = 1.0
-    max_trades_per_hour: int = 20
-    min_liquidity_usd: float = 6_000.0
-    min_token_age_seconds: float = 90.0
+    max_concurrent_positions: int = 3
+    max_daily_loss_native: float = 0.50
+    max_trades_per_hour: int = 5
+    min_liquidity_usd: float = 8_000.0
+    min_token_age_seconds: float = 60.0
     max_token_age_seconds: float = 60 * 60 * 6
-    max_slippage_bps: int = 500
+    max_slippage_bps: int = 350
     stop_loss_pct: float = 0.20
-    take_profit_multiples: list[float] = Field(default_factory=lambda: [1.80, 3.50, 6.00, 10.00])
-    take_profit_fractions: list[float] = Field(default_factory=lambda: [0.35, 0.35, 0.15, 0.15])
+    take_profit_multiples: list[float] = Field(default_factory=lambda: [2.0, 4.0, 10.0])
+    take_profit_fractions: list[float] = Field(default_factory=lambda: [0.50, 0.30, 0.20])
     trailing_stop_pct: float = 0.25
     max_hold_seconds: float = 60 * 60 * 6
     kill_switch: bool = False
     expectancy_floor: float = -0.05
-    momentum_stop_seconds: float = 90.0
+    momentum_stop_seconds: float = 120.0
     momentum_min_gain_pct: float = 0.10
     curve_auto_exit_pct: float = 0.98
     use_kelly_sizing: bool = True
@@ -137,8 +137,8 @@ class RiskSettings(BaseModel):
     min_curve_progress: float = 0.03
     max_curve_progress: float = 0.85
     sniper_min_token_age_seconds: float = 0.0
-    reserved_elite_slots: int = 5
-    elite_conviction_threshold: float = 0.90
+    reserved_elite_slots: int = 1
+    elite_conviction_threshold: float = 0.95
 
     @model_validator(mode="after")
     def _check_ladder(self) -> RiskSettings:
