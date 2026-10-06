@@ -1882,8 +1882,7 @@ class Database:
                 if c != "wallet"
             )
             sql = (
-                f"INSERT INTO top_traders ({col_list}) VALUES ({placeholders})
-"
+                f"INSERT INTO top_traders ({col_list}) VALUES ({placeholders})\n"
                 f"ON CONFLICT(wallet) DO UPDATE SET {update_pairs}"
             )
 
