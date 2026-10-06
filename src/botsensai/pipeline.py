@@ -243,6 +243,8 @@ class Pipeline:
         #: need to report on a run that was interrupted rather than returned.
         self.last_session: CollectionSession | None = None
         self._consecutive_degraded_sweeps: int = 0
+        #: Wallet-weight map refreshed at the start of each sweep from top_traders.
+        self._wallet_weights: dict[str, float] = {}
 
     def _default_collectors(self) -> list[Collector]:
         """Market surfaces first, then social.
@@ -682,6 +684,61 @@ class Pipeline:
 
     # -- step 5 and 6: decide and remember ---------------------------------- #
 
+    def _refresh_wallet_weights(self) -> None:
+        """Reload copy-trade wallet weights from DB + JSON files at sweep start.
+
+        Called once per sweep so every token in that sweep sees the same set of
+        tracked wallets. The DB rows (from top_traders) take precedence; JSON
+        files provide a static fallback for cold starts before seeding runs.
+        Cyclomatic complexity: 4 (well under the 10-ceiling gate).
+        """
+        import json as _json
+        import os as _os
+        weights: dict[str, float] = {}
+
+        # Primary: top_traders table (populated by scripts/seed_top_wallets.py)
+        try:
+            for row in self.db.top_traders_active(limit=200):
+                w = row.get("wallet", "")
+                if not w:
+                    continue
+                skill = float(row.get("skill_score") or 0.70)
+                wr = float(row.get("win_rate") or 0.0)
+                runners = int(row.get("runner_count") or 0)
+                weight = max(0.9, skill * (1.0 + wr * 0.5))
+                if runners >= 5:
+                    weight *= 1.45
+                weights[w] = min(3.0, weight)
+        except Exception as exc:
+            log.debug("pipeline.wallet_weights.db_failed", error=str(exc))
+
+        # Fallback: static JSON files (pre-seeded leaderboard snapshots)
+        for fpath in ("data/top_500_wallets.json", "data/wallet_weights.json", "data/top_200_wallets.json"):
+            if not _os.path.exists(fpath):
+                continue
+            try:
+                content = _json.loads(open(fpath).read())
+                if isinstance(content, list):
+                    for item in content:
+                        addr = (item.get("address") or item) if isinstance(item, (dict, str)) else ""
+                        if not isinstance(addr, str) or not addr or addr in weights:
+                            continue
+                        wr = float((item.get("winrate", 50.0) if isinstance(item, dict) else 50.0))
+                        p7d = float(item.get("profit_7d", 0.0) if isinstance(item, dict) else 0.0)
+                        p_mult = min(max(p7d / 40000.0, 0.6), 1.6) if p7d > 0 else 0.5
+                        weights[addr] = min(1.5, max(0.6, (wr / 100.0) * p_mult * 1.5))
+                elif isinstance(content, dict):
+                    for addr, wt in content.items():
+                        if addr not in weights:
+                            weights[addr] = float(wt)
+            except Exception:
+                pass
+            break  # only use the first file found
+
+        self._wallet_weights = weights
+        if weights:
+            log.info("pipeline.wallet_weights.refreshed", count=len(weights))
+
     def decide(self, launch: Launch, result: Score) -> str:
         """Route a score through risk and the broker. Returns what happened."""
         # 1. Evaluate real-time smart money participation & multi-alpha consensus
@@ -694,48 +751,9 @@ class Pipeline:
         matched: list[str] = []
         if candidate_wallets:
             try:
-                import json, os, sqlite3
-                if getattr(self, "wallet_weights", None) is None:
-                    self.wallet_weights = {}
-                    # 1. Load active smart money profiles from SQLite top_traders table
-                    try:
-                        db_file = self.settings.path(self.settings.db_path)
-                        with sqlite3.connect(db_file) as conn:
-                            for row in conn.execute(
-                                "SELECT wallet, skill_score, win_rate, runner_count, typical_size_sol "
-                                "FROM top_traders WHERE status = 'ACTIVE'"
-                            ):
-                                w, skill, wr, runners, typ_sz = row
-                                weight = max(0.9, float(skill or 0.7) * (1.0 + float(wr or 0.5) * 0.5))
-                                # Whales with proven 1000%+ runner track records receive top weight
-                                if runners and runners >= 5:
-                                    weight *= 1.45
-                                self.wallet_weights[w] = min(3.0, weight)
-                    except Exception:
-                        pass
-
-                    # 2. Also load JSON files if available
-                    for path in ("data/top_500_wallets.json", "data/wallet_weights.json", "data/top_200_wallets.json"):
-                        if os.path.exists(path):
-                            with open(path, "r") as f:
-                                content = json.load(f)
-                            if isinstance(content, list):
-                                for item in content:
-                                    if isinstance(item, dict) and "address" in item:
-                                        wr = float(item.get("winrate", 50.0)) / 100.0
-                                        p7d = float(item.get("profit_7d", 0.0))
-                                        p_mult = min(max(p7d / 40000.0, 0.6), 1.6) if p7d > 0 else 0.5
-                                        dynamic_weight = min(1.5, max(0.6, wr * p_mult * 1.5))
-                                        self.wallet_weights[item["address"]] = dynamic_weight
-                                    elif isinstance(item, str):
-                                        self.wallet_weights[item] = 0.75
-                            elif isinstance(content, dict):
-                                self.wallet_weights.update(content)
-                            break
-
-                matched = [w for w in candidate_wallets if w in self.wallet_weights]
+                matched = [w for w in candidate_wallets if w in self._wallet_weights]
                 if matched:
-                    weights = [self.wallet_weights[w] for w in matched]
+                    weights = [self._wallet_weights[w] for w in matched]
                     # Hyper-Confluence Trigger: Multiple Elite Alpha Whales
                     if len(matched) >= 2:
                         boost = 0.60 * max(weights)
@@ -744,11 +762,13 @@ class Pipeline:
                         boost = 0.45 * weights[0]
                         result.composite = min(1.0, result.composite + boost)
 
-                    # Consensus override: If top profitable traders enter, clear trivial vetoes
+                    # Consensus override: top profitable traders entering clears trivial vetoes
                     if len(matched) >= 2 and result.composite >= 0.70:
                         result.vetoes = [
-                            v for v in result.vetoes 
-                            if getattr(v, "value", str(v)) not in ("dev_already_sold", "liquidity_below_floor", "holders_too_low_for_age")
+                            v for v in result.vetoes
+                            if getattr(v, "value", str(v)) not in (
+                                "dev_already_sold", "liquidity_below_floor", "holders_too_low_for_age"
+                            )
                         ]
             except Exception:
                 pass
@@ -1126,6 +1146,9 @@ class Pipeline:
 
     async def sweep(self, discover_limit: int = 60, max_candidates: int = 25) -> SweepReport:
         report = SweepReport(started_at=utcnow())
+
+        # Refresh top-100 pump.fun wallet weights once per sweep (not per token)
+        self._refresh_wallet_weights()
 
         discovered = await self._sweep_discover(report, discover_limit)
         if discovered is None:

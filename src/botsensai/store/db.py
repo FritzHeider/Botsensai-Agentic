@@ -44,7 +44,7 @@ from botsensai.util.logging import get_logger
 
 log = get_logger(__name__)
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 #: Launch columns `social_links` will read. An allow-list rather than a check
 #: for suspicious characters: the caller supplies a column name, and the only
@@ -429,6 +429,26 @@ CREATE TABLE IF NOT EXISTS copy_trade_events (
     created_at            REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_copy_trade_events_mint ON copy_trade_events(mint, created_at);
+
+-- Ranked leaderboard of pump.fun top-100 profit wallets, refreshed periodically
+-- by scripts/seed_top_wallets.py. The pipeline reads 'ACTIVE' rows for copy-trade
+-- conviction boosts; the status monitor reports the count.
+CREATE TABLE IF NOT EXISTS top_traders (
+    wallet             TEXT PRIMARY KEY,
+    rank               INTEGER NOT NULL DEFAULT 999,
+    win_rate           REAL NOT NULL DEFAULT 0.0,
+    profit_7d          REAL NOT NULL DEFAULT 0.0,
+    txs_1d             INTEGER NOT NULL DEFAULT 0,
+    sol_balance        REAL NOT NULL DEFAULT 0.0,
+    skill_score        REAL NOT NULL DEFAULT 0.70,
+    runner_count       INTEGER NOT NULL DEFAULT 0,
+    typical_size_sol   REAL NOT NULL DEFAULT 0.015,
+    tags               TEXT NOT NULL DEFAULT '[]',
+    status             TEXT NOT NULL DEFAULT 'ACTIVE',
+    source             TEXT NOT NULL DEFAULT 'pump_fun',
+    refreshed_at       REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_top_traders_status ON top_traders(status, rank);
 """
 
 
@@ -1778,6 +1798,83 @@ class Database:
                 ),
             )
             return cursor.lastrowid or 0
+
+
+    def upsert_top_traders(self, traders: list[dict[str, Any]]) -> int:
+        """Bulk-insert or replace top-trader rows from the pump.fun leaderboard.
+
+        Each dict must have at least ``wallet`` or ``address``.  All other
+        fields are optional and fall back to column defaults.  Existing rows
+        are replaced so a fresh seeding run always reflects the current list.
+        Returns the number of rows written.
+        """
+        import json as _json
+        now = utcnow().timestamp()
+        written = 0
+        with self.tx() as conn:
+            for t in traders:
+                wallet = t.get("wallet") or t.get("address")
+                if not wallet:
+                    continue
+                wr_raw = t.get("winrate", t.get("win_rate", 0.0))
+                win_rate = float(wr_raw) / 100.0 if float(wr_raw) > 1.0 else float(wr_raw)
+                conn.execute(
+                    """
+                    INSERT INTO top_traders (
+                        wallet, rank, win_rate, profit_7d, txs_1d, sol_balance,
+                        skill_score, runner_count, typical_size_sol, tags,
+                        status, source, refreshed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                    ON CONFLICT(wallet) DO UPDATE SET
+                        rank               = excluded.rank,
+                        win_rate           = excluded.win_rate,
+                        profit_7d          = excluded.profit_7d,
+                        txs_1d             = excluded.txs_1d,
+                        sol_balance        = excluded.sol_balance,
+                        skill_score        = excluded.skill_score,
+                        runner_count       = excluded.runner_count,
+                        typical_size_sol   = excluded.typical_size_sol,
+                        tags               = excluded.tags,
+                        status             = 'ACTIVE',
+                        source             = excluded.source,
+                        refreshed_at       = excluded.refreshed_at
+                    """,
+                    (
+                        wallet,
+                        int(t.get("rank", 999)),
+                        win_rate,
+                        float(t.get("profit_7d", 0.0)),
+                        int(t.get("txs_1d", 0)),
+                        float(t.get("sol_balance", 0.0)),
+                        float(t.get("skill_score", min(1.0, win_rate))),
+                        int(t.get("runner_count", 0)),
+                        float(t.get("typical_size_sol", 0.015)),
+                        _json.dumps(t.get("tags", [])),
+                        str(t.get("source", "pump_fun")),
+                        now,
+                    ),
+                )
+                written += 1
+        return written
+
+    def top_traders_active(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Active top-trader rows ordered by rank for pipeline copy-trade gates.
+
+        Returns an empty list when the table is empty (cold start before seeding).
+        The pipeline builds its wallet_weights dict from this output.
+        """
+        rows = self.conn.execute(
+            """
+            SELECT wallet, rank, win_rate, profit_7d, skill_score,
+                   runner_count, typical_size_sol, tags
+            FROM top_traders
+            WHERE status = 'ACTIVE'
+            ORDER BY rank ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def pending_signals(self, limit: int = 20) -> list[dict[str, Any]]:
         """Retrieve pending signals awaiting live execution."""
