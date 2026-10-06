@@ -256,7 +256,7 @@ def explain(metric_id: str) -> None:
 def sweep(
     config: str = typer.Option(None, help="Path to a config YAML."),
     limit: int = typer.Option(60, help="How many launches to pull per discovery pass."),
-    candidates: int = typer.Option(20, help="How many survivors to enrich and score."),
+     candidates: int = typer.Option(10, help="How many survivors to enrich and score."),
     repeat: int = typer.Option(1, help="Number of sweeps to run. 0 means run forever."),
     interval: float = typer.Option(60.0, help="Seconds between sweeps."),
     log_level: str = typer.Option("INFO", help="Log level."),
@@ -292,7 +292,7 @@ def snipe(
     min_score: float = typer.Option(None, "--min-score", "-m", help="Minimum conviction score threshold to buy."),
     force: bool = typer.Option(False, "--force", "-f", help="Force paper entry even if below threshold or vetoed."),
     limit: int = typer.Option(60, "--limit", help="How many launches to pull during discovery."),
-    candidates: int = typer.Option(20, "--candidates", help="How many survivors to deeply enrich and score."),
+    candidates: int = typer.Option(10, "--candidates", help="How many survivors to deeply enrich and score."),
     config: str = typer.Option(None, help="Path to a config YAML."),
     log_level: str = typer.Option("WARNING", help="Log level."),
 ) -> None:
@@ -318,7 +318,7 @@ def collect(
     config: str = typer.Option(None, help="Path to a config YAML."),
     interval: float = typer.Option(60.0, help="Seconds between sweeps."),
     limit: int = typer.Option(60, help="How many launches to pull per discovery pass."),
-    candidates: int = typer.Option(20, help="How many survivors to enrich and score."),
+    candidates: int = typer.Option(10, help="How many survivors to enrich and score."),
     log_level: str = typer.Option("WARNING", help="Log level."),
 ) -> None:
     """Collect continuously for a fixed window, writing a heartbeat every sweep.
@@ -1881,7 +1881,7 @@ def run(
     autolabel: bool = typer.Option(True, "--autolabel/--no-autolabel", help="Enable background outcome labelling."),
     interval: float = typer.Option(60.0, help="Seconds between discovery sweeps."),
     limit: int = typer.Option(60, help="Launches to pull per sweep."),
-    candidates: int = typer.Option(20, help="Survivors to enrich and score per sweep."),
+    candidates: int = typer.Option(10, help="Survivors to enrich and score per sweep."),
     log_level: str = typer.Option("INFO", help="Log level."),
 ) -> None:
     """Run the unified multi-task supervisor (Streamer, Sweeper, Labeller, Sentinel)."""
