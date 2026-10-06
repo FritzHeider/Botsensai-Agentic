@@ -553,10 +553,12 @@ class Database:
 
     def migrate(self) -> None:
         with self.tx() as conn:
-            conn.executescript(SCHEMA)
-            # Idempotent column additions for existing top_traders tables that
-            # predate SCHEMA_VERSION 8.  SQLite does not support IF NOT EXISTS
-            # on ALTER TABLE, so we catch the OperationalError and continue.
+            # IMPORTANT: ALTER TABLE additions must run BEFORE executescript(SCHEMA)
+            # because SCHEMA contains index definitions referencing the new columns
+            # (e.g. CREATE INDEX ... ON top_traders(status, rank)).  If top_traders
+            # exists without 'rank', the index CREATE fails before we can add it.
+            # SQLite does not support ALTER TABLE ADD COLUMN IF NOT EXISTS, so we
+            # catch OperationalError (column already exists) and continue.
             _top_traders_new_cols = [
                 ("rank",             "INTEGER NOT NULL DEFAULT 999"),
                 ("win_rate",         "REAL NOT NULL DEFAULT 0.0"),
@@ -577,7 +579,9 @@ class Database:
                         f"ALTER TABLE top_traders ADD COLUMN {col} {typedef}"
                     )
                 except Exception:
-                    pass  # column already exists — ignore
+                    pass  # column already exists — safe to ignore
+            # Now run the full schema (all CREATE TABLE IF NOT EXISTS + indexes)
+            conn.executescript(SCHEMA)
             conn.execute(
                 "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
