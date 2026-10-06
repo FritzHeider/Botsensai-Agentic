@@ -776,9 +776,29 @@ class Pipeline:
         # 2. Hard Holder Breadth Rail: Strictly reject tokens with small holder base
         # 1000% mega-runners require distributed community breadth to absorb profit taking.
         snapshots = self.db.snapshots_as_of(launch.token.key, result.as_of)
-        if not snapshots:
-            return "skip: no market snapshot"
-        latest = snapshots[-1]
+        latest = snapshots[-1] if snapshots else None
+
+        # Enrich-degraded fallback: pump.fun enrich consistently times out.
+        # When no snapshot exists, gate on buyer breadth from the WS stream instead
+        # of hard-skipping. Require 35+ distinct buyers as community breadth proxy.
+        # High-conviction tokens (score >= 0.995 OR smart money) can bypass if
+        # DexScreener returned liquidity data (depth metric scored > 0).
+        if latest is None:
+            # Check if DexScreener depth metric scored (realizable_exit_depth raw > 0)
+            has_dex_depth = False
+            if hasattr(result, "metric_values") and result.metric_values:
+                for mv in result.metric_values:
+                    if getattr(mv, "metric_id", "") == "realizable_exit_depth":
+                        has_dex_depth = (mv.raw is not None and float(mv.raw or 0) > 0)
+                        break
+            matched_count_pre = len(matched) if "matched" in locals() else 0
+            if has_dex_depth and (result.composite >= 0.995 or matched_count_pre >= 1):
+                # Allow through: high conviction + DexScreener depth confirmed
+                latest = None  # holder_count will be None → fall to buyer breadth check
+            elif distinct_buyers >= 35:
+                latest = None  # Enough on-chain buyers observed via stream
+            else:
+                return f"skip: no enrichment snapshot & insufficient buyer breadth ({distinct_buyers} buyers via stream)"
 
         token_age_sec = (result.as_of - launch.created_at).total_seconds()
         holder_count = latest.holder_count if latest is not None else None
