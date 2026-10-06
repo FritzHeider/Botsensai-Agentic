@@ -840,6 +840,19 @@ class Pipeline:
         if not ok:
             return f"skip: {reason}"
 
+        # 4b. Hard DEX Liquidity Gate: require actual on-chain pool liquidity
+        # All dead_liquidity exits (OI, мем, Commodities) had $0 DEX liq at exit —
+        # they were pre-graduation bonding curve tokens, never tradeable on Raydium.
+        # The realizable_exit_depth metric scores DexScreener bonding curve depth as
+        # if it were DEX liquidity — this gate uses the real snapshot liquidity_usd.
+        min_dex_liq = self.settings.risk.min_liquidity_usd if hasattr(self.settings.risk, "min_liquidity_usd") else 5_000.0
+        actual_liq = (latest.liquidity_usd or 0.0) if latest is not None else 0.0
+        if actual_liq < min_dex_liq:
+            return (
+                f"skip: DEX liquidity ${actual_liq:,.0f} below "
+                f"${min_dex_liq:,.0f} floor — likely pre-graduation bonding curve"
+            )
+
         # Dynamic Sizing: Method 6 Multi-Wallet Smart Trader Confluence Multiplier (Aggressive Sure Winners)
         matched_count = len(matched) if "matched" in locals() and matched else 0
         base_max_pos = self.settings.risk.max_position_native
