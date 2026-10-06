@@ -941,6 +941,13 @@ class JitoLiveExecutor:
             return
 
         now = time.time()
+        wallet_bal = self.get_wallet_balance_sol()
+        if wallet_bal < 0.0025:
+            if now - getattr(self, "_last_gas_warning_time", 0.0) >= 300.0:
+                print(f"[EXECUTOR] ⚠️ Operational gas floor alert: Hot wallet balance ({wallet_bal:.6f} SOL) below ATA rent floor (0.0025 SOL). Exits paused until gas floor is replenished.")
+                self._last_gas_warning_time = now
+            return
+
         for pos in open_pos:
             mint = pos["mint"]
             symbol = pos.get("symbol") or "TOKEN"
