@@ -254,15 +254,16 @@ def seed_to_db(traders: list[dict], db_path: Path, dry_run: bool = False) -> int
             print(f"  ... and {len(traders) - 5} more")
         return len(traders)
 
+    # Use raw SQLite directly — avoids editable-install path issues on EC2
+    # where /home/ubuntu/botsensai (lowercase) vs /home/ubuntu/Botsensai differ
     try:
-        from botsensai.config import get_settings
         from botsensai.store.db import Database
         db = Database(db_path)
         written = db.upsert_top_traders(traders)
-        print(f"[seed] ✅ Seeded {written} top traders → {db_path}")
+        print(f"[seed] ✅ Seeded {written} top traders → {db_path} (via DB wrapper)")
         return written
-    except ImportError:
-        # Fallback: raw SQLite if package not installed
+    except Exception:
+        pass  # Fall through to raw sqlite
         import sqlite3
         now = time.time()
         conn = sqlite3.connect(str(db_path))
