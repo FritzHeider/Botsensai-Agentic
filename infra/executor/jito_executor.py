@@ -14,6 +14,7 @@ import json
 import os
 import signal
 import sqlite3
+import struct
 import sys
 import time
 import urllib.request
@@ -639,7 +640,8 @@ class JitoLiveExecutor:
         return "TOKEN"
 
     def close_token_account_on_chain(self, mint: str) -> bool:
-        """Closes zero-balance token accounts on-chain to reclaim ~0.00204 SOL rent per account."""
+        """Closes token account on-chain to reclaim ~0.00204 SOL rent per account.
+        If account holds worthless/dead tokens, burns them first, then closes account."""
         if not self.keypair:
             return False
         try:
@@ -662,7 +664,9 @@ class JitoLiveExecutor:
                     owner_prog = acc.get("account", {}).get("owner") or SPL_TOKEN_PROGRAM_ID
                     info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
                     token_amt = float(info.get("tokenAmount", {}).get("uiAmount", 0.0) or 0.0)
-                    if token_amt <= 0.0 and acc_pub:
+                    raw_amount_str = info.get("tokenAmount", {}).get("amount", "0")
+                    raw_amt = int(raw_amount_str or 0)
+                    if acc_pub:
                         bh_res = self._call_rpc(
                             {
                                 "jsonrpc": "2.0",
@@ -681,7 +685,21 @@ class JitoLiveExecutor:
                         acc_to_close = Pubkey.from_string(acc_pub)
                         dest = self.keypair.pubkey()
 
-                        ix = Instruction(
+                        instructions = []
+                        if raw_amt > 0:
+                            mint_pub = Pubkey.from_string(mint)
+                            burn_ix = Instruction(
+                                program_id=prog_id,
+                                data=bytes([8]) + struct.pack("<Q", raw_amt),
+                                accounts=[
+                                    AccountMeta(pubkey=acc_to_close, is_signer=False, is_writable=True),
+                                    AccountMeta(pubkey=mint_pub, is_signer=False, is_writable=True),
+                                    AccountMeta(pubkey=dest, is_signer=True, is_writable=False),
+                                ],
+                            )
+                            instructions.append(burn_ix)
+
+                        close_ix = Instruction(
                             program_id=prog_id,
                             data=bytes([9]),  # CloseAccount opcode
                             accounts=[
@@ -690,9 +708,11 @@ class JitoLiveExecutor:
                                 AccountMeta(pubkey=dest, is_signer=True, is_writable=False),
                             ],
                         )
+                        instructions.append(close_ix)
+
                         msg = MessageV0.try_compile(
                             payer=dest,
-                            instructions=[ix],
+                            instructions=instructions,
                             address_lookup_table_accounts=[],
                             recent_blockhash=recent_bh,
                         )
@@ -841,7 +861,7 @@ class JitoLiveExecutor:
                 # RPC issue: abort immediately without modifying any positions
                 return
 
-            # 1. Ensure all positive on-chain holdings are tracked in live_positions
+            # 1. Ensure positive on-chain holdings are tracked without resurrecting closed dead-weight
             for mint, amount in balances.items():
                 if amount <= 1.0:  # Ignore sub-unit dust
                     continue
@@ -850,23 +870,31 @@ class JitoLiveExecutor:
                         "SELECT mint, status, amount_token FROM live_positions WHERE mint = ?",
                         (mint,),
                     ).fetchone()
-                    if not row or row[1] == "CLOSED":
-                        # Check execution signals with inclusive status
-                        sig_row = conn.execute(
-                            "SELECT symbol, token_key, size_native, tx_hash FROM execution_signals "
-                            "WHERE token_key LIKE ? AND side = 'BUY' "
-                            "ORDER BY id DESC LIMIT 1",
-                            (f"%{mint}%",),
-                        ).fetchone()
-                        if sig_row:
-                            sym, tkey, sz_sol, tx_h = sig_row
-                            sz_sol = float(sz_sol or 0.015)
-                        else:
-                            sym = self._fetch_token_symbol(mint) or "TOKEN"
-                            tkey = f"solana:{mint}"
-                            sz_sol = 0.0
-                            tx_h = "on_chain_sync"
+                    if row:
+                        st = row[1]
+                        if st in ("CLOSED", "QUARANTINED", "DUST"):
+                            # Hard invariant: NEVER resurrect closed, dead-weight, or quarantined positions
+                            continue
+                        elif st == "OPEN":
+                            # Synchronize current balance if it changed (e.g. after partial exit)
+                            if abs(float(row[2]) - amount) > 1e-4:
+                                conn.execute(
+                                    "UPDATE live_positions SET amount_token = ?, updated_at = ? WHERE mint = ?",
+                                    (amount, time.time(), mint),
+                                )
+                                conn.commit()
+                        continue
 
+                    # Mint is not yet in live_positions: check if this was an intentional Botsensai buy
+                    sig_row = conn.execute(
+                        "SELECT symbol, token_key, size_native, tx_hash FROM execution_signals "
+                        "WHERE token_key LIKE ? AND side = 'BUY' "
+                        "ORDER BY id DESC LIMIT 1",
+                        (f"%{mint}%",),
+                    ).fetchone()
+                    if sig_row:
+                        sym, tkey, sz_sol, tx_h = sig_row
+                        sz_sol = float(sz_sol or 0.015)
                         entry_px = sz_sol / amount if amount > 0 else 0.0
                         self._record_live_buy(
                             mint=mint,
@@ -877,20 +905,41 @@ class JitoLiveExecutor:
                             cost_sol=sz_sol,
                             entry_price_sol=entry_px,
                         )
-                        # Mark associated signal as LANDED
                         conn.execute(
                             "UPDATE execution_signals SET status = 'LANDED' WHERE token_key LIKE ? AND side = 'BUY' AND status IN ('UNCONFIRMED', 'SUBMITTED')",
                             (f"%{mint}%",),
                         )
                         conn.commit()
-                    elif row[1] == "OPEN":
-                        # Synchronize current balance if it changed (e.g. after partial exit)
-                        if abs(float(row[2]) - amount) > 1e-4:
+                    else:
+                        # Unsolicited token account / airdrop without any BUY signal:
+                        # Audit DEX liquidity to determine if tradeable or pure spam/dust
+                        px = self._fetch_live_price(mint)
+                        if px <= 0.0:
+                            print(f"[EXECUTOR] 🛡️ Quarantined unsolicited spam/dust token: {mint[:8]}... (0 DEX liquidity)")
                             conn.execute(
-                                "UPDATE live_positions SET amount_token = ?, updated_at = ? WHERE mint = ?",
-                                (amount, time.time(), mint),
+                                """
+                                INSERT INTO live_positions (
+                                    mint, symbol, token_key, entry_tx_hash, exit_tx_hash,
+                                    amount_token, cost_sol, entry_price_sol, peak_price_sol,
+                                    last_price_sol, realized_pnl_sol, opened_at, closed_at,
+                                    status, exit_reason, updated_at
+                                ) VALUES (?, 'DUST', ?, 'unsolicited_sync', NULL, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?, 'QUARANTINED', 'unsolicited_dust', ?)
+                                ON CONFLICT(mint) DO UPDATE SET status = 'QUARANTINED', exit_reason = 'unsolicited_dust'
+                                """,
+                                (mint, f"solana:{mint}", amount, time.time(), time.time(), time.time()),
                             )
                             conn.commit()
+                        else:
+                            sym = self._fetch_token_symbol(mint) or "TOKEN"
+                            self._record_live_buy(
+                                mint=mint,
+                                symbol=sym,
+                                token_key=f"solana:{mint}",
+                                entry_tx_hash="external_deposit",
+                                amount_token=amount,
+                                cost_sol=0.0,
+                                entry_price_sol=px,
+                            )
 
             # 2. Check if any OPEN position has actually been closed on-chain
             now_ts = time.time()
@@ -925,10 +974,50 @@ class JitoLiveExecutor:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                rows = conn.execute("SELECT * FROM live_positions WHERE status = 'OPEN' AND amount_token > 0").fetchall()
+                rows = conn.execute(
+                    """
+                    SELECT * FROM live_positions 
+                    WHERE status = 'OPEN' 
+                      AND amount_token > 0
+                      AND (exit_reason IS NULL OR (exit_reason NOT LIKE '%dead_weight%' AND exit_reason NOT LIKE '%purged%' AND exit_reason NOT LIKE '%quarantined%'))
+                    """
+                ).fetchall()
                 return [dict(r) for r in rows]
         except Exception:
             return []
+
+    def purge_stale_dead_weight(self) -> int:
+        """Scans live_positions and closes any dead-weight tokens with 0 DEX liquidity or volume."""
+        purged = 0
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                open_rows = conn.execute(
+                    "SELECT mint, symbol, opened_at, amount_token FROM live_positions WHERE status = 'OPEN'"
+                ).fetchall()
+            now = time.time()
+            for r in open_rows:
+                mint = r["mint"]
+                sym = r["symbol"]
+                opened_at = float(r["opened_at"] or now)
+                age_secs = now - opened_at
+                # If older than 5 minutes and 0 DEX liquidity
+                px = self._fetch_live_price(mint)
+                if px <= 0.0 and age_secs >= 300.0:
+                    print(f"[EXECUTOR] 💀 Purging dead weight position: ${sym} ({mint[:8]}...) - $0 DEX liquidity after {age_secs/60:.1f}m")
+                    self._record_live_sell(
+                        mint=mint,
+                        exit_tx_hash="dead_liquidity_purge",
+                        exit_reason="dead_weight_purged",
+                    )
+                    purged += 1
+                    try:
+                        self.close_token_account_on_chain(mint)
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"[EXECUTOR] Error during dead weight purge: {e}")
+        return purged
 
     def _fetch_live_price(self, mint: str) -> float:
         try:
@@ -940,6 +1029,9 @@ class JitoLiveExecutor:
                 if not pairs:
                     return 0.0
                 best = max(pairs, key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0))
+                liq = float(best.get("liquidity", {}).get("usd", 0) or 0.0)
+                if liq < 20.0:  # Less than $20 liquidity is untradeable dead weight
+                    return 0.0
                 return float(best.get("priceNative") or 0.0)
         except Exception:
             return 0.0
@@ -1015,6 +1107,13 @@ class JitoLiveExecutor:
 
             curr_px = self._fetch_live_price(mint)
             if curr_px <= 0:
+                if age_seconds >= 600.0:
+                    print(f"[EXECUTOR] 💀 Dead weight purged for ${symbol} ({mint[:8]}...): $0 DEX liquidity after {age_seconds/60:.1f}m. Marking CLOSED.")
+                    self._record_live_sell(
+                        mint=mint,
+                        exit_tx_hash="dead_liquidity_purge",
+                        exit_reason="dead_weight_purged",
+                    )
                 continue
 
             self._update_live_price(mint, curr_px)
@@ -1145,10 +1244,26 @@ class JitoLiveExecutor:
                         print(f"[EXECUTOR] Live exit execution failed: {e}")
                 else:
                     self._exit_attempt_times[mint] = now
-                    print(f"[EXECUTOR] ⚠️ Failed to build exit transaction for ${symbol} across pools: {pool_type} (cooldown 45s)")
+                    if not hasattr(self, "_exit_failures"):
+                        self._exit_failures = {}
+                    fail_count = self._exit_failures.get(mint, 0) + 1
+                    self._exit_failures[mint] = fail_count
+                    print(f"[EXECUTOR] ⚠️ Failed to build exit transaction for ${symbol} across pools: {pool_type} (attempt {fail_count}, cooldown 45s)")
+                    if fail_count >= 3 or age_seconds >= 900.0:
+                        print(f"[EXECUTOR] 💀 Untradeable dead weight: Failed to build exit tx {fail_count} times for ${symbol}. Marking CLOSED to free capacity.")
+                        self._record_live_sell(
+                            mint=mint,
+                            exit_tx_hash="untradeable_pool_dead",
+                            exit_reason="untradeable_dead_weight_purged",
+                        )
 
     async def run_loop(self, interval: float = 1.0) -> None:
         print(f"[EXECUTOR] Pure Live Mode: Monitoring {self.db_path} for signals & open on-chain positions...")
+        # Immediate startup purge of stale dead weight to free 0/3 capacity slots immediately
+        purged = self.purge_stale_dead_weight()
+        if purged > 0:
+            print(f"[EXECUTOR] 🧹 Initialized engine: Purged {purged} stale dead-weight position(s). Capacity restored to 0/{MAX_CONCURRENT_POSITIONS}.")
+
         last_exit_check = 0.0
         last_sync_check = 0.0
         while self.running:
@@ -1163,9 +1278,10 @@ class JitoLiveExecutor:
                 await self.check_live_positions_exit()
                 last_exit_check = now
 
-            # 3. Synchronize on-chain token accounts every 30.0 seconds
+            # 3. Synchronize on-chain token accounts & purge dead-weight every 30.0 seconds
             if now - last_sync_check >= 30.0:
                 await self.reconcile_on_chain_holdings()
+                self.purge_stale_dead_weight()
                 last_sync_check = now
 
             await asyncio.sleep(interval)

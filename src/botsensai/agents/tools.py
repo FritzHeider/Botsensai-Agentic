@@ -27,6 +27,18 @@ def helius_get_asset(mint: str) -> str:
     api_key = os.environ.get("HELIUS_API_KEY") or os.environ.get("BOTSENSAI_HELIUS_API_KEY") or DEFAULT_HELIUS_KEY
     rpc_url = f"https://mainnet.helius-rpc.com/?api-key={api_key}"
 
+    # Try pump.fun API first for pump tokens
+    pump_data = {}
+    try:
+        req = urllib.request.Request(
+            f"https://frontend-api-v3.pump.fun/coins/{mint}",
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            pump_data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        pass
+
     payload = {
         "jsonrpc": "2.0",
         "id": "sentinel-das-query",
@@ -34,6 +46,7 @@ def helius_get_asset(mint: str) -> str:
         "params": {"id": mint}
     }
 
+    res = {}
     try:
         req = urllib.request.Request(
             rpc_url,
@@ -42,11 +55,52 @@ def helius_get_asset(mint: str) -> str:
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-
         res = data.get("result", {})
-        if not res:
-            return json.dumps({"error": f"Token {mint} not found on-chain via DAS."})
+    except Exception:
+        pass
 
+    if not res and not pump_data:
+        # Fallback to standard solana RPC account query
+        for pub_rpc in ["https://api.mainnet-beta.solana.com", "https://solana-rpc.publicnode.com"]:
+            try:
+                acc_payload = {
+                    "jsonrpc": "2.0",
+                    "id": "get-account-info",
+                    "method": "getAccountInfo",
+                    "params": [mint, {"encoding": "jsonParsed"}]
+                }
+                req = urllib.request.Request(
+                    pub_rpc,
+                    data=json.dumps(acc_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    acc_data = json.loads(resp.read().decode("utf-8"))
+                val = acc_data.get("result", {}).get("value", {})
+                if val:
+                    parsed = val.get("data", {}).get("parsed", {}).get("info", {})
+                    token_program = val.get("owner", "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+                    mint_auth = parsed.get("mintAuthority")
+                    freeze_auth = parsed.get("freezeAuthority")
+                    summary = {
+                        "mint": mint,
+                        "name": "Unknown",
+                        "symbol": "UNKNOWN",
+                        "description": "",
+                        "token_program": token_program,
+                        "is_token_2022": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" in token_program,
+                        "mint_authority": mint_auth,
+                        "freeze_authority": freeze_auth,
+                        "permanent_delegate": None,
+                        "is_spam_advertisement": False,
+                        "has_weaponized_authority": bool(freeze_auth)
+                    }
+                    return json.dumps(summary)
+            except Exception:
+                continue
+        return json.dumps({"error": f"Token {mint} not found on-chain via DAS or RPC."})
+
+    if res:
         content = res.get("content", {})
         metadata = content.get("metadata", {})
         token_info = res.get("token_info", {})
@@ -61,30 +115,39 @@ def helius_get_asset(mint: str) -> str:
         mint_auth = token_info.get("mint_authority")
         freeze_auth = token_info.get("freeze_authority")
 
-        # Detect dangerous spam patterns in name/symbol
-        name = metadata.get("name", "")
-        symbol = metadata.get("symbol", "")
-        description = metadata.get("description", "")
-        is_spam_ad = any(spam_word in (name + symbol + description).lower() for spam_word in [
-            "pumpdev.io", "pumpapi.io", "switch to", "free pump.fun api", "overpaying 4x"
-        ])
+        name = metadata.get("name", "") or pump_data.get("name", "")
+        symbol = metadata.get("symbol", "") or pump_data.get("symbol", "")
+        description = metadata.get("description", "") or pump_data.get("description", "")
+    else:
+        # Derived from pump_data
+        name = pump_data.get("name", "")
+        symbol = pump_data.get("symbol", "")
+        description = pump_data.get("description", "")
+        token_program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        is_token_2022 = False
+        mint_auth = None
+        freeze_auth = None
+        permanent_delegate = None
 
-        summary = {
-            "mint": mint,
-            "name": name,
-            "symbol": symbol,
-            "description": description,
-            "token_program": token_program,
-            "is_token_2022": is_token_2022,
-            "mint_authority": mint_auth,
-            "freeze_authority": freeze_auth,
-            "permanent_delegate": permanent_delegate,
-            "is_spam_advertisement": is_spam_ad,
-            "has_weaponized_authority": bool(permanent_delegate or freeze_auth)
-        }
-        return json.dumps(summary)
-    except Exception as e:
-        return json.dumps({"error": f"Failed querying DAS getAsset for {mint}: {str(e)}"})
+    # Detect dangerous spam patterns in name/symbol
+    is_spam_ad = any(spam_word in (name + symbol + description).lower() for spam_word in [
+        "pumpdev.io", "pumpapi.io", "switch to", "free pump.fun api", "overpaying 4x"
+    ])
+
+    summary = {
+        "mint": mint,
+        "name": name,
+        "symbol": symbol,
+        "description": description,
+        "token_program": token_program,
+        "is_token_2022": is_token_2022,
+        "mint_authority": mint_auth,
+        "freeze_authority": freeze_auth,
+        "permanent_delegate": permanent_delegate,
+        "is_spam_advertisement": is_spam_ad,
+        "has_weaponized_authority": bool(permanent_delegate or freeze_auth)
+    }
+    return json.dumps(summary)
 
 
 def dexscreener_get_pairs(mint: str) -> str:
@@ -136,7 +199,11 @@ def check_wallet_reserve_floor() -> str:
         JSON string containing the live SOL balance, reserve floor, available buffer, and maximum allowable entry size.
     """
     api_key = os.environ.get("HELIUS_API_KEY") or os.environ.get("BOTSENSAI_HELIUS_API_KEY") or DEFAULT_HELIUS_KEY
-    rpc_url = f"https://mainnet.helius-rpc.com/?api-key={api_key}"
+    rpc_urls = [
+        f"https://mainnet.helius-rpc.com/?api-key={api_key}",
+        "https://api.mainnet-beta.solana.com",
+        "https://solana-rpc.publicnode.com"
+    ]
 
     payload = {
         "jsonrpc": "2.0",
@@ -145,36 +212,43 @@ def check_wallet_reserve_floor() -> str:
         "params": [HOT_WALLET_PUBKEY]
     }
 
-    try:
-        req = urllib.request.Request(
-            rpc_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+    lamports = None
+    for rpc_url in rpc_urls:
+        try:
+            req = urllib.request.Request(
+                rpc_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            if "result" in data:
+                lamports = data.get("result", {}).get("value", 0)
+                break
+        except Exception:
+            continue
 
-        lamports = data.get("result", {}).get("value", 0)
-        sol_bal = lamports / 1_000_000_000
+    if lamports is None:
+        return json.dumps({"error": "Failed checking wallet balance across all RPC endpoints."})
 
-        buffer_above_floor = max(0.0, sol_bal - HARD_FLOOR_SOL)
-        can_trade = buffer_above_floor >= MIN_BUFFER_SOL
+    sol_bal = lamports / 1_000_000_000
 
-        # Dynamic bankroll sizing (25% of available buffer above gas floor, default 0.015-0.025 SOL)
-        max_entry = min(MAX_ALLOC_SOL, max(0.015, buffer_above_floor * 0.25)) if can_trade else 0.0
+    buffer_above_floor = max(0.0, sol_bal - HARD_FLOOR_SOL)
+    can_trade = buffer_above_floor >= MIN_BUFFER_SOL
 
-        return json.dumps({
-            "wallet": HOT_WALLET_PUBKEY,
-            "balance_sol": round(sol_bal, 6),
-            "hard_floor_sol": HARD_FLOOR_SOL,
-            "min_safety_buffer_sol": MIN_BUFFER_SOL,
-            "available_buffer_sol": round(buffer_above_floor, 6),
-            "trading_allowed": can_trade,
-            "max_position_size_sol": round(max_entry, 4),
-            "guard_status": "ENGAGED_DRY_POWDER" if not can_trade else "CAPITAL_CLEAR"
-        })
-    except Exception as e:
-        return json.dumps({"error": f"Failed checking wallet balance: {str(e)}"})
+    # Dynamic bankroll sizing (25% of available buffer above gas floor, default 0.015-0.025 SOL)
+    max_entry = min(MAX_ALLOC_SOL, max(0.015, buffer_above_floor * 0.25)) if can_trade else 0.0
+
+    return json.dumps({
+        "wallet": HOT_WALLET_PUBKEY,
+        "balance_sol": round(sol_bal, 6),
+        "hard_floor_sol": HARD_FLOOR_SOL,
+        "min_safety_buffer_sol": MIN_BUFFER_SOL,
+        "available_buffer_sol": round(buffer_above_floor, 6),
+        "trading_allowed": can_trade,
+        "max_position_size_sol": round(max_entry, 4),
+        "guard_status": "ENGAGED_DRY_POWDER" if not can_trade else "CAPITAL_CLEAR"
+    })
 
 
 def quarantine_dust_token(mint: str, reason: str) -> str:

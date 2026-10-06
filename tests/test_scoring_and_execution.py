@@ -485,3 +485,103 @@ def test_database_execution_signals(tmp_path):
     pending_after = db.pending_signals()
     assert len(pending_after) == 0
 
+
+def test_dead_weight_positions_excluded_from_capacity(tmp_path):
+    import sqlite3
+    import time
+    from infra.executor.jito_executor import JitoLiveExecutor
+
+    db_file = tmp_path / "test_exec.db"
+    with sqlite3.connect(db_file) as conn:
+        conn.execute(
+            """
+            CREATE TABLE live_positions (
+                mint TEXT PRIMARY KEY, symbol TEXT, token_key TEXT,
+                entry_tx_hash TEXT NOT NULL, exit_tx_hash TEXT,
+                amount_token REAL NOT NULL, cost_sol REAL NOT NULL,
+                entry_price_sol REAL NOT NULL, peak_price_sol REAL NOT NULL,
+                last_price_sol REAL NOT NULL, realized_pnl_sol REAL NOT NULL DEFAULT 0.0,
+                opened_at REAL NOT NULL, closed_at REAL, status TEXT NOT NULL DEFAULT 'OPEN',
+                exit_reason TEXT, updated_at REAL NOT NULL
+            );
+            """
+        )
+        now = time.time()
+        # 1 valid active position
+        conn.execute(
+            "INSERT INTO live_positions VALUES ('mint1', 'ACTV', 'solana:mint1', 'tx1', NULL, 100.0, 0.03, 0.0003, 0.0003, 0.0003, 0.0, ?, NULL, 'OPEN', NULL, ?)",
+            (now, now),
+        )
+        # 1 closed position
+        conn.execute(
+            "INSERT INTO live_positions VALUES ('mint2', 'CLSD', 'solana:mint2', 'tx2', 'ex2', 0.0, 0.03, 0.0003, 0.0006, 0.0006, 0.03, ?, ?, 'CLOSED', 'stage1', ?)",
+            (now - 100, now - 50, now - 50),
+        )
+        # 1 dead-weight purged position that has remaining tokens
+        conn.execute(
+            "INSERT INTO live_positions VALUES ('mint3', 'DEAD', 'solana:mint3', 'tx3', 'ex3', 500.0, 0.03, 0.0003, 0.0003, 0.0, 0.0, ?, ?, 'CLOSED', 'dead_weight_purged', ?)",
+            (now - 1000, now - 200, now - 200),
+        )
+        conn.commit()
+
+    executor = JitoLiveExecutor(db_path=db_file, keypair_path=tmp_path / "dummy.json")
+    open_pos = executor._get_open_live_positions()
+    assert len(open_pos) == 1
+    assert open_pos[0]["mint"] == "mint1"
+    assert open_pos[0]["symbol"] == "ACTV"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_does_not_resurrect_closed_positions(tmp_path, monkeypatch):
+    import sqlite3
+    import time
+    from infra.executor.jito_executor import JitoLiveExecutor
+
+    db_file = tmp_path / "test_exec.db"
+    with sqlite3.connect(db_file) as conn:
+        conn.execute(
+            """
+            CREATE TABLE live_positions (
+                mint TEXT PRIMARY KEY, symbol TEXT, token_key TEXT,
+                entry_tx_hash TEXT NOT NULL, exit_tx_hash TEXT,
+                amount_token REAL NOT NULL, cost_sol REAL NOT NULL,
+                entry_price_sol REAL NOT NULL, peak_price_sol REAL NOT NULL,
+                last_price_sol REAL NOT NULL, realized_pnl_sol REAL NOT NULL DEFAULT 0.0,
+                opened_at REAL NOT NULL, closed_at REAL, status TEXT NOT NULL DEFAULT 'OPEN',
+                exit_reason TEXT, updated_at REAL NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE execution_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, token_key TEXT, symbol TEXT,
+                side TEXT, size_native REAL, max_slippage_bps INTEGER, jito_tip_lamports INTEGER,
+                score REAL, as_of REAL, status TEXT, tx_hash TEXT, error TEXT, created_at REAL, executed_at REAL
+            );
+            """
+        )
+        now = time.time()
+        # Insert a closed dead-weight position
+        conn.execute(
+            "INSERT INTO live_positions VALUES ('dead_mint', 'DEAD', 'solana:dead_mint', 'tx_dead', 'ex_dead', 10000.0, 0.03, 0.0003, 0.0003, 0.0, 0.0, ?, ?, 'CLOSED', 'dead_weight_purged', ?)",
+            (now - 1200, now - 100, now - 100),
+        )
+        conn.commit()
+
+    executor = JitoLiveExecutor(db_path=db_file, keypair_path=tmp_path / "dummy.json")
+    # Mock keypair and balances: simulate wallet still holding the 10000.0 tokens on-chain
+    executor.keypair = object()  # non-None dummy
+    monkeypatch.setattr(executor, "get_all_token_balances", lambda: {"dead_mint": 10000.0})
+
+    await executor.reconcile_on_chain_holdings()
+
+    with sqlite3.connect(db_file) as conn:
+        row = conn.execute("SELECT status, exit_reason FROM live_positions WHERE mint = 'dead_mint'").fetchone()
+        assert row[0] == "CLOSED"
+        assert row[1] == "dead_weight_purged"
+
+    open_pos = executor._get_open_live_positions()
+    assert len(open_pos) == 0
+
+
