@@ -71,6 +71,8 @@ class JitoLiveExecutor:
             os.getenv("BOTSENSAI_SOLANA_RPC_URL"),
             os.getenv("HELIUS_RPC_URL"),
             os.getenv("BOTSENSAI_HELIUS_FALLBACK_RPC_URL"),
+            "https://solana-rpc.publicnode.com",
+            "https://rpc.ankr.com/solana",
             "https://api.mainnet-beta.solana.com",
         ]:
             if cand and cand not in self.rpc_urls:
@@ -90,6 +92,7 @@ class JitoLiveExecutor:
                     return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as he:
                 if he.code == 429:
+                    time.sleep(0.15)
                     continue
                 continue
             except Exception:
@@ -890,11 +893,15 @@ class JitoLiveExecutor:
                             conn.commit()
 
             # 2. Check if any OPEN position has actually been closed on-chain
+            now_ts = time.time()
             with sqlite3.connect(self.db_path) as conn:
                 open_rows = conn.execute(
-                    "SELECT mint, symbol, amount_token FROM live_positions WHERE status = 'OPEN'"
+                    "SELECT mint, symbol, amount_token, opened_at FROM live_positions WHERE status = 'OPEN'"
                 ).fetchall()
-                for (open_mint, open_sym, open_amt) in open_rows:
+                for (open_mint, open_sym, open_amt, opened_at) in open_rows:
+                    if (now_ts - (opened_at or now_ts)) < 60.0:
+                        # Grace period: newly opened position still indexing across RPC nodes
+                        continue
                     cur_bal = balances.get(open_mint)
                     if cur_bal is None or cur_bal <= 1.0:
                         # Dedicated verification before closing to prevent false closures
@@ -908,7 +915,7 @@ class JitoLiveExecutor:
                         else:
                             conn.execute(
                                 "UPDATE live_positions SET amount_token = ?, updated_at = ? WHERE mint = ?",
-                                (direct_bal, time.time(), open_mint),
+                                (direct_bal, now_ts, open_mint),
                             )
                             conn.commit()
         except Exception as e:
@@ -999,11 +1006,12 @@ class JitoLiveExecutor:
             if now - self._exit_attempt_times.get(mint, 0.0) < 45.0:
                 continue
 
-            # Check actual on-chain token balance
-            actual_token_bal = self.get_token_balance(mint)
-            if actual_token_bal <= 0.0:
-                self._record_live_sell(mint=mint, exit_tx_hash="onchain_zero", exit_reason="balance_zeroed")
-                continue
+            # Check actual on-chain token balance (protect newly opened positions with 60s RPC indexing grace period)
+            if age_seconds >= 60.0:
+                actual_token_bal = self.get_token_balance(mint)
+                if actual_token_bal <= 0.0:
+                    self._record_live_sell(mint=mint, exit_tx_hash="onchain_zero", exit_reason="balance_zeroed")
+                    continue
 
             curr_px = self._fetch_live_price(mint)
             if curr_px <= 0:
