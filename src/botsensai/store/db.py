@@ -1794,6 +1794,14 @@ class Database:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def count_pending_signals(self, side: str = "BUY") -> int:
+        """Count active pending signals awaiting execution."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM execution_signals WHERE side = ? AND status = 'PENDING'",
+            (side,),
+        ).fetchone()
+        return int(row[0]) if row else 0
+
     def update_signal_status(
         self,
         signal_id: int,

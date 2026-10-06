@@ -51,6 +51,7 @@ MIN_TOTAL_FLOOR_SOL = MIN_WALLET_RESERVE_SOL + MIN_RESERVE_BUFFER_SOL  # 0.0135 
 MAX_POSITION_SIZE_SOL = 0.075   # Concentrated high-conviction sizing for whale confluence / sure-fire runners
 DEFAULT_POSITION_SIZE_SOL = 0.035
 MAX_SLIPPAGE_BPS = 350         # 3.5% maximum slippage protection for fast meme runners
+MAX_CONCURRENT_POSITIONS = 3   # Strict portfolio capacity: concentrated 3 slots max
 
 
 class JitoLiveExecutor:
@@ -404,6 +405,27 @@ class JitoLiveExecutor:
         # LIVE EXECUTION PATH: Strict Capital Preservation Floor & Concentrated Sizing
         wallet_balance = self.get_wallet_balance_sol()
         if side == "BUY":
+            # 1. Strict Portfolio Capacity Gate (Concentrated 3 Slots Max)
+            open_positions = self._get_open_live_positions()
+            if len(open_positions) >= MAX_CONCURRENT_POSITIONS:
+                warn = f"Capacity Gate: Already holding {len(open_positions)}/{MAX_CONCURRENT_POSITIONS} active positions. BUY blocked."
+                print(f"[EXECUTOR] 🛑 {warn}")
+                self.update_signal_status(sig_id, status="BLOCKED", error=warn)
+                return
+
+            # 2. Duplicate Mint & Anti-Sybil Symbol Protection
+            if any(p.get("mint") == mint for p in open_positions):
+                warn = f"Duplicate Mint Gate: Already holding {mint[:8]}... BUY blocked."
+                print(f"[EXECUTOR] 🛑 {warn}")
+                self.update_signal_status(sig_id, status="BLOCKED", error=warn)
+                return
+
+            if symbol and symbol != "TOKEN" and any(p.get("symbol") == symbol for p in open_positions):
+                warn = f"Duplicate Symbol Gate: Already holding {symbol} ({mint[:8]}...). BUY blocked."
+                print(f"[EXECUTOR] 🛑 {warn}")
+                self.update_signal_status(sig_id, status="BLOCKED", error=warn)
+                return
+
             if wallet_balance < MIN_TOTAL_FLOOR_SOL:
                 warn = (
                     f"Operational Gas Floor Protected: Balance {wallet_balance:.4f} SOL is below "
