@@ -687,7 +687,12 @@ class Pipeline:
         # 1. Evaluate real-time smart money participation & multi-alpha consensus
         trades = self.db.trades_as_of(launch.token.key, result.as_of)
         buyer_wallets = [t.wallet for t in trades if t.wallet and getattr(t.side, "value", str(t.side)).lower() == "buy"]
-        if buyer_wallets:
+        holder_records = self.db.holders_as_of(launch.token.key, result.as_of)
+        holder_wallets = [h.wallet for h in holder_records if h.wallet]
+        candidate_wallets = list(dict.fromkeys(buyer_wallets + holder_wallets))
+
+        matched: list[str] = []
+        if candidate_wallets:
             try:
                 import json, os, sqlite3
                 if getattr(self, "wallet_weights", None) is None:
@@ -702,9 +707,10 @@ class Pipeline:
                             ):
                                 w, skill, wr, runners, typ_sz = row
                                 weight = max(0.9, float(skill or 0.7) * (1.0 + float(wr or 0.5) * 0.5))
-                                if runners and runners > 10:
-                                    weight *= 1.30
-                                self.wallet_weights[w] = min(2.5, weight)
+                                # Whales with proven 1000%+ runner track records receive top weight
+                                if runners and runners >= 5:
+                                    weight *= 1.45
+                                self.wallet_weights[w] = min(3.0, weight)
                     except Exception:
                         pass
 
@@ -727,15 +733,15 @@ class Pipeline:
                                 self.wallet_weights.update(content)
                             break
 
-                matched = [w for w in buyer_wallets if w in self.wallet_weights]
+                matched = [w for w in candidate_wallets if w in self.wallet_weights]
                 if matched:
                     weights = [self.wallet_weights[w] for w in matched]
                     # Hyper-Confluence Trigger: Multiple Elite Alpha Whales
                     if len(matched) >= 2:
-                        boost = 0.55 * max(weights)
-                        result.composite = min(1.0, max(result.composite + boost, 0.985))
+                        boost = 0.60 * max(weights)
+                        result.composite = min(1.0, max(result.composite + boost, 0.990))
                     else:
-                        boost = 0.40 * weights[0]
+                        boost = 0.45 * weights[0]
                         result.composite = min(1.0, result.composite + boost)
 
                     # Consensus override: If top profitable traders enter, clear trivial vetoes
@@ -747,20 +753,39 @@ class Pipeline:
             except Exception:
                 pass
 
-        # Zero-Latency Alpha Sieve: Require smart money copy-trade confirmation unless score is extraordinary
-        matched_count = len(matched) if "matched" in locals() and matched else 0
-        if matched_count == 0 and result.composite < 0.95:
-            return "skip: no verified smart money copy-trade detected & score < 0.95 (waiting for sure things)"
-
-        # 2. Gate entry on the boosted conviction score
-        ok, reason = self.scorer.should_enter(result)
-        if not ok:
-            return f"skip: {reason}"
-
+        # 2. Hard Holder Breadth Rail: Strictly reject tokens with small holder base
+        # 1000% mega-runners require distributed community breadth to absorb profit taking.
         snapshots = self.db.snapshots_as_of(launch.token.key, result.as_of)
         if not snapshots:
             return "skip: no market snapshot"
         latest = snapshots[-1]
+
+        token_age_sec = (result.as_of - launch.created_at).total_seconds()
+        holder_count = latest.holder_count if latest is not None else None
+        distinct_buyers = len(set(buyer_wallets))
+        known_holders = len(holder_wallets)
+
+        if holder_count is not None:
+            if holder_count < 85:
+                return f"skip: holder count too low ({holder_count} < 85) - small holder tokens prone to single-seller rugs"
+            if token_age_sec >= 300 and holder_count < 120:
+                return f"skip: holder count too low for age ({holder_count} < 120 at {token_age_sec:.0f}s)"
+            if token_age_sec >= 600 and holder_count < 200:
+                return f"skip: holder count too low for age ({holder_count} < 200 at {token_age_sec:.0f}s)"
+        else:
+            # If snapshot holder_count is absent, enforce on distinct on-chain buyers & enriched holders
+            if distinct_buyers < 35 and known_holders < 20:
+                return f"skip: buyer/holder breadth too small ({distinct_buyers} buyers, {known_holders} holders < 35 threshold) - waiting for distributed community"
+
+        # 3. Zero-Latency Alpha Sieve: Require smart money copy-trade confirmation unless score is extraordinary
+        matched_count = len(matched) if "matched" in locals() and matched else 0
+        if matched_count == 0 and result.composite < 0.98:
+            return "skip: no verified smart money copy-trade detected & score < 0.98 (focusing strictly on smart wallet copy trades)"
+
+        # 4. Gate entry on the boosted conviction score
+        ok, reason = self.scorer.should_enter(result)
+        if not ok:
+            return f"skip: {reason}"
 
         # Dynamic Sizing: Method 6 Multi-Wallet Smart Trader Confluence Multiplier (Aggressive Sure Winners)
         matched_count = len(matched) if "matched" in locals() and matched else 0
@@ -768,7 +793,7 @@ class Pipeline:
         if matched_count >= 2:
             # Alpha Confluence: Multiple verified whales buying simultaneously -> Aggressive max sizing
             effective_max_pos = min(0.075, base_max_pos * 1.50)
-            result.composite = min(1.0, max(result.composite, 0.985))
+            result.composite = min(1.0, max(result.composite, 0.990))
             # Record smart money confluence events for copy-trading tracking
             try:
                 for w in matched:
@@ -780,15 +805,15 @@ class Pipeline:
                         trader_skill=float(self.wallet_weights.get(w, 0.85)),
                         trader_win_rate=0.85,
                         trader_buy_sol=0.045,
-                        entry_delay_seconds=age if "age" in locals() else 0.0,
-                        conviction_boost=0.55,
+                        entry_delay_seconds=token_age_sec,
+                        conviction_boost=0.60,
                         recommended_size_sol=effective_max_pos,
                     )
             except Exception:
                 pass
         elif matched_count == 1:
             # Single Verified Elite Smart Whale -> High conviction copy trade
-            effective_max_pos = min(0.050, base_max_pos * 1.15)
+            effective_max_pos = min(0.055, base_max_pos * 1.25)
             try:
                 self.db.record_copy_trade_event(
                     token_key=launch.token.key,
@@ -798,13 +823,13 @@ class Pipeline:
                     trader_skill=float(self.wallet_weights.get(matched[0], 0.85)),
                     trader_win_rate=0.85,
                     trader_buy_sol=0.035,
-                    entry_delay_seconds=age if "age" in locals() else 0.0,
-                    conviction_boost=0.40,
+                    entry_delay_seconds=token_age_sec,
+                    conviction_boost=0.45,
                     recommended_size_sol=effective_max_pos,
                 )
             except Exception:
                 pass
-        elif result.composite >= 0.95:
+        elif result.composite >= 0.98:
             # Generational Outlier Sure Winner
             effective_max_pos = min(0.065, base_max_pos * 1.35)
         else:

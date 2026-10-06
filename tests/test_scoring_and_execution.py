@@ -173,6 +173,29 @@ def test_kill_switch_short_circuits_everything():
     assert vetoes == [VetoReason.KILL_SWITCH]
 
 
+def test_holder_count_vetoes_small_holder_bases():
+    """Tokens with a small number of holders must be vetoed to avoid illiquid traps and single-seller rugs."""
+    from datetime import timedelta
+    engine = VetoEngine()
+    ctx = context_for("organic", seed=8)
+
+    # Token with fewer than 85 holders is immediately vetoed
+    ctx.snapshots[-1].holder_count = 50
+    vetoes = engine.evaluate(ctx, [])
+    assert VetoReason.HOLDERS_TOO_LOW_FOR_AGE in vetoes
+
+    # Token with 100 holders at age >= 300s is vetoed
+    ctx.snapshots[-1].holder_count = 100
+    ctx.snapshots[-1].as_of = ctx.launch.created_at + timedelta(seconds=400)
+    vetoes = engine.evaluate(ctx, [])
+    assert VetoReason.HOLDERS_TOO_LOW_FOR_AGE in vetoes
+
+    # Token with 500 holders passes holder breadth check
+    ctx.snapshots[-1].holder_count = 500
+    vetoes = engine.evaluate(ctx, [])
+    assert VetoReason.HOLDERS_TOO_LOW_FOR_AGE not in vetoes
+
+
 # --------------------------------------------------------------------------- #
 # sizing
 # --------------------------------------------------------------------------- #

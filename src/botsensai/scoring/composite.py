@@ -372,13 +372,15 @@ class VetoEngine:
         if ctx.age_seconds < risk_min_age:
             vetoes.append(VetoReason.AGE_BELOW_FLOOR)
             
-        if (
-            latest is not None 
-            and ctx.age_seconds >= 600  # 10 minutes
-            and latest.holder_count is not None 
-            and latest.holder_count <= 100
-        ):
-            vetoes.append(VetoReason.HOLDERS_TOO_LOW_FOR_AGE)
+        # Hard Holder Breadth Rail: Strictly reject tokens with small holder counts.
+        # Mega-runners (1000%+) require wide organic holder distribution to absorb whale profit-taking.
+        if latest is not None and latest.holder_count is not None:
+            if latest.holder_count < 85:
+                vetoes.append(VetoReason.HOLDERS_TOO_LOW_FOR_AGE)
+            elif ctx.age_seconds >= 300 and latest.holder_count < 120:
+                vetoes.append(VetoReason.HOLDERS_TOO_LOW_FOR_AGE)
+            elif ctx.age_seconds >= 600 and latest.holder_count < 200:
+                vetoes.append(VetoReason.HOLDERS_TOO_LOW_FOR_AGE)
             
         return vetoes
 

@@ -1027,64 +1027,72 @@ class JitoLiveExecutor:
             is_partial = False
             exit_reason = ""
 
-            # Method 2 Upgraded: The +500% to +5000% Multi-Stage Mega-Runner Engine
+            # Method 2 Upgraded: The +1000% to +10,000% Mega-Runner Engine
             # Stage 1 at 2.00x (+100% gain Milestone): Sell 50% of tokens
             # (Reclaims exactly 100% of initial SOL capital into pure liquid cash. Remaining 50% is a 100% risk-free Immortal Moonbag!)
             if multiple >= 2.00 and "stage1" not in prev_exit_reason:
                 sell_amount = "50%"
                 is_partial = True
                 exit_reason = f"stage1_take_profit_{multiple:.2f}x"
-            # Stage 2 at 5.0x (+500% gain Milestone): Sell 35% of remaining moonbag
+            # Stage 2 at 5.0x (+400% to +500% gain Milestone): Sell 30% of remaining moonbag
             elif multiple >= 5.0 and "stage1" in prev_exit_reason and "stage2" not in prev_exit_reason:
-                sell_amount = "35%"
+                sell_amount = "30%"
                 is_partial = True
                 exit_reason = f"stage2_take_profit_{multiple:.2f}x"
-            # Stage 3 at 10.0x (+1000% gain Milestone): Sell 40% of remaining moonbag
+            # Stage 3 at 10.0x (+1000% gain RUNNER MILESTONE! 🎯): Sell 40% of remaining moonbag
             elif multiple >= 10.0 and "stage2" in prev_exit_reason and "stage3" not in prev_exit_reason:
                 sell_amount = "40%"
                 is_partial = True
                 exit_reason = f"stage3_take_profit_{multiple:.2f}x"
-            # Stage 4 at 50.0x (+5000% gain Super-Runner Milestone): Sell 50% of remaining moonbag
-            elif multiple >= 50.0 and "stage3" in prev_exit_reason and "stage4" not in prev_exit_reason:
-                sell_amount = "50%"
+            # Stage 4 at 25.0x (+2500% gain Milestone): Sell 40% of remaining moonbag
+            elif multiple >= 25.0 and "stage3" in prev_exit_reason and "stage4" not in prev_exit_reason:
+                sell_amount = "40%"
                 is_partial = True
                 exit_reason = f"stage4_take_profit_{multiple:.2f}x"
-            # Moonbag Trailing Volatility Shield (after Stage 1): 40% buffer off peak once peak >= 2.50x
-            elif "stage1" in prev_exit_reason and peak_multiple >= 2.50 and (curr_px <= peak_px * 0.60):
-                sell_amount = "100%"
-                is_partial = False
-                exit_reason = f"moonbag_trailing_stop_40pct_off_peak_{peak_multiple:.2f}x"
+            # Stage 5 at 50.0x (+5000% to +10,000% Super-Runner God Candle): Sell 50% of remaining moonbag
+            elif multiple >= 50.0 and "stage4" in prev_exit_reason and "stage5" not in prev_exit_reason:
+                sell_amount = "50%"
+                is_partial = True
+                exit_reason = f"stage5_take_profit_{multiple:.2f}x"
+            # Moonbag Trailing Volatility Shield (after Stage 1):
+            # Only trigger trailing stop after coin has surged to at least 6.00x,
+            # and require a wide 65% cushion off peak (curr_px <= peak_px * 0.35).
+            # Partial sell 50% of moonbag so a core runner slice stays active!
+            elif "stage1" in prev_exit_reason and peak_multiple >= 6.00 and (curr_px <= peak_px * 0.35) and "moonbag_trail" not in prev_exit_reason:
+                sell_amount = "50%"
+                is_partial = True
+                exit_reason = f"moonbag_trail_65pct_off_peak_{peak_multiple:.2f}x"
             # Moonbag Dead-Curve Stagnation Recycler (after Stage 1):
-            # If a post-stage1 moonbag has been flat/dormant for > 45 minutes with dead volume (< $100 5m vol),
-            # harvest remaining moonbag equity and close ATA to sweep rent back into liquid cash for fresh entries.
-            elif "stage1" in prev_exit_reason and age_seconds >= 2700:
+            # Give moonbags at least 6 hours (21,600s) to consolidate, establish social narrative, and run!
+            # Only recycle dead curves if 5m volume is < $50 and coin is dormant for > 6 hours.
+            elif "stage1" in prev_exit_reason and age_seconds >= 21600:
                 vol_5m = self._fetch_live_5m_volume(mint)
-                if vol_5m < 100:
+                if vol_5m < 50:
                     sell_amount = "100%"
                     is_partial = False
-                    exit_reason = f"moonbag_dead_curve_recycler_{int(age_seconds/60)}m_vol_${int(vol_5m)}"
-            # Breakeven Protection: If coin rallied >= 1.45x and retraces to <= 1.05x, lock in breakeven before decaying
-            elif "stage1" not in prev_exit_reason and peak_multiple >= 1.45 and multiple <= 1.05:
+                    exit_reason = f"moonbag_dead_curve_recycler_{int(age_seconds/3600)}h_vol_${int(vol_5m)}"
+            # Breakeven Protection: If coin rallied >= 1.75x and retraces to <= 1.05x, lock in breakeven before decaying
+            elif "stage1" not in prev_exit_reason and peak_multiple >= 1.75 and multiple <= 1.05:
                 sell_amount = "100%"
                 is_partial = False
                 exit_reason = f"breakeven_protection_{peak_multiple:.2f}x_peak_retrace_{multiple:.2f}x"
-            # Pre-Stage 1 Anti-Shakeout Trailing Stop: 35% buffer off peak (only active after reaching >= 1.50x)
-            elif "stage1" not in prev_exit_reason and peak_multiple >= 1.50 and (curr_px <= peak_px * 0.65):
+            # Pre-Stage 1 Anti-Shakeout Trailing Stop: 45% buffer off peak (only active after reaching >= 1.75x)
+            elif "stage1" not in prev_exit_reason and peak_multiple >= 1.75 and (curr_px <= peak_px * 0.55):
                 sell_amount = "100%"
                 is_partial = False
-                exit_reason = f"trailing_stop_35pct_off_peak_{peak_multiple:.2f}x"
-            # Method 5: Fast Stagnation Recycler (reclaim dead capital from non-movers)
+                exit_reason = f"trailing_stop_45pct_off_peak_{peak_multiple:.2f}x"
+            # Pre-Stage 1 Stagnation Recycler: Give setups 15 minutes (900s) to build volume rather than cutting after 5m!
             elif (
                 "stage1" not in prev_exit_reason
                 and (
-                    (age_seconds >= 330 and multiple < 1.05 and self._fetch_live_5m_volume(mint) < 300)
-                    or (age_seconds >= 720 and multiple < 0.90)
+                    (age_seconds >= 900 and multiple < 1.05 and self._fetch_live_5m_volume(mint) < 150)
+                    or (age_seconds >= 1800 and multiple < 0.85)
                 )
             ):
                 vol_5m = self._fetch_live_5m_volume(mint)
                 sell_amount = "100%"
                 is_partial = False
-                exit_reason = f"5m_stagnation_recycler (age {age_seconds/60:.1f}m, vol ${vol_5m:.0f})"
+                exit_reason = f"15m_stagnation_recycler (age {age_seconds/60:.1f}m, vol ${vol_5m:.0f})"
 
             if exit_reason:
                 print(f"\n[EXECUTOR] 🎯 Live Exit Triggered for ${symbol}: {exit_reason} (Sell Amount: {sell_amount})")
@@ -1107,7 +1115,13 @@ class JitoLiveExecutor:
                             rem_token_bal = self.get_token_balance(mint)
                             if is_partial and rem_token_bal > 0:
                                 # Update position with remaining tokens and reduced cost basis
-                                new_cost = cost_sol * (0.50 if "stage1" in exit_reason else 0.65 if "stage2" in exit_reason else 0.60 if "stage3" in exit_reason else 0.50)
+                                new_cost = cost_sol * (
+                                    0.50 if "stage1" in exit_reason
+                                    else 0.70 if "stage2" in exit_reason
+                                    else 0.60 if "stage3" in exit_reason
+                                    else 0.60 if "stage4" in exit_reason
+                                    else 0.50
+                                )
                                 combined_reason = f"{prev_exit_reason}+{exit_reason}" if prev_exit_reason else exit_reason
                                 with sqlite3.connect(self.db_path) as conn:
                                     conn.execute(
@@ -1122,7 +1136,7 @@ class JitoLiveExecutor:
                                         (rem_token_bal, new_cost, combined_reason, time.time(), mint),
                                     )
                                     conn.commit()
-                                print(f"[EXECUTOR] 🚀 Staged Profit Locked for ${symbol}! Remaining Moonbag: {rem_token_bal:,.2f} tokens (Targeting +500% to +5000%!)")
+                                print(f"[EXECUTOR] 🚀 Staged Profit Locked for ${symbol}! Remaining Moonbag: {rem_token_bal:,.2f} tokens (Targeting +1000% to +10,000%!)")
                             else:
                                 self._record_live_sell(mint=mint, exit_tx_hash=sig, exit_reason=exit_reason)
                         else:
