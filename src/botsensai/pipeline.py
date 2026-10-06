@@ -764,7 +764,7 @@ class Pipeline:
                         result.composite = min(1.0, result.composite + boost)
                         # Floor at 0.92 only for already-strong tokens
                         result.composite = min(1.0, max(result.composite, 0.92))
-                    elif len(matched) >= 1 and pre_boost >= 0.65:
+                    elif len(matched) >= 1 and pre_boost >= 0.75:
                         boost = 0.25 * weights[0]
                         result.composite = min(1.0, result.composite + boost)
 
