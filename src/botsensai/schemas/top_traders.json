@@ -1,21 +1,529 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Top Traders",
-  "type": "object",
-  "properties": {
-    "traders": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "mint": { "type": "string" },
-          "mid_rise_score": { "type": "integer", "minimum": 0 },
-          "score": { "type": "number" },
-          "name": { "type": "string" }
-        },
-        "required": ["mint", "mid_rise_score"]
-      }
+  "traders": [
+    {
+      "rank": 1,
+      "mint": "HYwLkDxZBqKt7AaTDy92qGqHFfSfTXWXbU4Y8VSxsons",
+      "symbol": "ASTREUS",
+      "name": "Astreus Ai",
+      "mid_rise_score": 98,
+      "score": 0.9771,
+      "type": "token_mint"
+    },
+    {
+      "rank": 2,
+      "mint": "HYwLkDxZBqKt7AaTDy92qGqHFfSfTXWXbU4Y8VSxsons",
+      "symbol": "ASTREUS",
+      "name": "Astreus Ai",
+      "mid_rise_score": 98,
+      "score": 0.9771,
+      "type": "token_mint"
+    },
+    {
+      "rank": 3,
+      "mint": "EGRMhV89K8Ho8Pc8SW6reSeKJS2nhBoPpY34mm3fpump",
+      "symbol": "SLOPTHAT",
+      "name": "SlopThat TV",
+      "mid_rise_score": 97,
+      "score": 0.9692,
+      "type": "token_mint"
+    },
+    {
+      "rank": 4,
+      "mint": "8MzwdohoQVPuCfG5w82gvF6HDHsw7qDyqDLQ6iSGpump",
+      "symbol": "PGCAT",
+      "name": "Pigasso Cat",
+      "mid_rise_score": 95,
+      "score": 0.9517,
+      "type": "token_mint"
+    },
+    {
+      "rank": 5,
+      "mint": "EhdDGhrbYs2SGaYxyoxy27ZHzzfMFg9uutUDiEQDDph7",
+      "symbol": "HERDSOL",
+      "name": "Herd Agent",
+      "mid_rise_score": 95,
+      "score": 0.9507,
+      "type": "token_mint"
+    },
+    {
+      "rank": 6,
+      "mint": "2EFsmvj3QBtKKToDkQVyCuL5xMfmhzizptcgzhDCpump",
+      "symbol": "CHALIKIRK",
+      "name": "Cha Li Kirk",
+      "mid_rise_score": 95,
+      "score": 0.9494,
+      "type": "token_mint"
+    },
+    {
+      "rank": 7,
+      "mint": "22EbhAzC9QxX4wtV3A5AnAdjpXw35qSWFuph8QSCpump",
+      "symbol": "CREPEST",
+      "name": "CrepeStocks",
+      "mid_rise_score": 95,
+      "score": 0.948,
+      "type": "token_mint"
+    },
+    {
+      "rank": 8,
+      "mint": "3mvLmcFvjEV82G8UKE4oCwdVzx8yRz4g49De6UhQpump",
+      "symbol": "CHINABASED",
+      "name": "CHINA BASED \u5e02\u6c11",
+      "mid_rise_score": 95,
+      "score": 0.9475,
+      "type": "token_mint"
+    },
+    {
+      "rank": 9,
+      "mint": "4jz8BmTFjRApCYRhY8RHrrd7t9xHZZyc9dXuj75spump",
+      "symbol": "CHINAINU",
+      "name": "CHINA INU",
+      "mid_rise_score": 95,
+      "score": 0.9475,
+      "type": "token_mint"
+    },
+    {
+      "rank": 10,
+      "mint": "3b9LvAxTaAZk2Y857UpMDkf8XFaFedo4DaKZXmrZpump",
+      "symbol": "SPHINX",
+      "name": "Sphinx Cat",
+      "mid_rise_score": 95,
+      "score": 0.9472,
+      "type": "token_mint"
+    },
+    {
+      "rank": 11,
+      "mint": "GAExL2zTrSP56BunUKKrmemdvTFcXtQHBS3Np6bGpump",
+      "symbol": "$ASSCAT",
+      "name": "Assasin Cat",
+      "mid_rise_score": 95,
+      "score": 0.9466,
+      "type": "token_mint"
+    },
+    {
+      "rank": 12,
+      "mint": "HRN6e7Bt4jKUkTTcUYhpWng7p58Yi6JZNaxRXUPzpump",
+      "symbol": "PTSCAT",
+      "name": "Post Traumatic Stress Cat",
+      "mid_rise_score": 95,
+      "score": 0.9465,
+      "type": "token_mint"
+    },
+    {
+      "rank": 13,
+      "mint": "D2HU2GG2rgJLi7pnhTQ1TdMCqkKx9BZyYd3UPT3keiuA",
+      "symbol": "DOUBLESTRE",
+      "name": "Double Stretch",
+      "mid_rise_score": 95,
+      "score": 0.9462,
+      "type": "token_mint"
+    },
+    {
+      "rank": 14,
+      "mint": "A3CMZ2o6s9WiAKVnS1hdv5WSy2NjyweJhVnYzgVkpump",
+      "symbol": "NOTPAID",
+      "name": "NOTPAID / SOL",
+      "mid_rise_score": 95,
+      "score": 0.9457,
+      "type": "token_mint"
+    },
+    {
+      "rank": 15,
+      "mint": "74mMJ2N6aeHTeMo6jw6VjnRRPjz2rp7Lw12R4ijfpump",
+      "symbol": "$GROKBOTG",
+      "name": "GROK BOT GALAXY",
+      "mid_rise_score": 94,
+      "score": 0.9448,
+      "type": "token_mint"
+    },
+    {
+      "rank": 16,
+      "mint": "AsMXC5cKP1s3Peebq7yyKdpq4h115KLBVXNjefuqpump",
+      "symbol": "LINGLONGX",
+      "name": "LINGLONGX / SOL",
+      "mid_rise_score": 94,
+      "score": 0.9438,
+      "type": "token_mint"
+    },
+    {
+      "rank": 17,
+      "mint": "86Jjjq97moBQ1rcYPs8hXo8vXZzuVxpFD6ujnUhopump",
+      "symbol": "CCAT",
+      "name": "CLARITY CAT",
+      "mid_rise_score": 94,
+      "score": 0.9432,
+      "type": "token_mint"
+    },
+    {
+      "rank": 18,
+      "mint": "GSWySJe7u6p4XrRt86v51q2bXFUkts7asmU28MVjpump",
+      "symbol": "BOLT",
+      "name": "Shorting Boeing",
+      "mid_rise_score": 94,
+      "score": 0.9428,
+      "type": "token_mint"
+    },
+    {
+      "rank": 19,
+      "mint": "XcfiSusKYZi3s4x6ussnt8htgAoBTbpXF829vegpump",
+      "symbol": "$CLRT",
+      "name": "$CLRT / SOL",
+      "mid_rise_score": 94,
+      "score": 0.9423,
+      "type": "token_mint"
+    },
+    {
+      "rank": 20,
+      "mint": "BHck6Wj3L3XzCc6LYWAgreZ7eFATVMr7yzbzfuGupump",
+      "symbol": "CATEBR",
+      "name": "CATEBURN",
+      "mid_rise_score": 94,
+      "score": 0.9421,
+      "type": "token_mint"
+    },
+    {
+      "rank": 21,
+      "mint": "9SqdHsibg5mtmFRvqBiwGGyM7EsnfcUercckLt1Qpump",
+      "symbol": "MHA",
+      "name": "MAGNE.AI ",
+      "mid_rise_score": 94,
+      "score": 0.9417,
+      "type": "token_mint"
+    },
+    {
+      "rank": 22,
+      "mint": "5ghR6PfX52F7HqYNTX6Fa8DSWuK1ZFFrYN4zEsSACZj7",
+      "symbol": "PTSCAT",
+      "name": "PTSCAT / SOL",
+      "mid_rise_score": 94,
+      "score": 0.9414,
+      "type": "token_mint"
+    },
+    {
+      "rank": 23,
+      "mint": "AuejGB62E8VwowbBFwhxygD99kCMJ1S4NmwdyU45T3qA",
+      "symbol": "KNOB",
+      "name": "Knob",
+      "mid_rise_score": 94,
+      "score": 0.9414,
+      "type": "token_mint"
+    },
+    {
+      "rank": 24,
+      "mint": "BXzsvf2PnMeyLVDnrkQJUx9Xvxs6tmKFXJYzfavHpump",
+      "symbol": "COLACAT",
+      "name": "COLACAT",
+      "mid_rise_score": 94,
+      "score": 0.9413,
+      "type": "token_mint"
+    },
+    {
+      "rank": 25,
+      "mint": "GSWySJe7u6p4XrRt86v51q2bXFUkts7asmU28MVjpump",
+      "symbol": "BOLT",
+      "name": "Shorting Boeing",
+      "mid_rise_score": 94,
+      "score": 0.941,
+      "type": "token_mint"
+    },
+    {
+      "rank": 26,
+      "wallet": "GpTXmkdvrTajqkzX1fBmC4BUjSboF9dHgfnqPqj8WAc4",
+      "mint": "GpTXmkdvrTajqkzX1fBmC4BUjSboF9dHgfnqPqj8WAc4",
+      "name": "SmartTrader_1",
+      "mid_rise_score": 84,
+      "score": 0.836,
+      "winrate": 83.6,
+      "profit_7d": 88173,
+      "txs_1d": 382,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 27,
+      "wallet": "6gAgy3F1tLxeBWb8UhGEnmXYVRoaz3w1Lzv6APyhfoHk",
+      "mint": "6gAgy3F1tLxeBWb8UhGEnmXYVRoaz3w1Lzv6APyhfoHk",
+      "name": "SmartTrader_2",
+      "mid_rise_score": 90,
+      "score": 0.905,
+      "winrate": 90.5,
+      "profit_7d": 49552,
+      "txs_1d": 213,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 28,
+      "wallet": "8i5U2uNBEuTc4zskYP14zbebDg2RSwrrG8REhEnJb97K",
+      "mint": "8i5U2uNBEuTc4zskYP14zbebDg2RSwrrG8REhEnJb97K",
+      "name": "SmartTrader_3",
+      "mid_rise_score": 83,
+      "score": 0.832,
+      "winrate": 83.2,
+      "profit_7d": 47113,
+      "txs_1d": 165,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 29,
+      "wallet": "D9gQ6RhKEpnobPBUdWY5bPQt2p3zGk3iVz6ChpUi2ArA",
+      "mint": "D9gQ6RhKEpnobPBUdWY5bPQt2p3zGk3iVz6ChpUi2ArA",
+      "name": "SmartTrader_4",
+      "mid_rise_score": 79,
+      "score": 0.788,
+      "winrate": 78.8,
+      "profit_7d": 128875,
+      "txs_1d": 525,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 30,
+      "wallet": "8NJ7Ujpji8uMF2675mqaTSEm2DCbfJA7fiRKtiaqkaLN",
+      "mint": "8NJ7Ujpji8uMF2675mqaTSEm2DCbfJA7fiRKtiaqkaLN",
+      "name": "Danny",
+      "mid_rise_score": 80,
+      "score": 0.805,
+      "winrate": 80.5,
+      "profit_7d": 70093,
+      "txs_1d": 501,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 31,
+      "wallet": "CNudZYFgpbT26fidsiNrWfHeGTBMMeVWqruZXsEkcUPc",
+      "mint": "CNudZYFgpbT26fidsiNrWfHeGTBMMeVWqruZXsEkcUPc",
+      "name": "SmartTrader_6",
+      "mid_rise_score": 79,
+      "score": 0.786,
+      "winrate": 78.6,
+      "profit_7d": 9005,
+      "txs_1d": 27,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 32,
+      "wallet": "GH9yk8vgFvHnAD8JZqXxr3hBN1Lr1mJ9NPzrP5mVqiJe",
+      "mint": "GH9yk8vgFvHnAD8JZqXxr3hBN1Lr1mJ9NPzrP5mVqiJe",
+      "name": "SmartTrader_7",
+      "mid_rise_score": 74,
+      "score": 0.745,
+      "winrate": 74.5,
+      "profit_7d": 21209,
+      "txs_1d": 206,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 33,
+      "wallet": "J56M2D9BeigqKVTNGSegVho8s8d9XtFueFDurN5z9Fxf",
+      "mint": "J56M2D9BeigqKVTNGSegVho8s8d9XtFueFDurN5z9Fxf",
+      "name": "SmartTrader_8",
+      "mid_rise_score": 68,
+      "score": 0.684,
+      "winrate": 68.4,
+      "profit_7d": 80193,
+      "txs_1d": 35,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 34,
+      "wallet": "FVZRwUp6E4m9jV4VumF8q7m8q3mF9fpikRrJSCCfFAdP",
+      "mint": "FVZRwUp6E4m9jV4VumF8q7m8q3mF9fpikRrJSCCfFAdP",
+      "name": "000",
+      "mid_rise_score": 100,
+      "score": 1.0,
+      "winrate": 100,
+      "profit_7d": 3422,
+      "txs_1d": 7,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 35,
+      "wallet": "8vwTtv6SzGdBHrysJ8jmd35KTU7fsi6PhuB78HucJxrK",
+      "mint": "8vwTtv6SzGdBHrysJ8jmd35KTU7fsi6PhuB78HucJxrK",
+      "name": "SmartTrader_10",
+      "mid_rise_score": 71,
+      "score": 0.706,
+      "winrate": 70.6,
+      "profit_7d": 73075,
+      "txs_1d": 10,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 36,
+      "wallet": "5aLY85pyxiuX3fd4RgM3Yc1e3MAL6b7UgaZz6MS3JUfG",
+      "mint": "5aLY85pyxiuX3fd4RgM3Yc1e3MAL6b7UgaZz6MS3JUfG",
+      "name": "SmartTrader_11",
+      "mid_rise_score": 54,
+      "score": 0.539,
+      "winrate": 53.9,
+      "profit_7d": 136746,
+      "txs_1d": 3832,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 37,
+      "wallet": "Ar2Y6o1QmrRAskjii1cRfijeKugHH13ycxW5cd7rro1x",
+      "mint": "Ar2Y6o1QmrRAskjii1cRfijeKugHH13ycxW5cd7rro1x",
+      "name": "SmartTrader_12",
+      "mid_rise_score": 57,
+      "score": 0.573,
+      "winrate": 57.3,
+      "profit_7d": 73059,
+      "txs_1d": 5609,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 38,
+      "wallet": "5hAgYC8TJCcEZV7LTXAzkTrm7YL29YXyQQJPCNrG84zM",
+      "mint": "5hAgYC8TJCcEZV7LTXAzkTrm7YL29YXyQQJPCNrG84zM",
+      "name": "SmartTrader_13",
+      "mid_rise_score": 53,
+      "score": 0.527,
+      "winrate": 52.7,
+      "profit_7d": 40267,
+      "txs_1d": 399,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 39,
+      "wallet": "7moqFjvm2MwAiMtCZoqYoTAPzRBxxMRT2ddyHThQuWjr",
+      "mint": "7moqFjvm2MwAiMtCZoqYoTAPzRBxxMRT2ddyHThQuWjr",
+      "name": "SmartTrader_14",
+      "mid_rise_score": 65,
+      "score": 0.651,
+      "winrate": 65.1,
+      "profit_7d": 22373,
+      "txs_1d": 282,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 40,
+      "wallet": "4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk",
+      "mint": "4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk",
+      "name": "jijo",
+      "mid_rise_score": 53,
+      "score": 0.528,
+      "winrate": 52.8,
+      "profit_7d": 20868,
+      "txs_1d": 286,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 41,
+      "wallet": "6qudAN2kV8mtCcYJxb5QQ6Vr15itdHHdeVbYm99NKMhy",
+      "mint": "6qudAN2kV8mtCcYJxb5QQ6Vr15itdHHdeVbYm99NKMhy",
+      "name": "SmartTrader_16",
+      "mid_rise_score": 65,
+      "score": 0.653,
+      "winrate": 65.3,
+      "profit_7d": 26366,
+      "txs_1d": 321,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 42,
+      "wallet": "BprdjjAzFLoS2gVJqUVR1pdJpwCacNK4kctLTiMmcdSh",
+      "mint": "BprdjjAzFLoS2gVJqUVR1pdJpwCacNK4kctLTiMmcdSh",
+      "name": "SmartTrader_17",
+      "mid_rise_score": 45,
+      "score": 0.447,
+      "winrate": 44.7,
+      "profit_7d": 53932,
+      "txs_1d": 809,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 43,
+      "wallet": "8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ",
+      "mint": "8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ",
+      "name": "SmartTrader_18",
+      "mid_rise_score": 49,
+      "score": 0.494,
+      "winrate": 49.4,
+      "profit_7d": 74622,
+      "txs_1d": 2613,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 44,
+      "wallet": "7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5",
+      "mint": "7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5",
+      "name": "SmartTrader_19",
+      "mid_rise_score": 47,
+      "score": 0.471,
+      "winrate": 47.1,
+      "profit_7d": 99166,
+      "txs_1d": 2247,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 45,
+      "wallet": "3GzBLpxTWWTPWwBYQ8Jgrz5XLUCg9aY6HiB3GEBUBAv6",
+      "mint": "3GzBLpxTWWTPWwBYQ8Jgrz5XLUCg9aY6HiB3GEBUBAv6",
+      "name": "SmartTrader_20",
+      "mid_rise_score": 45,
+      "score": 0.451,
+      "winrate": 45.1,
+      "profit_7d": 46522,
+      "txs_1d": 114,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 46,
+      "wallet": "4fZFcK8ms3bFMpo1ACzEUz8bH741fQW4zhAMGd5yZMHu",
+      "mint": "4fZFcK8ms3bFMpo1ACzEUz8bH741fQW4zhAMGd5yZMHu",
+      "name": "Rilsio",
+      "mid_rise_score": 64,
+      "score": 0.635,
+      "winrate": 63.5,
+      "profit_7d": 24363,
+      "txs_1d": 147,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 47,
+      "wallet": "6HJetMbdHBuk3mLUainxAPpBpWzDgYbHGTS2TqDAUSX2",
+      "mint": "6HJetMbdHBuk3mLUainxAPpBpWzDgYbHGTS2TqDAUSX2",
+      "name": "LJC",
+      "mid_rise_score": 47,
+      "score": 0.472,
+      "winrate": 47.2,
+      "profit_7d": 125357,
+      "txs_1d": 40,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 48,
+      "wallet": "CgmwCcCoF5YNhWrVBz2R2iH4MopfvYLfxLgSZsrnemi6",
+      "mint": "CgmwCcCoF5YNhWrVBz2R2iH4MopfvYLfxLgSZsrnemi6",
+      "name": "Quant",
+      "mid_rise_score": 62,
+      "score": 0.625,
+      "winrate": 62.5,
+      "profit_7d": 10650,
+      "txs_1d": 169,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 49,
+      "wallet": "Gfsk5ZojnHSLoxRhUBD5vviJELFuTGkyBh9QTqEo7Ehg",
+      "mint": "Gfsk5ZojnHSLoxRhUBD5vviJELFuTGkyBh9QTqEo7Ehg",
+      "name": "SmartTrader_24",
+      "mid_rise_score": 67,
+      "score": 0.671,
+      "winrate": 67.1,
+      "profit_7d": 9395,
+      "txs_1d": 5,
+      "type": "smart_wallet"
+    },
+    {
+      "rank": 50,
+      "wallet": "GijFWw4oNyh9ko3FaZforNsi3jk6wDovARpkKahPD4o5",
+      "mint": "GijFWw4oNyh9ko3FaZforNsi3jk6wDovARpkKahPD4o5",
+      "name": "SmartTrader_25",
+      "mid_rise_score": 41,
+      "score": 0.412,
+      "winrate": 41.2,
+      "profit_7d": 50807,
+      "txs_1d": 1286,
+      "type": "smart_wallet"
     }
-  },
-  "required": ["traders"]
+  ]
 }

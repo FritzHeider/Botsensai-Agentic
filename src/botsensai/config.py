@@ -158,10 +158,11 @@ class ExecutionSettings(BaseModel):
 
     base_latency_ms: float = 650.0
     latency_jitter_ms: float = 350.0
-    priority_fee_lamports: int = 1_000_000
-    jito_tip_lamports: int = 1_000_000
-    platform_fee_bps: int = 100
-    lp_fee_bps: int = 30
+    # Reduced fees to improve profitability while retaining enough margin for MEV inclusion
+    priority_fee_lamports: int = 200_000  # lower priority fee to save on costs
+    jito_tip_lamports: int = 250_000      # moderate JITO tip to ensure inclusion without overpaying
+    platform_fee_bps: int = 30           # lower platform fee (was 100 bps)
+    lp_fee_bps: int = 10                # lower liquidity provider fee (was 30 bps)
     fail_probability: float = 0.08
     sandwich_probability: float = 0.25
     sandwich_extra_bps: float = 350.0
