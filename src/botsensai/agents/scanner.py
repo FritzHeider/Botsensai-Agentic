@@ -115,39 +115,49 @@ def fetch_dexscreener_top_solana(limit: int = 100) -> str:
         except Exception:
             continue
 
-    # Also pull from token-profiles (recently profiled tokens)
-    try:
-        req = urllib.request.Request(
-            "https://api.dexscreener.com/token-profiles/latest/v1",
-            headers={"User-Agent": "Botsensai-Scanner/2.0"},
-        )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            profiles = json.loads(resp.read().decode("utf-8"))
-        if isinstance(profiles, list):
-            for prof in profiles[:30]:
-                if prof.get("chainId") != "solana":
-                    continue
-                addr = prof.get("tokenAddress", "")
-                if not addr or addr in seen:
-                    continue
-                # fetch pair data
-                try:
-                    req2 = urllib.request.Request(
-                        f"https://api.dexscreener.com/latest/dex/tokens/{addr}",
-                        headers={"User-Agent": "Botsensai-Scanner/2.0"},
-                    )
-                    with urllib.request.urlopen(req2, timeout=5) as resp2:
-                        pdata = json.loads(resp2.read().decode("utf-8"))
-                    for pair in pdata.get("pairs", [])[:1]:
-                        dex = pair.get("dexId", "")
-                        if dex in ("pumpfun", "pumpswap", "raydium", "orca", "meteora"):
-                            m = pair.get("baseToken", {}).get("address", "")
-                            if m and m not in seen:
-                                seen[m] = pair
-                except Exception:
-                    continue
-    except Exception:
-        pass
+    # Fetch top boosted and latest boosted tokens from DexScreener (top movers & trending winners)
+    boost_urls = [
+        "https://api.dexscreener.com/token-boosts/top/v1",
+        "https://api.dexscreener.com/token-boosts/latest/v1",
+        "https://api.dexscreener.com/token-profiles/latest/v1",
+    ]
+    boost_tokens: list[str] = []
+    for b_url in boost_urls:
+        try:
+            req = urllib.request.Request(
+                b_url, headers={"User-Agent": "Botsensai-Scanner/2.0"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            if isinstance(data, list):
+                for item in data:
+                    if item.get("chainId") == "solana":
+                        addr = item.get("tokenAddress", "")
+                        if addr and addr not in seen and addr not in boost_tokens:
+                            boost_tokens.append(addr)
+        except Exception:
+            continue
+
+    # Batch query boosted tokens in chunks of 30
+    for i in range(0, min(len(boost_tokens), 60), 30):
+        chunk = boost_tokens[i:i + 30]
+        if not chunk:
+            continue
+        try:
+            batch_url = f"https://api.dexscreener.com/latest/dex/tokens/{','.join(chunk)}"
+            req = urllib.request.Request(
+                batch_url, headers={"User-Agent": "Botsensai-Scanner/2.0"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                bdata = json.loads(resp.read().decode("utf-8"))
+            for p in bdata.get("pairs", []):
+                dex = p.get("dexId", "")
+                if dex in ("pumpfun", "pumpswap", "raydium", "orca", "meteora"):
+                    mint = p.get("baseToken", {}).get("address", "")
+                    if mint and mint not in seen:
+                        seen[mint] = p
+        except Exception:
+            continue
 
     # Simplify and enrich each pair
     simplified = []
@@ -318,6 +328,7 @@ def filter_and_rank_candidates(pairs_json: str) -> str:
         candidates.append({
             **p,
             "mid_rise_score": score,
+            "momentum_score": round(min(max(score / 100.0, 0.0), 1.0), 3),
             "score_breakdown": breakdown,
             "buy_ratio_5m": round(buy_ratio_5m, 3),
             "buy_ratio_1h": round(buy_ratio_1h, 3),
