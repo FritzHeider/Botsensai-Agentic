@@ -113,19 +113,20 @@ class XSessionSettings(BaseModel):
 class RiskSettings(BaseModel):
     """Hard limits. These are enforced in the broker, not merely advisory."""
 
-    max_position_native: float = 0.06
-    max_portfolio_exposure_native: float = 2.0
-    max_concurrent_positions: int = 3
-    max_daily_loss_native: float = 0.50
-    max_trades_per_hour: int = 5
-    min_liquidity_usd: float = 8_000.0
-    min_token_age_seconds: float = 60.0
+    # Optimized sizing & capital preservation rails (GEMINI.md compliant)
+    max_position_native: float = 0.025
+    max_portfolio_exposure_native: float = 0.15
+    max_concurrent_positions: int = 4
+    max_daily_loss_native: float = 0.15
+    max_trades_per_hour: int = 6
+    min_liquidity_usd: float = 12_000.0
+    min_token_age_seconds: float = 120.0
     max_token_age_seconds: float = 60 * 60 * 6
-    max_slippage_bps: int = 350
-    stop_loss_pct: float = 0.20
+    max_slippage_bps: int = 250
+    stop_loss_pct: float = 0.15
     take_profit_multiples: list[float] = Field(default_factory=lambda: [2.0, 4.0, 10.0])
     take_profit_fractions: list[float] = Field(default_factory=lambda: [0.50, 0.30, 0.20])
-    trailing_stop_pct: float = 0.25
+    trailing_stop_pct: float = 0.20
     max_hold_seconds: float = 60 * 60 * 6
     kill_switch: bool = False
     expectancy_floor: float = -0.05

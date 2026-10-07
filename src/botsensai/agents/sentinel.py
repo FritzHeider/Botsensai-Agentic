@@ -220,3 +220,31 @@ class BotsensaiSentinelAgent:
                 return future.result(timeout=60)
         else:
             return asyncio.run(self.audit_token(mint))
+
+
+def build_sentinel_subagent_config():
+    """Return SubagentConfig for use inside OrchestratorAgent."""
+    try:
+        from google.antigravity import types
+        if types is not None:
+            return types.SubagentConfig(
+                name="sentinel",
+                description=(
+                    "Autonomous Risk & Alpha Sentinel Agent. Audits candidate Solana meme tokens, "
+                    "verifies on-chain authorities via DAS, assesses DEX liquidity and volume, "
+                    "enforces GEMINI.md capital preservation floor, and returns a TokenRiskReport."
+                ),
+                system_instructions=SENTINEL_SYSTEM_INSTRUCTIONS,
+                tools=[
+                    helius_get_asset,
+                    dexscreener_get_pairs,
+                    check_wallet_reserve_floor,
+                    quarantine_dust_token,
+                ],
+                capabilities=types.SubagentCapabilities(
+                    agent_behavior=types.AgentBehavior.AUTONOMOUS,
+                ),
+            )
+    except Exception:
+        pass
+    return None
