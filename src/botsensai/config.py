@@ -123,10 +123,10 @@ class RiskSettings(BaseModel):
     min_token_age_seconds: float = 120.0
     max_token_age_seconds: float = 60 * 60 * 6
     max_slippage_bps: int = 250
-    stop_loss_pct: float = 0.15
-    take_profit_multiples: list[float] = Field(default_factory=lambda: [2.0, 4.0, 10.0])
+    stop_loss_pct: float = 0.12
+    take_profit_multiples: list[float] = Field(default_factory=lambda: [1.50, 2.20, 4.0])
     take_profit_fractions: list[float] = Field(default_factory=lambda: [0.50, 0.30, 0.20])
-    trailing_stop_pct: float = 0.20
+    trailing_stop_pct: float = 0.15
     max_hold_seconds: float = 60 * 60 * 6
     kill_switch: bool = False
     expectancy_floor: float = -0.05
