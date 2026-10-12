@@ -123,15 +123,15 @@ class RiskSettings(BaseModel):
     min_token_age_seconds: float = 120.0
     max_token_age_seconds: float = 60 * 60 * 6
     max_slippage_bps: int = 250
-    stop_loss_pct: float = 0.12
-    take_profit_multiples: list[float] = Field(default_factory=lambda: [1.50, 2.20, 4.0])
-    take_profit_fractions: list[float] = Field(default_factory=lambda: [0.50, 0.30, 0.20])
+    stop_loss_pct: float = 0.10
+    take_profit_multiples: list[float] = Field(default_factory=lambda: [1.40, 2.00, 4.00, 10.0])
+    take_profit_fractions: list[float] = Field(default_factory=lambda: [0.35, 0.25, 0.20, 0.20])
     trailing_stop_pct: float = 0.15
     max_hold_seconds: float = 60 * 60 * 6
     kill_switch: bool = False
     expectancy_floor: float = -0.05
-    momentum_stop_seconds: float = 120.0
-    momentum_min_gain_pct: float = 0.10
+    momentum_stop_seconds: float = 600.0
+    momentum_min_gain_pct: float = 0.05
     curve_auto_exit_pct: float = 0.98
     use_kelly_sizing: bool = True
     kelly_fraction: float = 0.25
@@ -184,7 +184,7 @@ class ScoringSettings(BaseModel):
     weights_version: str = "v0"
     weights_path: str | None = "config/weights.json"
     min_coverage: float = 0.20
-    entry_threshold: float = 0.75
+    entry_threshold: float = 0.85
     exit_threshold: float = 0.35
     regime_lookback_hours: float = 6.0
     # Graduation-rate thresholds separating hot / normal / dead markets.

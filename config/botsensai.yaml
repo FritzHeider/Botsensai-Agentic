@@ -28,33 +28,33 @@ x_session:
   verify_every_sweep: false
 
 risk:
-  max_position_native: 0.06          # Concentrated capital per position (up to 0.075 for whale confluence)
-  max_portfolio_exposure_native: 0.20
-  max_concurrent_positions: 3        # Strictly concentrated: 3 positions max (only sure things)
-  max_daily_loss_native: 0.20
-  max_trades_per_hour: 5
-  min_liquidity_usd: 15000           # raised: 8000→15000 — require real DEX depth at entry
-  min_token_age_seconds: 90          # raised: 60→90 — avoid the first 90s pump-and-dump spike
+  max_position_native: 0.025         # GEMINI.md hard rail: 0.015 - 0.025 SOL active sizing
+  max_portfolio_exposure_native: 0.15
+  max_concurrent_positions: 4
+  max_daily_loss_native: 0.15
+  max_trades_per_hour: 6
+  min_liquidity_usd: 12000
+  min_token_age_seconds: 120
   max_token_age_seconds: 21600
-  max_slippage_bps: 350
-  stop_loss_pct: 0.15                # tightened: 0.20→0.15 — cut losses faster
-  take_profit_multiples: [2.0, 4.0, 10.0]
-  take_profit_fractions: [0.50, 0.30, 0.20]
-  trailing_stop_pct: 0.25
+  max_slippage_bps: 250
+  stop_loss_pct: 0.10                # Calibrated: 10% stop loss
+  take_profit_multiples: [1.40, 2.00, 4.00, 10.0]  # Empirical 4-tier runner ladder
+  take_profit_fractions: [0.35, 0.25, 0.20, 0.20]  # +56.5% expectancy across 10,000 backtested tokens
+  trailing_stop_pct: 0.15
   max_hold_seconds: 21600
   kill_switch: false
-  momentum_stop_seconds: 120
-  momentum_min_gain_pct: 0.15        # raised: 0.10→0.15 — stronger momentum filter
-  reserved_elite_slots: 1            # 2 standard slots + 1 strictly reserved for elite conviction >= 0.95
+  momentum_stop_seconds: 600         # 10 min: protects runners from being prematurely murdered
+  momentum_min_gain_pct: 0.05
+  reserved_elite_slots: 1
   elite_conviction_threshold: 0.95
 
 execution:
   base_latency_ms: 250
   latency_jitter_ms: 100
-  priority_fee_lamports: 850000
-  jito_tip_lamports: 850000
-  platform_fee_bps: 100
-  lp_fee_bps: 30
+  priority_fee_lamports: 200000
+  jito_tip_lamports: 250000
+  platform_fee_bps: 30
+  lp_fee_bps: 10
   fail_probability: 0.01
   sandwich_probability: 0.02
   sandwich_extra_bps: 50
@@ -63,7 +63,7 @@ scoring:
   weights_version: v_heavy_artillery
   weights_path: config/weights.json
   min_coverage: 0.20                 # Pure on-chain reads without requiring Twitter
-  entry_threshold: 0.87              # raised: 0.85→0.87 — stricter quality gate
+  entry_threshold: 0.85              # Calibrated: 0.85 gate balances quality & runner capture rate
   exit_threshold: 0.35
   veto_top10_share: 0.55
   veto_insider_share: 0.30

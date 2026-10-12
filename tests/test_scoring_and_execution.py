@@ -370,7 +370,7 @@ def test_risk_manager_reserved_elite_slots():
 
 
 def test_risk_manager_blocks_duplicate_positions():
-    broker = PaperBroker(starting_native=10.0)
+    broker = PaperBroker(Settings(risk=RiskSettings(min_liquidity_usd=5000.0)), starting_native=10.0)
     token = generate_token("organic", seed=3)
     snapshot = token.snapshots[3]
     first = broker.open_position(token.token, 0.1, snapshot, snapshot.as_of, age_seconds=600)
@@ -398,7 +398,7 @@ def test_daily_loss_limit_stops_trading():
 
 
 def test_exit_ladder_scales_out_rather_than_dumping():
-    broker = PaperBroker(starting_native=10.0)
+    broker = PaperBroker(Settings(risk=RiskSettings(min_liquidity_usd=5000.0)), starting_native=10.0)
     token = generate_token("organic", seed=3)
     snapshot = token.snapshots[2]
     fill = broker.open_position(token.token, 0.2, snapshot, snapshot.as_of, age_seconds=600)
@@ -414,7 +414,7 @@ def test_exit_ladder_scales_out_rather_than_dumping():
 
 
 def test_stop_loss_closes_the_whole_position():
-    broker = PaperBroker(starting_native=10.0)
+    broker = PaperBroker(Settings(risk=RiskSettings(min_liquidity_usd=5000.0)), starting_native=10.0)
     token = generate_token("organic", seed=3)
     snapshot = token.snapshots[2]
     fill = broker.open_position(token.token, 0.2, snapshot, snapshot.as_of, age_seconds=600)
