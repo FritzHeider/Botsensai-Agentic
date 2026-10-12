@@ -263,9 +263,9 @@ class JitoLiveExecutor:
         last_err = "No error"
         for pool_type in pools_to_try:
             payload["pool"] = pool_type
-            # For AMM pools experiencing high velocity, calibrate slippage to avoid 6004 ExceededSlippage
+            # For AMM pools experiencing high velocity (>1,000 txns/5m), calibrate slippage to avoid 6004 ExceededSlippage
             if pool_type in ("pump-amm", "raydium", "auto"):
-                payload["slippage"] = max(base_slippage_pct, 10.0)
+                payload["slippage"] = max(base_slippage_pct, 15.0)
             else:
                 payload["slippage"] = min(base_slippage_pct, 3.5)
 
