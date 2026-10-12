@@ -87,26 +87,67 @@ def signal_pipeline_entry(
         JSON with status and any pipeline error.
     """
     try:
-        # Import pipeline lazily to avoid circular import
-        from botsensai.pipeline import Pipeline  # noqa: PLC0415
+        from botsensai.config import get_settings  # noqa: PLC0415
+        from botsensai.store.db import Database  # noqa: PLC0415
+        from botsensai.models import utcnow  # noqa: PLC0415
+        from botsensai.execution.jito_tips import JitoTipEngine  # noqa: PLC0415
 
-        pipeline = Pipeline.get_instance()
-        if pipeline is None:
+        settings = get_settings()
+        db = Database(settings.path(settings.db_path))
+
+        # Check concurrent positions limit
+        open_live = db.open_live_positions()
+        pending_buys = getattr(db, "count_pending_signals", lambda side="BUY": 0)(side="BUY")
+        total_active = len(open_live) + pending_buys
+        if total_active >= settings.risk.max_concurrent_positions:
             return json.dumps({
-                "status": "PIPELINE_UNAVAILABLE",
+                "status": "SKIPPED",
                 "mint": mint,
-                "note": "Pipeline not running — signal logged but not executed",
+                "reason": f"max concurrent positions reached ({total_active}/{settings.risk.max_concurrent_positions})"
             })
 
+        if any(p.get("mint") == mint for p in open_live):
+            return json.dumps({"status": "SKIPPED", "mint": mint, "reason": "already holding token"})
+
         combined_score = (momentum_score * 0.4) + (conviction_score * 0.6)
-        result = pipeline.orchestrator_signal(
-            mint=mint,
-            symbol=symbol,
-            composite_score=combined_score,
-            liquidity_usd=liquidity_usd,
-            source=sentiment,
+        token_key = f"solana:{mint}"
+
+        # Position sizing: Kelly sizing or default 0.020 SOL within 0.015 - 0.025 SOL rails
+        size = min(settings.risk.max_position_native, max(0.015, combined_score * 0.025))
+
+        # Dynamic tip calculation
+        try:
+            tip_engine = JitoTipEngine.get_instance(settings)
+            dynamic_tip = tip_engine.calculate_tip_lamports(
+                conviction_score=combined_score,
+                trade_size_sol=size,
+            )
+        except Exception:
+            dynamic_tip = 250_000
+
+        sig_id = db.record_signal(
+            token_key=token_key,
+            symbol=symbol or "UNKNOWN",
+            side="BUY",
+            size_native=size,
+            max_slippage_bps=settings.risk.max_slippage_bps,
+            jito_tip_lamports=dynamic_tip,
+            score=combined_score,
+            as_of=utcnow(),
         )
-        return json.dumps({"status": "SIGNALED", "mint": mint, "result": str(result)})
+        log.info(
+            f"[Orchestrator] BUY signal recorded #{sig_id}: {symbol} ({mint}) "
+            f"size={size:.4f} SOL tip={dynamic_tip:,} lamports score={combined_score:.3f}"
+        )
+        return json.dumps({
+            "status": "SIGNALED",
+            "signal_id": sig_id,
+            "mint": mint,
+            "symbol": symbol,
+            "size_native": size,
+            "tip_lamports": dynamic_tip,
+            "combined_score": combined_score,
+        })
     except Exception as exc:
         log.warning(f"Pipeline signal failed for {mint}: {exc}")
         return json.dumps({"status": "ERROR", "mint": mint, "error": str(exc)})
@@ -144,7 +185,7 @@ HARD RULES (from GEMINI.md — NEVER violate):
 
 # ── Stop hook: ensure cycle summary is always emitted ─────────────────────────
 
-if HAS_AGY_SDK and hooks is not None:
+if HAS_AGY_SDK and hooks is not None and hasattr(hooks, "stop"):
     @hooks.stop
     async def ensure_summary(data: "types.StopArgs") -> "types.StopHookResult":
         """Ensure sweep summary is emitted before stopping."""
@@ -155,6 +196,8 @@ if HAS_AGY_SDK and hooks is not None:
                 reason="Please emit a sweep summary with candidates_scanned, sentinel_approved, and entries_signaled before finishing.",
             )
         return types.StopHookResult(decision=types.StopDecision.ALLOW_STOP)
+else:
+    ensure_summary = None
 
 
 # ── Periodic trigger ──────────────────────────────────────────────────────────
@@ -193,7 +236,7 @@ def build_orchestrator_config() -> "LocalAgentConfig":
             max_subagent_depth=2,
             allowed_subagents=["scanner", "sentinel"],
         ),
-        hooks=[ensure_summary] if HAS_AGY_SDK else [],
+        hooks=[ensure_summary] if ensure_summary is not None else [],
     )
     return config
 
