@@ -214,9 +214,13 @@ class JitoLiveExecutor:
 
         wallet_pubkey = str(self.keypair.pubkey())
         action = "buy" if side.upper() == "BUY" else "sell"
-        slippage_pct = min(max(slippage_bps / 100.0, 0.5), 5.0)
+        # Dynamic Slippage Headroom:
+        # Bonding curves are deterministic (3.5% ceiling).
+        # Post-migration AMM pools (pump-amm/raydium) with violent block-by-block volume
+        # require up to 8.0% - 12.0% slippage headroom to prevent Custom 6004 reverts.
+        base_slippage_pct = max(slippage_bps / 100.0, 0.5)
 
-        # Build payload
+        # Build base payload
         if action == "buy":
             amount_val: Any = min(max(size_sol, 0.001), MAX_POSITION_SIZE_SOL)
             denominated_in_sol = "true"
@@ -230,14 +234,14 @@ class JitoLiveExecutor:
             "mint": mint,
             "denominatedInSol": denominated_in_sol,
             "amount": amount_val,
-            "slippage": slippage_pct,
+            "slippage": min(base_slippage_pct, 3.5),
             "priorityFee": max(priority_fee_sol, 0.0005),
             "pool": "pump",
         }
 
-        # Method 3: Multi-Pool Liquidity Routing & Auto Fallback
-        # Determine pool priority: if token is migrated or on Raydium/Pumpswap, prioritize AMM pools
-        pools_to_try = ["pump", "pump-amm", "raydium", "raydium-cpmm", "auto"]
+        # Method 3: Multi-Pool Liquidity Routing & Dynamic Fallback
+        # Check DexScreener to see where liquidity actually resides
+        is_amm_migrated = False
         try:
             dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
             dex_req = urllib.request.Request(dex_url, headers={"User-Agent": "Botsensai/2.0"})
@@ -246,14 +250,25 @@ class JitoLiveExecutor:
                 pairs = data.get("pairs") or []
                 for p in pairs:
                     if p.get("dexId") in ["pumpswap", "raydium", "meteora", "orca"] or (p.get("marketCap") or 0) >= 65_000:
-                        pools_to_try = ["pump-amm", "raydium", "raydium-cpmm", "auto", "pump"]
+                        is_amm_migrated = True
                         break
         except Exception:
             pass
 
+        if is_amm_migrated:
+            pools_to_try = ["pump-amm", "auto", "raydium", "raydium-cpmm", "pump"]
+        else:
+            pools_to_try = ["pump", "auto", "pump-amm", "raydium"]
+
         last_err = "No error"
         for pool_type in pools_to_try:
             payload["pool"] = pool_type
+            # For AMM pools experiencing high velocity, calibrate slippage to avoid 6004 ExceededSlippage
+            if pool_type in ("pump-amm", "raydium", "auto"):
+                payload["slippage"] = max(base_slippage_pct, 10.0)
+            else:
+                payload["slippage"] = min(base_slippage_pct, 3.5)
+
             try:
                 req = urllib.request.Request(
                     PUMPPORTAL_URL,
