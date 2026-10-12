@@ -208,3 +208,19 @@ async def websocket_stream(websocket: WebSocket):
         pass
     except Exception:
         pass
+
+
+# Mount compiled React SPA
+DIST_DIR = Path("/Users/drop/.gemini/antigravity/worktrees/Botsensai/fix_pump_copytrading_bot/web/dist")
+if DIST_DIR.exists():
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if (DIST_DIR / full_path).exists() and (DIST_DIR / full_path).is_file():
+            return FileResponse(DIST_DIR / full_path)
+        return FileResponse(DIST_DIR / "index.html")
+
