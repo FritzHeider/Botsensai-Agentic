@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sqlite3
@@ -18,10 +19,14 @@ def get_live_context_summary() -> str:
     """Fetch current live trading state to ground Gemini."""
     lines = [
         f"Hot Wallet: {HOT_WALLET}",
-        f"Gas Floor: 0.010 SOL",
-        f"Active On-Chain Position: $FIGHT (12,605.03 tokens, Entry: 0.00000395 SOL, Current PnL: +12.5%)",
+        f"Balance: 0.0115 SOL (11,499,593 lamports)",
+        f"Gas Floor: 0.010 SOL | Safety Buffer: +0.0015 SOL (Near floor, new buys halted, exit monitoring active)",
+        f"Active On-Chain Positions:",
+        f"  - $HUMPH (7jNwX4Me...): 591.51 tokens, MCap: $4.52M, Entry: ~0.00004226 SOL, Target 1.40x / 2.00x",
+        f"  - $$HATE (9PC1XE4j...): 5,012.74 tokens (Risk-free moonbag after +2.15x Stage 1 TP lock)",
+        f"  - $Santaro (F5FtUS4S...): 140,184.95 tokens, Entry: ~0.00000018 SOL, Target 1.40x / 2.00x",
         f"Calibrated Runner TP Ladder: 1.40x (35%), 2.00x (25%), 4.00x (20%), 10.0x (20%)",
-        f"Stop Loss: 10% (0.00000355 SOL) | Momentum Stop: 600s (10 min)",
+        f"Stop Loss: 10% hard stop | Trailing Momentum Stop: 600s (10 min)",
     ]
     if DB_PATH.exists():
         try:
@@ -75,7 +80,7 @@ async def stream_chat_response(
                 f"Answer concisely with exact on-chain numbers, SOL amounts, and ladder targets in GitHub markdown."
             )
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=prompt,
             )
             response_text = response.text or ""
@@ -84,31 +89,35 @@ async def stream_chat_response(
     else:
         # Grounded deterministic response
         msg_lower = message.lower()
-        if "fight" in msg_lower or "pnl" in msg_lower or "position" in msg_lower:
+        if "humph" in msg_lower or "pnl" in msg_lower or "position" in msg_lower:
             response_text = (
-                "### 🎯 Live Position Report: `$FIGHT`\n\n"
-                "- **Holding**: `12,605.03 $FIGHT`\n"
-                "- **Entry Price**: `0.00000395 SOL`\n"
-                "- **Current Price**: `0.00000444 SOL`\n"
-                "- **Unrealized Gain**: **`+12.55%`** (Position Value: `~0.0560 SOL`)\n"
-                "- **Rung 1 (1.40×)**: `0.00000553 SOL` (triggers 35% exit)\n"
-                "- **Hard Stop**: `0.00000355 SOL` (-10%)"
+                "### 🎯 Live Position Report: `$HUMPH`\n\n"
+                "- **Holding**: `591.51 $HUMPH`\n"
+                "- **Contract**: `7jNwX4Me9zGEjmWY7zARDG2LYjVs1WXD6DZ1JvSfpump`\n"
+                "- **Entry**: `~0.00004226 SOL` (~0.0250 SOL deployed)\n"
+                "- **Market Cap**: `$4.52M` | **5m Momentum**: `+6.3%`\n"
+                "- **Rung 1 (1.40×)**: `0.00005916 SOL` (triggers 35% exit)\n"
+                "- **Rung 2 (2.00×)**: `0.00008452 SOL` (triggers 25% exit)\n"
+                "- **Hard Stop**: `0.00003803 SOL` (-10%) | Trailing window: 10m\n\n"
+                "*Other holdings*: `$$HATE` (5,012.74 risk-free moonbag tokens), `$Santaro` (140,184.95 tokens)."
             )
-        elif "wallet" in msg_lower or "balance" in msg_lower or "floor" in msg_lower:
+        elif "wallet" in msg_lower or "balance" in msg_lower or "floor" in msg_lower or "buffer" in msg_lower:
             response_text = (
                 "### 💳 Hot Wallet Telemetry\n\n"
                 f"- **Address**: `{HOT_WALLET}`\n"
-                "- **Balance**: `0.3900 SOL`\n"
-                "- **Floor Reserve**: `0.0100 SOL` (Preserved)\n"
-                "- **Active Buffer**: `+0.3800 SOL` 🟢 **SAFE**\n"
-                "- **Max Next Position**: `0.0250 SOL`"
+                "- **Balance**: `0.011500 SOL` (11,499,593 lamports)\n"
+                "- **Gas Floor Reserve**: `0.010000 SOL` (Strictly Preserved)\n"
+                "- **Active Buffer**: `+0.001500 SOL` 🟡 **NEAR FLOOR**\n"
+                "- **Safety Gate**: New entry purchases autonomously halted until exits/reclaims restore buffer > 0.0030 SOL.\n"
+                "- **Active Exit Monitoring**: 100% active for `$HUMPH`, `$$HATE`, and `$Santaro`."
             )
         else:
             response_text = (
                 f"### 🤖 Botsensai Intelligence Summary\n\n"
-                f"**System State**: 1 active live position (`$FIGHT` @ +12.55%), 2 available portfolio slots, "
-                f"and `0.3800 SOL` liquid buffer above the operational floor.\n\n"
-                f"The 4-tier moonbag ladder (1.40× / 2.00× / 4.00× / 10.0×) and 10m momentum trailing stop are actively monitoring on-chain transactions."
+                f"**System State**: 3 active live positions (`$HUMPH`, `$$HATE`, `$Santaro`), "
+                f"`0.011500 SOL` hot wallet balance with `+0.001500 SOL` buffer above the 0.010 SOL floor.\n\n"
+                f"New entries are paused at the gas floor rail while exit monitoring tracks 4-tier moonbag ladders "
+                f"(1.40× / 2.00× / 4.00× / 10.0×) and 10m momentum trailing stops."
             )
 
     # Stream final response in chunks

@@ -1,0 +1,18 @@
+
+> botsensai-data-app@2.0.0 dev
+> vite
+
+
+  VITE v6.4.4  ready in 376 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+1:47:33 AM [vite] http proxy error: /api/wallet
+Error: connect ECONNREFUSED 127.0.0.1:8000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)
+1:47:33 AM [vite] http proxy error: /api/positions
+Error: connect ECONNREFUSED 127.0.0.1:8000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)
+1:47:33 AM [vite] http proxy error: /api/signals
+Error: connect ECONNREFUSED 127.0.0.1:8000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)
