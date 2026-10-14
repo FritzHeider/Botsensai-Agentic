@@ -31,18 +31,32 @@ DEFAULT_KEYPAIR = Path("/home/ubuntu/.config/solana/id.json")
 if not DEFAULT_KEYPAIR.exists():
     DEFAULT_KEYPAIR = Path.home() / ".config" / "solana" / "id.json"
 
-RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
+RPC_CANDIDATES = [
+    os.getenv("SOLANA_RPC_URL"),
+    os.getenv("HELIUS_RPC_URL"),
+    os.getenv("BOTSENSAI_SOLANA_RPC_URL"),
+    "https://api.mainnet-beta.solana.com",
+    "https://solana-rpc.publicnode.com",
+    "https://rpc.ankr.com/solana",
+]
+RPC_URLS = [c for c in RPC_CANDIDATES if c]
 SPL_TOKEN_PROGRAM_ID = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
 TOKEN_2022_PROGRAM_ID = Pubkey.from_string("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
 
 
 def rpc_call(method: str, params: list) -> dict:
-    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-    req = urllib.request.Request(
-        RPC_URL, data=payload.encode("utf-8"), headers={"Content-Type": "application/json"}
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode("utf-8")
+    headers = {"Content-Type": "application/json", "User-Agent": "Botsensai-RentReclaim/1.0"}
+    last_err = None
+    for url in RPC_URLS:
+        try:
+            req = urllib.request.Request(url, data=payload, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            last_err = e
+            continue
+    raise RuntimeError(f"All RPC endpoints failed. Last error: {last_err}")
 
 
 def get_token_accounts(wallet_pubkey: str, program_id: Pubkey) -> list[dict]:
